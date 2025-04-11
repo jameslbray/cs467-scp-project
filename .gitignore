@@ -1,3 +1,23 @@
+
+# Python related
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.env
+
+# Node
+**/node_modules/
+client/build/
+
+# Ignore OS and editor files
+.DS_Store
+Thumbs.db
+*.log
+
+# Ignore binaries
+bin/
 # Logs
 logs
 *.log
@@ -134,3 +154,4 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
