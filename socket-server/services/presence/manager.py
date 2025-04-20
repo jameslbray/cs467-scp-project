@@ -21,6 +21,7 @@ class PresenceManager:
         self.rabbit_connection = None
         self.rabbit_channel = None
         self.rabbit_exchange = None
+        self.sid_to_user = {}  # Maps socket IDs to user IDs
 
     async def initialize(self) -> "PresenceManager":
         """Initialize the presence manager"""
@@ -93,6 +94,8 @@ class PresenceManager:
             user_id, sid)
 
         if is_first_connection:
+            self.sid_to_user[sid] = user_id
+            self.logger.info(f"User {user_id} connected with SID {sid}")
             # User just came online
             await self.update_user_status(user_id, StatusType.ONLINE)
 
@@ -159,6 +162,8 @@ class PresenceManager:
 
     def authenticate_connection(self, auth_data: dict) -> str | None:
         """Authenticate connection and return user ID if valid"""
+        # TODO: Implement actual authentication logic
+        # For example, check JWT token or session ID
         # This would verify JWT token in auth_data
         # Simplified example:
         return auth_data.get("userId")

@@ -111,7 +111,7 @@ async def shutdown():
 
 
 @sio.event
-async def connect(sid, environ):
+async def connect(sid, environ, auth=None):
     """Handle new socket connection"""
     logger.info(f"New client connected: {sid}")
 
@@ -140,7 +140,8 @@ async def connect(sid, environ):
 #     try:
 #         # Save message to PostgreSQL database
 #         await db_pool.execute(
-#             'INSERT INTO chat_messages (user_name, text, room, timestamp) VALUES ($1, $2, $3, $4)',
+#             'INSERT INTO chat_messages (user_name, text, room, timestamp)
+#               VALUES ($1, $2, $3, $4)',
 #             user, text, room, timestamp
 #         )
 
@@ -162,25 +163,49 @@ async def disconnect(sid):
         # Let the presence manager handle the disconnection logic
         user_id = await presence_manager.handle_disconnect(sid)
         if user_id:
-            logger.info(f"User {user_id} associated with {sid} is now offline.")
+            logger.info(f"User {user_id} associated with "
+                        "{sid} is now offline.")
 
+# @sio.event
+# async def message(sid, data):
+#     """Handle incoming messages"""
+#     logger.info(f"Message from {sid}: {data}")
 
-@sio.event(namespace='/')  # Ensure it's in the default namespace unless
-# specified otherwise
+#     # You can handle different message types here
+#     # For example, if you want to handle a specific event:
+#     if data.get("event") == "presence:request_friend_statuses":
+#         await presence_request_friend_statuses(sid, data)
+#     # elif data.get("event") == "presence:request_friend_statuses":
+#     #     await presence_request_friend_statuses(sid, data)
+
+@sio.event
 async def presence_request_friend_statuses(sid, data):
     """Handle request for friend statuses from a client."""
     # Assuming the user ID was stored during connection/authentication
-    # This part needs refinement based on how you store the user_id associated
-    # with the sid
     user_id = presence_manager.socket_manager.get_user_id_from_sid(sid)
-    # You'll need to implement get_user_id_from_sid
-    if user_id and presence_manager:
-        logger.info(f"Received presence:request_friend_statuses from {sid} "
+    if user_id:
+        logger.info(f"Received presence_request_friend_statuses from {sid} "
                     "for user {user_id}")
+        # TODO: Implement logic to fetch friend statuses
+        # For now, just send a mock response
         await presence_manager.send_friend_statuses(user_id, sid)
     else:
         logger.warning(f"Could not find user_id for sid {sid} to send"
                        "friend statuses.")
+
+
+@sio.event
+async def presence_update_status(sid, data):
+    """"Handle presence update status from a client."""
+    user_id = presence_manager.socket_manager.get_user_id_from_sid(sid)
+    if user_id:
+        status = data.get("status")
+        logger.info(f"Received presence_update_status from {sid} for user "
+                    "{user_id} with status {status}")
+        await presence_manager.update_user_status(user_id, status)
+    else:
+        logger.warning(f"Could not find user_id for sid {sid} to update "
+                       "status.")
 
 
 async def main():

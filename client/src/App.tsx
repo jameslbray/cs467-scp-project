@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import UserStatusDropdown from './components/UserStatusDropdown.tsx';
 import { io, Socket } from 'socket.io-client';
-import { ServerEvents, UserStatus, User } from './types';
+import { ServerEvents, UserStatus, User, ClientEvents } from './types';
 
 const App: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -14,7 +14,7 @@ const App: React.FC = () => {
   useEffect(() => {
     // Simulating a logged-in user
     setCurrentUser({
-      id: '1',
+      userId: '1',
       username: 'michael_shaffer',
       profile_picture_url: 'https://sycolibre.com/profiles/michael.jpg'
     });
@@ -41,7 +41,7 @@ const App: React.FC = () => {
       setIsConnected(true);
 
       // Request friend statuses after connection
-      socketConnection.emit(ServerEvents.REQUEST_STATUSES, {});
+      socketConnection.emit(ClientEvents.REQUEST_FRIEND_STATUSES, {});
     });
 
     socketConnection.on('disconnect', () => {
@@ -73,7 +73,12 @@ const App: React.FC = () => {
 
   return (
     <div>
-
+        <UserStatusDropdown
+          userId={currentUser.userId}
+          username={currentUser.username}
+          profilePictureUrl={currentUser.profile_picture_url}
+          friends={friends}
+          />
     </div>
   );
 };

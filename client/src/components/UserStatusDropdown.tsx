@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
-// import { ClientEvents, ServerEvents } from '../types';
+import { ClientEvents, ServerEvents } from '../types';
 
 // Define types based on server/presence/models.py
 type StatusType = 'online' | 'away' | 'offline' | '';
+
 interface UserStatus {
-  user_id: string;
+  userId: string;
   status: StatusType;
   last_changed: string;
 }
@@ -31,25 +32,25 @@ const UserStatusDropdown: React.FC = () => {
       console.log('Connected to socket server');
       
       // Request current status after connection
-      socketConnection.emit('presence:request_friend_statuses', {});
+      socketConnection.emit(ClientEvents.REQUEST_FRIEND_STATUSES, {});
     });
     
     // Listen for status update confirmations
-    socketConnection.on('presence:status_updated', (data: UserStatus) => {
+    socketConnection.on(ServerEvents.STATUS_UPDATED, (data: UserStatus) => {
       setStatus(data.status);
       setMessage(`Status updated to ${data.status}`);
       setIsLoading(false);
     });
     
     // Listen for friend status changes (including our own)
-    socketConnection.on('presence:friend_status_changed', (data: UserStatus) => {
+    socketConnection.on(ServerEvents.FRIEND_STATUS_CHANGED, (data: UserStatus) => {
       if (data.user_id === userId) {
         setStatus(data.status);
       }
     });
     
     // Listen for all friend statuses
-    socketConnection.on('presence:friend_statuses', (data: { statuses: Record<string, UserStatus> }) => {
+    socketConnection.on(ServerEvents.FRIEND_STATUSES, (data: { statuses: Record<string, UserStatus> }) => {
       const myStatus = data.statuses[userId];
       if (myStatus) {
         setStatus(myStatus.status);
@@ -57,7 +58,7 @@ const UserStatusDropdown: React.FC = () => {
     });
     
     // Listen for errors
-    socketConnection.on('presence:error', (data: { message: string }) => {
+    socketConnection.on(ServerEvents.ERROR, (data: { message: string }) => {
       setMessage(`Error: ${data.message}`);
       setIsLoading(false);
     });
@@ -76,7 +77,7 @@ const UserStatusDropdown: React.FC = () => {
     
     if (socket && socket.connected) {
       // Use socket to update status based on your presence/events.py
-      socket.emit('presence:update_status', {
+      socket.emit(ClientEvents.UPDATE_STATUS, {
         status: newStatus
       });
     } else {
