@@ -1,21 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { ClientEvents, ServerEvents } from '../types';
-
-// Define types based on server/presence/models.py
-type StatusType = 'online' | 'away' | 'offline' | '';
-
-interface UserStatus {
-  userId: string;
-  status: StatusType;
-  last_changed: string;
-}
+import { UserStatus, StatusType, ClientEvents, ServerEvents } from '../types';
 
 // Style types
 type StyleObject = Record<string, React.CSSProperties>;
 
 const UserStatusDropdown: React.FC = () => {
-  const [status, setStatus] = useState<StatusType>('');
+  const [status, setStatus] = useState<StatusType>(StatusType.OFFLINE);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -44,7 +35,7 @@ const UserStatusDropdown: React.FC = () => {
     
     // Listen for friend status changes (including our own)
     socketConnection.on(ServerEvents.FRIEND_STATUS_CHANGED, (data: UserStatus) => {
-      if (data.user_id === userId) {
+      if (data.userId === userId) {
         setStatus(data.status);
       }
     });

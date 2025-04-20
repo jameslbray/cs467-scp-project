@@ -57,7 +57,7 @@ const App: React.FC = () => {
     socketConnection.on(ServerEvents.FRIEND_STATUS_CHANGED, (data: UserStatus) => {
       setFriends(prev => ({
         ...prev,
-        [data.user_id]: data
+        [data.userId]: data
       }));
     });
 
@@ -70,15 +70,10 @@ const App: React.FC = () => {
   if (!currentUser) {
     return <div>Loading...</div>;
   }
-
+  // The component below also calls all of the same socket events as the one above
   return (
     <div>
-        <UserStatusDropdown
-          userId={currentUser.userId}
-          username={currentUser.username}
-          profilePictureUrl={currentUser.profile_picture_url}
-          friends={friends}
-          />
+        <UserStatusDropdown />
     </div>
   );
 };
