@@ -1,24 +1,24 @@
--- Create enum type for status values
-CREATE TYPE user_status_type AS ENUM ('online', 'away', 'offline');
+-- Drop tables if they exist (in reverse order of dependency)
+-- Using IF EXISTS should prevent errors if tables don't exist yet
+DROP TABLE IF EXISTS user_status;
+DROP TABLE IF EXISTS users;
 
--- Create user_status table
-CREATE TABLE user_status (
-    user_id INTEGER NOT NULL,
-    status user_status_type NOT NULL DEFAULT 'offline',
-    last_status_change TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Add foreign key constraint
-    CONSTRAINT fk_user_id 
-        FOREIGN KEY (user_id) 
-        REFERENCES users(id) 
-        ON DELETE CASCADE,
-        
-    -- Make user_id the primary key (one status per user)
-    PRIMARY KEY (user_id)
+-- Create the Users table
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    profile_picture_url VARCHAR(255),
+    last_login TIMESTAMP
 );
 
--- Create index for faster queries when filtering by status
-CREATE INDEX idx_user_status_status ON user_status(status);
+-- Create the User_Status table
+CREATE TABLE user_status (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE PRIMARY KEY,
+    status VARCHAR(10) CHECK (status IN ('online', 'away', 'offline')) NOT NULL DEFAULT 'offline',
+    last_status_change TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Add comment for documentation
 COMMENT ON TABLE user_status IS 'Stores the current online status of users and when it was last updated';
