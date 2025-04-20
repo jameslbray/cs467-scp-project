@@ -1,56 +1,81 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import { Button, Card } from '@sakura-ui/core'
+// App.tsx or similar component
+import React, { useEffect, useState } from 'react';
+import UserStatusDropdown from './components/UserStatusDropdown.tsx';
+import { io, Socket } from 'socket.io-client';
+import { ServerEvents, UserStatus, User } from './types';
 
-function App() {
-  const [count, setCount] = useState(0)
+const App: React.FC = () => {
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [friends, setFriends] = useState<Record<string, UserStatus>>({});
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Fetch current user info (mocked for this example)
+  useEffect(() => {
+    // Simulating a logged-in user
+    setCurrentUser({
+      id: '1',
+      username: 'michael_shaffer',
+      profile_picture_url: 'https://sycolibre.com/profiles/michael.jpg'
+    });
+  }, []);
+
+  // Connect to socket server when user is authenticated
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Initialize socket connection
+    const socketConnection = io('http://localhost:3001'
+      //   {
+      //   auth: {
+      //     userId: currentUser.id
+      //   }
+      // }
+    );
+
+    setSocket(socketConnection);
+
+    // Connection events
+    socketConnection.on('connect', () => {
+      console.log('Connected to SycoLibre socket server');
+      setIsConnected(true);
+
+      // Request friend statuses after connection
+      socketConnection.emit(ServerEvents.REQUEST_STATUSES, {});
+    });
+
+    socketConnection.on('disconnect', () => {
+      console.log('Disconnected from SycoLibre socket server');
+      setIsConnected(false);
+    });
+
+    // Handle friend status updates
+    socketConnection.on(ServerEvents.FRIEND_STATUSES, (data: { statuses: Record<string, UserStatus> }) => {
+      setFriends(data.statuses);
+    });
+
+    socketConnection.on(ServerEvents.FRIEND_STATUS_CHANGED, (data: UserStatus) => {
+      setFriends(prev => ({
+        ...prev,
+        [data.user_id]: data
+      }));
+    });
+
+    // Clean up connection on unmount
+    return () => {
+      socketConnection.disconnect();
+    };
+  }, [currentUser]);
+
+  if (!currentUser) {
+    return <div>Loading...</div>;
+  }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-center">
-      <div className="container mx-auto px-4 py-8">
-        <Card className="w-full p-6 bg-white rounded-xl shadow-lg">
-          <div className="flex justify-center space-x-8 mb-6">
-            <a href="https://vite.dev" target="_blank" rel="noreferrer" className="hover:scale-110 transition-transform">
-              <img src={viteLogo} className="h-16 w-16" alt="Vite logo" />
-            </a>
-            <a href="https://react.dev" target="_blank" rel="noreferrer" className="hover:scale-110 transition-transform">
-              <img src={reactLogo} className="h-16 w-16 animate-spin-slow" alt="React logo" />
-            </a>
-          </div>
-          
-          <div className="text-center">
-            <h1 className="text-2xl font-bold mb-4 text-blue-600">
-              Vite + React + Tailwind + Sakura UI
-            </h1>
-            
-            <span className="inline-block px-3 py-1 text-sm rounded-full bg-green-100 text-green-800 mb-6">
-              Styled with Tailwind CSS
-            </span>
-            
-            <Card className="p-4 mb-6 bg-gray-50">
-              <Button 
-                variant="primary" 
-                size="lg" 
-                className="mb-4"
-                onClick={() => setCount((count) => count + 1)}
-              >
-                Count is {count}
-              </Button>
-              
-              <p className="text-gray-600">
-                Edit <code className="bg-gray-200 px-1 py-0.5 rounded text-sm">src/App.tsx</code> and save to test HMR
-              </p>
-            </Card>
-            
-            <p className="text-sm text-gray-500">
-              Click on the Vite and React logos to learn more
-            </p>
-          </div>
-        </Card>
-      </div>
-    </div>
-  )
-}
+    <div>
 
-export default App
+    </div>
+  );
+};
+
+export default App;
