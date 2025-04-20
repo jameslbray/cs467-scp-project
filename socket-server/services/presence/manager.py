@@ -235,3 +235,12 @@ class PresenceManager:
 
         await self.repository.close()
         self.logger.info("Presence manager closed")
+
+    def send_friend_statuses(self, sid: str, statuses: dict) -> None:
+        """Send friend statuses to a specific socket"""
+        self.socket_manager.sio.emit(
+            ServerEvents.FRIEND_STATUSES.value,
+            {"statuses": statuses},
+            room=sid
+        )
+        self.logger.info(f"Sent friend statuses to {sid}: {statuses}")
