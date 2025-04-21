@@ -13,6 +13,9 @@ CREATE TABLE users (
     last_login TIMESTAMP
 );
 
+-- Add comment for documentation
+COMMENT ON TABLE user_status IS 'Stores the user information, including username, profile picture, and last login time';
+
 -- Create the User_Status table
 CREATE TABLE user_status (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE PRIMARY KEY,
@@ -22,3 +25,19 @@ CREATE TABLE user_status (
 
 -- Add comment for documentation
 COMMENT ON TABLE user_status IS 'Stores the current online status of users and when it was last updated';
+
+-- Drop the connections table if it exists
+DROP TABLE IF EXISTS connections;
+
+-- Create the connections table
+CREATE TABLE connections (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    connected_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    connection_status VARCHAR(10) CHECK (connection_status IN ('pending', 'accepted')) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, connected_user_id) -- Prevent duplicate connections
+);
+
+-- Add comment for documentation
+COMMENT ON TABLE user_status IS 'Stores the connections between users, including the status of the connection and when it was created';
