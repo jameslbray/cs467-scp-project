@@ -2,6 +2,7 @@ import json
 
 import aio_pika
 import logging
+import datetime
 
 from .models import UserStatus, StatusType
 from .repository import StatusRepository
@@ -87,14 +88,22 @@ class PresenceManager:
         if not user_id:
             # Authentication failed
             return
+        try:
+            # Register the connection
+            is_first_connection = self.socket_manager.register_user_connection(
+                user_id, sid)
 
-        # Register the connection
-        is_first_connection = self.socket_manager.register_user_connection(
-            user_id, sid)
-
-        if is_first_connection:
-            # User just came online
-            await self.update_user_status(user_id, StatusType.ONLINE)
+            if is_first_connection:
+                self.logger.info(f"User {user_id} connected with SID {sid}")
+                # User just came online
+                await self.update_user_status(user_id, StatusType.ONLINE)
+        except Exception as e:
+            self.logger.error(f"Error during connection: {e}")
+            await self.socket_manager.sio.emit(
+                ServerEvents.ERROR.value,
+                {"message": "Failed to connect"},
+                room=sid
+            )
 
     async def handle_status_update(self, sid: str, data: dict) -> None:
         """Handle status update request from client"""
@@ -159,6 +168,8 @@ class PresenceManager:
 
     def authenticate_connection(self, auth_data: dict) -> str | None:
         """Authenticate connection and return user ID if valid"""
+        # TODO: Implement actual authentication logic
+        # For example, check JWT token or session ID
         # This would verify JWT token in auth_data
         # Simplified example:
         return auth_data.get("userId")
@@ -177,16 +188,34 @@ class PresenceManager:
         user_status = UserStatus(user_id=user_id, status=status)
 
         # Save to repository
-        await self.repository.update_user_status(user_status)
+        try:
+            await self.repository.update_user_status(user_status)
+        except Exception as repo_exc:
+            self.logger.error(f"Repository error updating status for {user_id}: {repo_exc}")
+            # Decide if you want to stop here or still try to publish
+            raise
 
-        # Publish to RabbitMQ for other services
-        await self.rabbit_exchange.publish(
-            aio_pika.Message(
-                body=json.dumps(user_status.dict()).encode(),
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
-            ),
-            routing_key=f"status.{status.value}"
-        )
+        # --- Fix JSON serialization for RabbitMQ ---
+        def json_serial(obj):
+            """JSON serializer for objects not serializable by default json code"""
+            if isinstance(obj, (datetime.datetime, datetime.date)):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+
+        try:
+            # Publish to RabbitMQ for other services
+            message_body = json.dumps(user_status.dict(), default=json_serial).encode()
+            await self.rabbit_exchange.publish(
+                aio_pika.Message(
+                    body=message_body,
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                ),
+                routing_key=f"status.{status.value}"
+            )
+            self.logger.info(f"Published status update for {user_id} to RabbitMQ")
+        except Exception as mq_exc:
+            self.logger.error(f"RabbitMQ error publishing status for {user_id}: {mq_exc}")
+            # Log the error, but maybe don't crash the whole process
 
         # Broadcast to relevant clients
         await self.broadcast_status_update(user_status)
@@ -208,18 +237,43 @@ class PresenceManager:
     async def get_connections(self, user_id: str) -> list[str]:
         """Get users who should receive status updates for this user"""
         # Query connections/friends table
-        rows = await self.repository.pg_pool.fetch(
-            """
+        query = """
             SELECT connected_user_id FROM connections
             WHERE user_id = $1 AND connection_status = 'accepted'
             UNION
             SELECT user_id FROM connections
-            WHERE connected_user_id = $1 AND connection_status = 'accepted'
-            """,
-            user_id
-        )
+            WHERE connected_user_id = $2 AND connection_status = 'accepted'
+            """
 
-        return [row["connected_user_id"] or row["user_id"] for row in rows]
+        try:
+            # Convert user_id to int and pass it for both $1 and $2
+            user_id_int = int(user_id)
+            rows = await self.repository.pg_pool.fetch(
+                query,
+                user_id_int,  # Argument for $1
+                user_id_int  # Argument for $2
+            )
+
+            # Extract the friend IDs, handling potential None 
+            # if column names differ
+            friend_ids = []
+            for row in rows:
+                # Check both possible column names from the UNION
+                friend_id = row.get("connected_user_id") or row.get("user_id")
+                if friend_id is not None:
+                    # Convert back to string if needed downstream
+                    friend_ids.append(str(friend_id))
+
+            return friend_ids
+
+        except ValueError:
+            self.logger.error(f"Cannot convert user_id '{user_id}' to integer"
+                              "for get_connections query.")
+            return []
+        except Exception as e:
+            self.logger.error(f"Error fetching connections for user"
+                              f"{user_id}: {e}")
+            return []  # Return empty list on error
 
     async def get_user_status(self, user_id: str) -> UserStatus | None:
         """Get status for a specific user"""
@@ -236,9 +290,9 @@ class PresenceManager:
         await self.repository.close()
         self.logger.info("Presence manager closed")
 
-    def send_friend_statuses(self, sid: str, statuses: dict) -> None:
+    async def send_friend_statuses(self, sid: str, statuses: dict) -> None:
         """Send friend statuses to a specific socket"""
-        self.socket_manager.sio.emit(
+        await self.socket_manager.sio.emit(
             ServerEvents.FRIEND_STATUSES.value,
             {"statuses": statuses},
             room=sid

@@ -13,6 +13,7 @@ class SocketManager:
         """Initialize with a Socket.IO server instance"""
         self.logger = logging.getLogger(__name__)
         self.sio = sio
+        self.sid_to_user: dict[str, str] = {}  # socket ID -> user ID
         self.connected_users: dict[str, set[str]] = {
         }  # user_id -> set of socket IDs
 
@@ -32,25 +33,32 @@ class SocketManager:
     async def handle_disconnect(self, sid: str):
         """Handle socket disconnection"""
         self.logger.info(f"Disconnection: {sid}")
+        user_id = self.sid_to_user.pop(sid, None)  # Remove sid->user mapping
 
-        # Find and remove user associated with this socket
-        for user_id, sockets in self.connected_users.items():
+        if user_id and user_id in self.connected_users:
+            sockets = self.connected_users[user_id]
             if sid in sockets:
                 sockets.remove(sid)
-
-                # If this was the last socket for the user, they're offline
                 if len(sockets) == 0:
                     del self.connected_users[user_id]
+                    self.logger.info(f"User {user_id} is now fully offline.")
+                    # Return user_id so PresenceManager knows who went offline
                     return user_id
+        else:
+            self.logger.warning(f"Could not find user for disconnected sid {sid}")
 
+        # Return None if user wasn't found or still has other connections
         return None
 
     def register_user_connection(self, user_id: str, sid: str) -> bool:
-        """Register a socket connection for a user"""
+        """Register a socket connection for a user
+        and store sid->user mapping."""
         if user_id not in self.connected_users:
             self.connected_users[user_id] = set()
 
         self.connected_users[user_id].add(sid)
+        self.sid_to_user[sid] = user_id  # Store the reverse mapping
+        self.logger.info(f"Registered connection: user {user_id} <-> sid {sid}")
         return len(
             self.connected_users[user_id]
             ) == 1  # True if this is first connection
@@ -78,8 +86,5 @@ class SocketManager:
             self.connected_users[user_id]) > 0
 
     def get_user_id_from_sid(self, sid: str) -> str | None:
-        """Find user ID associated with a socket ID"""
-        for user_id, sockets in self.connected_users.items():
-            if sid in sockets:
-                return user_id
-        return None
+        """Retrieve the user_id associated with a given sid."""
+        return self.sid_to_user.get(sid)

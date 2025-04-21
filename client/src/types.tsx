@@ -1,26 +1,3 @@
-export type StatusValue = 'online' | 'away' | 'offline';
-
-export interface FriendStatus {
-  user_id: string;
-  status: StatusValue;
-  last_changed: string;
-}
-
-// Client events (events sent from client to server)
-export enum ClientEvents {
-  UPDATE_STATUS = "presence:update_status",
-  REQUEST_FRIEND_STATUSES = "presence:request_friend_statuses"
-}
-
-// Server events (events sent from server to clients)
-export enum ServerEvents {
-  STATUS_UPDATED = "presence:status_updated",
-  FRIEND_STATUS_CHANGED = "presence:friend_status_changed",
-  FRIEND_STATUSES = "presence:friend_statuses",
-  ERROR = "presence:error",
-  REQUEST_STATUSES = 'presence:request_friend_statuses'
-}
-
 // Status types from models.py
 export enum StatusType {
   ONLINE = "online",
@@ -28,11 +5,31 @@ export enum StatusType {
   OFFLINE = "offline"
 }
 
+export interface FriendStatus {
+  userId: string;
+  status: StatusType;
+  lastChanged: string;
+}
+
+// Client events (events sent from client to server)
+export enum ClientEvents {
+  UPDATE_STATUS = "presence_update_status",
+  REQUEST_FRIEND_STATUSES = "presence_request_friend_statuses",
+}
+
+// Server events (events sent from server to clients)
+export enum ServerEvents {
+  STATUS_UPDATED = "presence_status_updated",
+  FRIEND_STATUS_CHANGED = "presence_friend_status_changed",
+  FRIEND_STATUSES = "presence_friend_statuses",
+  ERROR = "presence_error"
+}
+
 // User status interface from models.py
 export interface UserStatus {
-  user_id: string;
+  userId: string;
   status: StatusType;
-  last_changed: string;
+  lastChanged: string;
 }
 
 // Socket response interfaces
@@ -50,7 +47,7 @@ export interface ErrorResponse {
 }
 
 export interface User {
-  id: string;
+  userId: string;
   username: string;
   profile_picture_url: string | null;
 }

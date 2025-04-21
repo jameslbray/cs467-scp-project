@@ -155,3 +155,7 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+# Additional entries
+*.log
+*.dt
+*.idx
