@@ -17,6 +17,7 @@ import logging
 # Import the presence service components
 from services.presence.manager import PresenceManager
 from services.presence.websocket import SocketManager
+from utils.utils import CustomJSON
 # from services.presence.models import UserStatus, StatusType
 
 # Load environment variables from .env file
@@ -44,6 +45,7 @@ sio = socketio.AsyncServer(
         "http://localhost:5173",  # Explicitly allow React app
         "*"
         ],
+    json=CustomJSON,
     logger=True
 )
 
@@ -111,15 +113,26 @@ async def shutdown():
 
 
 @sio.event
-async def connect(sid, environ, auth=None):
+async def connect(sid: str, environ, auth: dict = None):
     """Handle new socket connection"""
-    logger.info(f"New client connected: {sid}")
+    logger.info(f"New client connected: {sid}. Auth received: {auth}")
 
-    # TODO: Do we need to auth here?
-    # If you need to authenticate before allowing connection:
-    auth_data = environ.get("HTTP_AUTHORIZATION", "")
-    if presence_manager:
-        await presence_manager.handle_connect(sid, {"userId": auth_data})
+    if auth:
+        # Assuming client sends {'userId': 'some_id'} in auth
+        user_id = auth.get("userId")
+        if user_id:
+            logger.info(f"Authenticated user {user_id} for sid {sid}")
+            if presence_manager:
+                # Pass the extracted user_id to the presence manager
+                await presence_manager.handle_connect(sid, auth)
+        else:
+            logger.warning(f"Auth data received for {sid} but missing 'userId'.")
+            # Consider disconnecting if userId is mandatory
+            # await sio.disconnect(sid)
+    else:
+        logger.warning(f"Connection attempt from {sid} without auth data.")
+        # Consider disconnecting if auth is mandatory
+        # await sio.disconnect(sid)
 
 
 # @sio.event
@@ -178,14 +191,19 @@ async def disconnect(sid):
 #     # elif data.get("event") == "presence:request_friend_statuses":
 #     #     await presence_request_friend_statuses(sid, data)
 
+
 @sio.event
-async def presence_request_friend_statuses(sid, data):
+async def presence_request_friend_statuses(sid: str, data: dict = None):
     """Handle request for friend statuses from a client."""
     # Assuming the user ID was stored during connection/authentication
     user_id = presence_manager.socket_manager.get_user_id_from_sid(sid)
     if user_id:
-        logger.info(f"Received presence_request_friend_statuses from {sid} "
-                    "for user {user_id}")
+        logger.info(
+            (
+                f"Received presence_request_friend_statuses from {sid} "
+                f"for user {user_id}"
+            )
+        )
         # TODO: Implement logic to fetch friend statuses
         # For now, just send a mock response
         await presence_manager.send_friend_statuses(user_id, sid)
@@ -195,7 +213,7 @@ async def presence_request_friend_statuses(sid, data):
 
 
 @sio.event
-async def presence_update_status(sid, data):
+async def presence_update_status(sid: str, data: dict):
     """"Handle presence update status from a client."""
     user_id = presence_manager.socket_manager.get_user_id_from_sid(sid)
     if user_id:

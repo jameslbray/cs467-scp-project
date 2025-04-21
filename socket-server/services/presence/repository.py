@@ -86,7 +86,7 @@ class StatusRepository:
                 ON CONFLICT (user_id) DO UPDATE
                 SET status = $2, last_status_change = $3
                 """,
-                user_status.user_id,
+                int(user_status.user_id),
                 user_status.status.value,
                 user_status.last_changed
             )
@@ -97,7 +97,8 @@ class StatusRepository:
             #     json.dumps(user_status.dict()),
             #     expire=300  # Cache for 5 minutes
             # )
-
+            self.logger.info(f"Updated status for user {user_status.user_id}"
+                             f"to {user_status.status.value}")
             return True
 
         except Exception as e:

@@ -15,7 +15,12 @@ const UserStatusDropdown: React.FC = () => {
   // Connect to socket server when component mounts
   useEffect(() => {
     // Initialize socket connection
-    const socketConnection = io('http://localhost:3001'); // Your server.py port
+    const socketConnection = io('http://localhost:3001',
+      {
+      auth: {
+        userId: userId
+      }
+    }); // Your server.py port
     setSocket(socketConnection);
     
     // Set up event listeners
