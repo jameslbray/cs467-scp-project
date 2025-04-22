@@ -1,4 +1,6 @@
-from pydantic import BaseSettings, Field, PostgresDsn
+from pydantic import Field, PostgresDsn
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from functools import lru_cache
 
 
 class Settings(BaseSettings):
@@ -15,9 +17,24 @@ class Settings(BaseSettings):
     RABBITMQ_URL: str = Field(..., env="RABBITMQ_URL")
     USERS_QUEUE: str = Field("users_tasks", env="USERS_QUEUE")
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Database settings
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_HOST: str
+    POSTGRES_PORT: str
+    POSTGRES_DB: str
+
+    # JWT settings
+    SECRET_KEY: str = "your-secret-key-here"  # Change in production!
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8"
+    )
 
 
-settings = Settings()
+@lru_cache()
+def get_settings():
+    return Settings()

@@ -1,23 +1,38 @@
-# services/chat/app/db/mongo.py
-
-import os
+import logging
 import motor.motor_asyncio
-from pydantic import BaseSettings
+from services.chat.app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+client: motor.motor_asyncio.AsyncIOMotorClient = None
+db: motor.motor_asyncio.AsyncIOMotorDatabase = None
 
 
-class MongoSettings(BaseSettings):
-    uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    db_name: str = os.getenv("MONGO_DB", "chat_db")
-
-
-settings = MongoSettings()
-
-client: motor.motor_asyncio.AsyncIOMotorClient | None = None
-db = None
-
-
-def init_mongo() -> None:
-    """Called on FastAPI startup to initialize the client."""
+async def init_mongo() -> None:
+    """Initialize MongoDB connection."""
     global client, db
-    client = motor.motor_asyncio.AsyncIOMotorClient(settings.uri)
-    db = client[settings.db_name]
+    try:
+        logger.info("Connecting to MongoDB...")
+        client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGO_URI)
+        db = client[settings.MONGO_DB]
+        # Verify connection
+        await db.command("ping")
+        logger.info("Successfully connected to MongoDB")
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {e}")
+        raise
+
+
+async def close_mongo_connection() -> None:
+    """Close MongoDB connection."""
+    global client
+    if client is not None:
+        client.close()
+        logger.info("MongoDB connection closed")
+
+
+def get_db() -> motor.motor_asyncio.AsyncIOMotorDatabase:
+    """Get database instance."""
+    if db is None:
+        raise RuntimeError("MongoDB not initialized")
+    return db
