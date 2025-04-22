@@ -18,6 +18,7 @@ import logging
 from services.presence.manager import PresenceManager
 from services.presence.websocket import SocketManager
 from utils.utils import CustomJSON
+from motor.motor_asyncio import AsyncIOMotorClient
 # from services.presence.models import UserStatus, StatusType
 
 # Load environment variables from .env file
@@ -37,6 +38,12 @@ DB_CONFIG = {
 }
 
 logger.info(f"DB_CONFIG: {DB_CONFIG}")
+
+# MongoDB connection properties
+MONGO_URL = "mongodb://username:password@ip:27017/scp-db"
+mongo_client = AsyncIOMotorClient(MONGO_URL)
+mongo_db = mongo_client["scp-db"]
+messages_collection = mongo_db["messages"]
 
 # Create a new Socket.IO server
 sio = socketio.AsyncServer(
@@ -134,12 +141,56 @@ async def connect(sid: str, environ, auth: dict = None):
         # Consider disconnecting if auth is mandatory
         # await sio.disconnect(sid)
 
+@sio.event
+async def send_message(sid, data):
+    """Handle new message and save to MongoDB (async with motor)"""
+    try:
+        logger.info(f"Received message: {data}")
 
-# @sio.event
-# async def join_room(sid, room):
-#     """Handle room join request"""
-#     sio.enter_room(sid, room)
-#     logger.info(f"Client {sid} joined room {room}")
+        required_fields = ['sender_id', 'room_id', 'recipient_ids', 'content', 'timestamp']
+        if not all(k in data for k in required_fields):
+            logger.warning("Missing required fields")
+            return
+
+        await messages_collection.insert_one({
+            "sender_id": data["sender_id"],
+            "room_id": data["room_id"],
+            "recipient_ids": data["recipient_ids"],
+            "content": data["content"],
+            "timestamp": data["timestamp"],
+            "has_emoji": data.get("has_emoji", False)
+        })
+
+        await sio.emit("chat_message", data, room=data["room_id"])
+        logger.info(f"Message stored and sent to room {data['room_id']}")
+
+    except Exception as e:
+        logger.error(f"Error saving message to MongoDB: {e}")
+
+@sio.event
+async def fetch_recent_messages(sid, data):
+    room_id = data.get("room_id")
+    if not room_id:
+        logger.warning("No room_id provided")
+        return
+
+    messages_cursor = messages_collection.find(
+        {"room_id": room_id}
+    ).sort("timestamp", -1).limit(10)
+
+    messages = await messages_cursor.to_list(length=10)
+    messages.reverse()
+    for msg in messages:
+        if "_id" in msg:
+            msg["_id"] = str(msg["_id"])
+    await sio.emit("recent_messages", {"messages": messages}, to=sid)
+
+@sio.event
+async def join_room(sid, data):
+    room = data.get("room")
+    if room:
+        await sio.enter_room(sid, room) 
+        logger.info(f"Client {sid} joined room {room}")
 
 
 # @sio.event

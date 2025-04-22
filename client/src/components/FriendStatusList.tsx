@@ -15,7 +15,7 @@ interface FriendStatusListProps {
       <div>
         <h2>Friend Statuses</h2>
         {Object.values(statuses).map((status) => ( // Use Object.values if key isn't needed here
-          <FriendStatusItem key={status.user_id} status={status} />
+          <FriendStatusItem key={status.userId} status={status} />
         ))}
       </div>
     );
