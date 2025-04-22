@@ -1,66 +1,113 @@
-import logging
-import uvicorn
-from fastapi import FastAPI
+"""
+Main application module for the socket-io service.
+"""
 
-from app.core.service_connector import ServiceConnector
-from app.core.config import settings
+import logging
+import os
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import asyncpg
+
+from app.core.socket_server import SocketServer
+from app.core.presence_manager import PresenceManager
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Database configuration
+DB_CONFIG = {
+    "user": os.getenv("PG_USER", "?"),
+    "password": os.getenv("PG_PASSWORD", "?"),
+    "host": os.getenv("PG_HOST", "?"),
+    "database": os.getenv("PG_DATABASE", "?"),
+    "port": int(os.getenv("PG_PORT", "5432")),
+}
+
 # Create FastAPI app
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.VERSION,
+app = FastAPI(title="Socket.IO Service")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Create Socket.IO service connector
-socket_connector = ServiceConnector("socket-io", settings.SOCKET_IO_URL)
+# Create socket server
+socket_server = SocketServer()
 
-# Add API routers if needed
-# app.include_router(api_router, prefix=settings.API_PREFIX)
+# Create presence manager
+presence_manager = PresenceManager(
+    socket_server,
+    {
+        "postgres": DB_CONFIG,
+        "rabbitmq": {
+            "url": os.getenv(
+                "RABBITMQ_URL",
+                "amqp://guest:guest@localhost:5672/"
+            )
+        }
+    }
+)
+
+# Initialize database pool
+db_pool = None
+
+
+async def setup_database():
+    """Initialize database connection pool"""
+    global db_pool
+    logger.info("Connecting to PostgreSQL database...")
+    db_pool = await asyncpg.create_pool(**DB_CONFIG)
+    logger.info("Database connection established")
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize services on startup"""
-    try:
-        await socket_connector.initialize()
-        logger.info("Socket.IO service started successfully")
-    except Exception as e:
-        logger.error(f"Error starting Socket.IO service: {e}")
-        raise
+    """Initialize services on startup."""
+    logger.info("Starting Socket.IO service...")
+
+    # Setup database connection
+    await setup_database()
+
+    # Initialize socket server
+    await socket_server.initialize()
+
+    # Initialize presence manager
+    await presence_manager.initialize()
+
+    logger.info("Socket.IO service started successfully")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Clean up resources on shutdown"""
-    try:
-        await socket_connector.shutdown()
-        logger.info("Socket.IO service shut down successfully")
-    except Exception as e:
-        logger.error(f"Error shutting down Socket.IO service: {e}")
+    """Cleanup on shutdown."""
+    logger.info("Shutting down Socket.IO service...")
+
+    # Shutdown presence manager
+    await presence_manager.shutdown()
+
+    # Shutdown socket server
+    await socket_server.shutdown()
+
+    # Close database connection
+    if db_pool:
+        await db_pool.close()
+
+    logger.info("Socket.IO service shut down successfully")
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint."""
     return {"status": "healthy"}
 
-
-def start():
-    """Start the Socket.IO service"""
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )
-
-
-if __name__ == "__main__":
-    start()
+# Mount Socket.IO app
+app.mount("/", socket_server.app)
