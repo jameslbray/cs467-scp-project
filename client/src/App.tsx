@@ -1,8 +1,15 @@
 // App.tsx or similar component
 import React, { useEffect, useState } from 'react';
 import UserStatusDropdown from './components/UserStatusDropdown.tsx';
+import ChatInput from './components/ChatInput.tsx';
+import MessageList from './components/MessageList.tsx';
+
 import { io, Socket } from 'socket.io-client';
 import { ServerEvents, UserStatus, User, ClientEvents } from './types';
+
+const socket = io('http://localhost:3001', {
+  auth: { userId: '1' },
+});
 
 const App: React.FC = () => {
   // const [socket, setSocket] = useState<Socket | null>(null);
@@ -73,8 +80,13 @@ const App: React.FC = () => {
   // The component below also calls all of the same socket events as the one above
   return (
     <div>
-        <UserStatusDropdown
-         />
+      <div>
+        <UserStatusDropdown />
+      </div>
+      <div>
+        <MessageList roomId="test-room" socket={socket} />
+        <ChatInput roomId="test-room" senderId="1" recipientIds={['2', '3']} socket={socket} />
+      </div>
     </div>
   );
 };
