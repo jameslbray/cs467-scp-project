@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.presence_manager import PresenceManager
+from app.core.config import settings
 
 # Load environment variables
 load_dotenv()
@@ -23,7 +24,7 @@ app = FastAPI(title="Presence Service")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,6 +38,13 @@ presence_manager = PresenceManager(
                 "RABBITMQ_URL",
                 "amqp://guest:guest@localhost:5672/"
             )
+        },
+        "postgres": {
+            "user": os.getenv("PG_USER", "postgres"),
+            "password": os.getenv("PG_PASSWORD", "postgres"),
+            "host": os.getenv("PG_HOST", "localhost"),
+            "database": os.getenv("PG_DATABASE", "presence"),
+            "port": int(os.getenv("PG_PORT", "5432")),
         }
     }
 )
@@ -68,6 +76,3 @@ async def shutdown_event():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
-
-# Mount Socket.IO app
-app.mount("/", presence_manager.app)
