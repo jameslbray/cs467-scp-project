@@ -10,6 +10,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -33,6 +34,10 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    # Relationship to blacklisted tokens
+    blacklisted_tokens = relationship(
+        "BlacklistedToken", back_populates="user")
 
 
 class UserStatus(Base):
@@ -65,3 +70,17 @@ class UserStatus(Base):
     )
 
     user = relationship("User", back_populates="status")
+
+
+class BlacklistedToken(Base):
+    __tablename__ = "blacklisted_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    username = Column(String)
+    blacklisted_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime)
+
+    # Relationship to user (optional)
+    user = relationship("User", back_populates="blacklisted_tokens")

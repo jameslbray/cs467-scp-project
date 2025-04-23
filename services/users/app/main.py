@@ -1,10 +1,17 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from datetime import timedelta
-from typing import List
+from datetime import timedelta, datetime
+from slowapi import (
+    Limiter,
+    _rate_limit_exceeded_handler
+)
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .db import models, database
 from .schemas import User, UserCreate, Token
@@ -14,12 +21,49 @@ from .core.rabbitmq import UserRabbitMQClient
 # Create database tables
 models.Base.metadata.create_all(bind=database.engine)
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
+# Security headers middleware
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        return response
+
+
 # Create FastAPI application
 app = FastAPI(
     title="User Service API",
     description="Service for managing user authentication and profiles",
     version="0.1.0",
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add rate limiter to the app
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded, _rate_limit_exceeded_handler
+)
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -38,7 +82,14 @@ async def register_user(user: UserCreate, db: Session = Depends(database.get_db)
     if db_user:
         raise HTTPException(
             status_code=400,
-            detail="Email or username already registered"
+            detail="Email or Username already registered"
+        )
+
+    # Validate password strength
+    if not security.validate_password_strength(user.password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character"
         )
 
     # Create new user
@@ -66,7 +117,9 @@ async def register_user(user: UserCreate, db: Session = Depends(database.get_db)
 
 
 @app.post("/token", response_model=Token)
+@limiter.limit("5/minute")
 async def login_for_access_token(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(database.get_db)
 ):
@@ -93,7 +146,7 @@ async def login_for_access_token(
         }
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return access_token
 
 
 @app.get("/users/me", response_model=User)
@@ -113,6 +166,50 @@ async def root():
 async def health_check():
     """Health check endpoint for the service."""
     return {"status": "healthy"}
+
+
+def cleanup_expired_tokens(db: Session):
+    """Remove expired tokens from the blacklist."""
+    now = datetime.utcnow()
+    expired_tokens = db.query(models.BlacklistedToken).filter(
+        models.BlacklistedToken.expires_at < now
+    ).all()
+
+    for token in expired_tokens:
+        db.delete(token)
+
+    db.commit()
+    return len(expired_tokens)
+
+
+@app.post("/logout")
+async def logout(
+    current_user: User = Depends(security.get_current_user),
+    token: str = Depends(security.oauth2_scheme),
+    db: Session = Depends(database.get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Logout the current user by blacklisting their token."""
+    security.blacklist_token(
+        token=token,
+        db=db,
+        user_id=current_user.id,
+        username=current_user.username
+    )
+
+    # Schedule cleanup of expired tokens
+    background_tasks.add_task(cleanup_expired_tokens, db)
+
+    # Publish user logout event
+    await rabbitmq_client.publish_user_event(
+        "user_logged_out",
+        {
+            "user_id": current_user.id,
+            "username": current_user.username
+        }
+    )
+
+    return {"message": "Successfully logged out"}
 
 
 @app.on_event("startup")

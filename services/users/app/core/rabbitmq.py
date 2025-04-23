@@ -1,4 +1,5 @@
-from rabbitmq_client import RabbitMQClient
+# Try different import approaches to ensure compatibility
+from services.rabbitmq.core.client import RabbitMQClient
 import logging
 import json
 
