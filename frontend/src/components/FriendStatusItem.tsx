@@ -7,8 +7,8 @@ interface FriendStatusItemProps {
 
 const FriendStatusItem: React.FC<FriendStatusItemProps> = ({ status }) => {
     return (
-        <div key={status.user_id}>
-            {status.user_id}: {status.status}
+        <div key={status.userId}>
+            {status.userId}: {status.status}
         </div>
     );
 };
