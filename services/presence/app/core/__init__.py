@@ -1,0 +1,2 @@
+# Presence service core module
+

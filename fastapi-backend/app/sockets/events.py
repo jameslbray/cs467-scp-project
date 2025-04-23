@@ -1,1 +1,0 @@
-# contains event handler functions for chat messages

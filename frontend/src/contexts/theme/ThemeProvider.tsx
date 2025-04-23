@@ -1,0 +1,60 @@
+import React, { useState, useEffect } from 'react';
+import { ThemeContext } from './useTheme';
+
+const getInitialDarkMode = (): boolean => {
+  // Check if we're in a browser environment
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  // Check localStorage first
+  const stored = localStorage.getItem('darkMode');
+  if (stored !== null) {
+    return stored === 'true';
+  }
+
+  // Fall back to system preference
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+};
+
+export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [darkMode, setDarkMode] = useState<boolean>(getInitialDarkMode);
+
+  const toggleDarkMode = () => {
+    setDarkMode(prev => {
+      const newValue = !prev;
+      // Only access localStorage in browser environment
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('darkMode', String(newValue));
+      }
+      return newValue;
+    });
+  };
+
+  useEffect(() => {
+    // Only run in browser environment
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  const value = React.useMemo(
+    () => ({
+      darkMode,
+      toggleDarkMode,
+    }),
+    [darkMode]
+  );
+
+  return (
+    <ThemeContext.Provider value={value}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}; 
