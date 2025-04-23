@@ -1,6 +1,6 @@
 // API service for authentication and other API calls
 
-const API_BASE_URL = 'http://localhost:8005';
+const API_BASE_URL = 'http://localhost:8000';
 
 // Helper function to get headers with authentication
 const getAuthHeaders = () => {
@@ -35,17 +35,21 @@ export const authApi = {
   },
   
   register: async (username: string, password: string, email: string) => {
+    const requestData = { username, password, email };
+    console.log('Registration request data:', requestData);
+    
     const response = await fetch(`${API_BASE_URL}/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ username, password, email }),
+      body: JSON.stringify(requestData),
     });
     
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.message || 'Registration failed');
+      console.error('Registration error:', errorData);
+      throw new Error(errorData.detail || 'Registration failed');
     }
     
     return response.json();
