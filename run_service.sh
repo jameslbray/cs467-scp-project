@@ -1,30 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Get the project root directory
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Function to display usage information
 function show_usage {
-    echo "Usage: $0 [service_name] [options]"
-    echo ""
-    echo "Available services:"
-    echo "  users         - Run the users service"
-    echo "  rabbitmq      - Run the RabbitMQ service"
-    echo "  auth          - Run the authentication service"
-    echo "  notifications - Run the notifications service"
-    echo "  presence      - Run the presence service"
-    echo "  socket-io     - Run the socket-io service"
-    echo "  chat          - Run the chat service"
-    echo "  -a, --all     - Run all services in separate processes"
-    echo ""
-    echo "Options:"
-    echo "  --port PORT   - Specify a custom port (default varies by service)"
-    echo "  --workers N   - Specify number of workers (default: 1)"
-    echo "  --help        - Show this help message"
-    echo ""
-    echo "Examples:"
-    echo "  $0 users --port 8005 --workers 2"
-    echo "  $0 -a     # Run all services"
+    cat << EOF
+Usage: $0 [service_name] [options]
+
+Available services:
+  users         - Run the users service
+  rabbitmq      - Run the RabbitMQ service
+  auth          - Run the authentication service
+  notifications - Run the notifications service
+  presence      - Run the presence service
+  socket-io     - Run the socket-io service
+  chat          - Run the chat service
+  -a, --all     - Run all services in separate processes
+
+Options:
+  --port PORT   - Specify a custom port (default varies by service)
+  --workers N   - Specify number of workers (default: 1)
+  --help        - Show this help message
+
+Examples:
+  $0 users --port 8005 --workers 2
+  $0 -a     # Run all services
+EOF
 }
 
 # Function to run a single service
@@ -32,7 +34,7 @@ function run_service {
     local service=$1
     local port=$2
     local workers=$3
-    
+
     case $service in
         users)
             DEFAULT_PORT=8005
@@ -89,7 +91,7 @@ function run_service {
     export UVICORN_LOOP=asyncio
     export UVICORN_HTTP=auto
     export UVICORN_USE_UVLOOP=0
-    
+
     gunicorn app.main:app \
         --workers $actual_workers \
         --worker-class uvicorn.workers.UvicornWorker \
@@ -187,4 +189,4 @@ else
         exit 1
     fi
     run_service "$SERVICE" "$PORT" "$WORKERS"
-fi 
+fi
