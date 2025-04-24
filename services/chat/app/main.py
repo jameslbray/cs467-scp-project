@@ -24,7 +24,7 @@ async def root():
     return {
         "message": "Welcome to the Chat Service API",
         "service": "chat-service",
-        "status": "operational"
+        "status": "operational",
     }
 
 
@@ -45,20 +45,15 @@ async def test_mongo_connection():
             "status": "success",
             "message": "Successfully connected to MongoDB",
             "collections": collections,
-            "database": database.name
+            "database": database.name,
         }
     except RuntimeError as e:
         logger.error(f"MongoDB not initialized: {e}")
-        return {
-            "status": "error",
-            "message": "MongoDB not initialized"
-        }
+        return {"status": "error", "message": "MongoDB not initialized"}
     except Exception as e:
         logger.error(f"MongoDB connection error: {e}")
-        return {
-            "status": "error",
-            "message": f"Failed to connect to MongoDB: {str(e)}"
-        }
+        return {"status": "error", "message": f"Failed to connect to MongoDB: {str(e)}"}
+
 
 # Include routers
 app.include_router(api_router, prefix="/api")
@@ -90,6 +85,8 @@ async def shutdown():
     await rabbitmq_client.close()
     await close_mongo_connection()
     logger.info("Chat service shutdown complete")
+
+
 # Register additional event handlers if needed
 # These event handlers are now managed in the SocketService class
 # Add any custom message handlers here if they're not in the SocketService

@@ -34,5 +34,6 @@ async def seed_mongo() -> None:
     result = await db.message_logs.insert_many(docs)
     print(f"✅ Inserted {len(result.inserted_ids)} message logs.")
 
+
 if __name__ == "__main__":
     asyncio.run(seed_mongo())

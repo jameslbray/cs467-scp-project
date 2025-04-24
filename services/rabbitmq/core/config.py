@@ -8,10 +8,8 @@ class Settings(BaseSettings):
     RABBITMQ_USER: str = "guest"
     RABBITMQ_PASSWORD: str = "guest"
     RABBITMQ_VHOST: str = "/"
-    
+
     # Allow extra fields from environment variables
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="allow"
+        env_file=".env", env_file_encoding="utf-8", extra="allow"
     )

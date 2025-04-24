@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class StatusType(str, Enum):
     """User status types."""
+
     ONLINE = "online"
     OFFLINE = "offline"
     AWAY = "away"
@@ -25,7 +26,8 @@ class StatusType(str, Enum):
 class UserStatus:
     """User status model."""
 
-    def __init__(self, user_id: str, status: StatusType, last_changed: float = None):
+    def __init__(self, user_id: str, status: StatusType,
+                 last_changed: float = None):
         self.user_id = user_id
         self.status = status
         self.last_changed = last_changed or datetime.now().timestamp()
@@ -35,7 +37,7 @@ class UserStatus:
         return {
             "user_id": self.user_id,
             "status": self.status.value,
-            "last_changed": self.last_changed
+            "last_changed": self.last_changed,
         }
 
 
@@ -46,7 +48,8 @@ class PresenceManager:
         """Initialize the presence manager.
 
         Args:
-            config: Configuration dictionary containing RabbitMQ and other settings
+            config: Configuration dictionary containing RabbitMQ and other
+            settings
         """
         self.config = config
         self.rabbitmq_connection = None
@@ -92,16 +95,19 @@ class PresenceManager:
             # Create tables if they don't exist
             async with self.db_pool.acquire() as conn:
                 # Create user_status table
-                await conn.execute("""
+                await conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS user_status (
                         user_id TEXT PRIMARY KEY,
                         status TEXT NOT NULL,
                         last_changed TIMESTAMP NOT NULL
                     )
-                """)
+                """
+                )
 
                 # Create connections table
-                await conn.execute("""
+                await conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS connections (
                         user_id TEXT NOT NULL,
                         connected_user_id TEXT NOT NULL,
@@ -109,7 +115,8 @@ class PresenceManager:
                         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                         PRIMARY KEY (user_id, connected_user_id)
                     )
-                """)
+                """
+                )
 
             logger.info("Database tables initialized")
         except Exception as e:
@@ -128,16 +135,15 @@ class PresenceManager:
             self.rabbitmq_channel = await self.rabbitmq_connection.channel()
 
             # Declare exchange
-            self.rabbitmq_exchange = await self.rabbitmq_channel.declare_exchange(
-                "user_events",
-                aio_pika.ExchangeType.TOPIC,
-                durable=True
+            self.rabbitmq_exchange = await (
+                self.rabbitmq_channel.declare_exchange(
+                    "user_events", aio_pika.ExchangeType.TOPIC, durable=True
+                )
             )
 
             # Declare queue
             queue = await self.rabbitmq_channel.declare_queue(
-                "presence_updates",
-                durable=True
+                "presence_updates", durable=True
             )
 
             # Bind queue to exchange
@@ -151,7 +157,9 @@ class PresenceManager:
             logger.error(f"Failed to connect to RabbitMQ: {e}")
             raise
 
-    async def _process_presence_message(self, message: aio_pika.IncomingMessage) -> None:
+    async def _process_presence_message(
+        self, message: aio_pika.IncomingMessage
+    ) -> None:
         """Process a presence message from RabbitMQ."""
         async with message.process():
             try:
@@ -164,26 +172,23 @@ class PresenceManager:
                 if user_id and status:
                     # Update user status
                     await self._update_user_status(
-                        user_id,
-                        StatusType(status),
-                        last_changed
+                        user_id, StatusType(status), last_changed
                     )
             except Exception as e:
                 logger.error(f"Error processing presence message: {e}")
 
     async def _update_user_status(
-        self,
-        user_id: str,
-        status: StatusType,
-        last_changed: float = None
+        self, user_id: str, status: StatusType, last_changed: float = None
     ) -> None:
         """Update a user's status."""
         # Update in-memory data
         if user_id in self.presence_data:
-            self.presence_data[user_id].update({
-                "status": status.value,
-                "last_seen": last_changed or datetime.now().timestamp()
-            })
+            self.presence_data[user_id].update(
+                {
+                    "status": status.value,
+                    "last_seen": last_changed or datetime.now().timestamp(),
+                }
+            )
 
             # Save to database
             await self._save_user_status(user_id, status, last_changed)
@@ -195,10 +200,7 @@ class PresenceManager:
             await self._notify_friends(user_id, status)
 
     async def _save_user_status(
-        self,
-        user_id: str,
-        status: StatusType,
-        last_changed: float = None
+        self, user_id: str, status: StatusType, last_changed: float = None
     ) -> None:
         """Save user status to database."""
         if not self.db_pool:
@@ -208,20 +210,22 @@ class PresenceManager:
         try:
             last_changed = last_changed or datetime.now().timestamp()
             async with self.db_pool.acquire() as conn:
-                await conn.execute("""
+                await conn.execute(
+                    """
                     INSERT INTO user_status (user_id, status, last_changed)
                     VALUES ($1, $2, $3)
                     ON CONFLICT (user_id) DO UPDATE
                     SET status = $2, last_changed = $3
-                """, user_id, status.value, last_changed)
+                """,
+                    user_id,
+                    status.value,
+                    last_changed,
+                )
         except Exception as e:
             logger.error(f"Failed to save user status: {e}")
 
     async def _publish_status_update(
-        self,
-        user_id: str,
-        status: StatusType,
-        last_changed: float = None
+        self, user_id: str, status: StatusType, last_changed: float = None
     ) -> None:
         """Publish status update to RabbitMQ."""
         if not self.rabbitmq_exchange:
@@ -230,16 +234,18 @@ class PresenceManager:
 
         try:
             message = aio_pika.Message(
-                body=json.dumps({
-                    "user_id": user_id,
-                    "status": status.value,
-                    "last_changed": last_changed or datetime.now().timestamp()
-                }).encode(),
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                body=json.dumps(
+                    {
+                        "user_id": user_id,
+                        "status": status.value,
+                        "last_changed": last_changed
+                        or datetime.now().timestamp(),  # type: ignore
+                    }
+                ).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
             )
             await self.rabbitmq_exchange.publish(
-                message,
-                routing_key=f"status.{user_id}"
+                message, routing_key=f"status.{user_id}"
             )
         except Exception as e:
             logger.error(f"Failed to publish status update: {e}")
@@ -274,7 +280,7 @@ class PresenceManager:
                     WHERE user_id = $1 AND connection_status = 'accepted'
                     UNION
                     SELECT user_id FROM connections
-                    WHERE connected_user_id = $1 
+                    WHERE connected_user_id = $1
                     AND connection_status = 'accepted'
                 """
                 rows = await conn.fetch(query, user_id)
@@ -297,17 +303,20 @@ class PresenceManager:
 
         try:
             async with self.db_pool.acquire() as conn:
-                row = await conn.fetchrow("""
+                row = await conn.fetchrow(
+                    """
                     SELECT user_id, status, last_changed
                     FROM user_status
                     WHERE user_id = $1
-                """, user_id)
+                """,
+                    user_id,
+                )
 
                 if row:
                     return UserStatus(
                         user_id=row["user_id"],
                         status=StatusType(row["status"]),
-                        last_changed=row["last_changed"].timestamp()
+                        last_changed=row["last_changed"].timestamp(),
                     )
                 return None
         except Exception as e:
@@ -319,7 +328,7 @@ class PresenceManager:
         presence_data = self.presence_data.get(user_id, {})
         return {
             "status": presence_data.get("status", StatusType.OFFLINE.value),
-            "last_seen": presence_data.get("last_seen", 0)
+            "last_seen": presence_data.get("last_seen", 0),
         }
 
     def set_user_status(self, user_id: str, status: str) -> bool:
@@ -329,10 +338,10 @@ class PresenceManager:
 
         try:
             status_type = StatusType(status)
-            self.presence_data[user_id].update({
-                "status": status_type.value,
-                "last_seen": datetime.now().timestamp()
-            })
+            self.presence_data[user_id].update(
+                {"status": status_type.value,
+                 "last_seen": datetime.now().timestamp()}
+            )
             logger.info(f"User {user_id} status set to {status}")
             return True
         except ValueError:

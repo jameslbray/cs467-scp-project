@@ -40,7 +40,7 @@ class JWTTokenData(BaseModel):
     iat: Optional[datetime] = None
     jti: Optional[str] = None
 
-    @field_validator('jti', mode='before')
+    @field_validator("jti", mode="before")
     @classmethod
     def default_jti(cls, v: Optional[str]) -> str:
         """Generate a random UUID for the token ID if not provided"""

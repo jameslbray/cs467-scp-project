@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, List, Any
 from datetime import datetime
+from services.presence.app.core.presence_manager import PresenceManager
 
 from services.socket_io.app.core.service_connector import ServiceConnector
 from services.socket_io.app.core.event_schema import EventType
@@ -14,9 +15,7 @@ class FriendManager:
     """
 
     def __init__(
-        self,
-        socket_connector: ServiceConnector,
-        presence_manager: 'PresenceManager'
+        self, socket_connector: ServiceConnector, presence_manager: "PresenceManager"
     ):
         """
         Initialize the Friend Manager.
@@ -35,8 +34,7 @@ class FriendManager:
             return
 
         self.socket_connector.on_event(
-            EventType.PRESENCE_QUERY,
-            self._handle_presence_query
+            EventType.PRESENCE_QUERY, self._handle_presence_query
         )
 
         self._initialized = True
@@ -48,17 +46,13 @@ class FriendManager:
             return
 
         self.socket_connector.off_event(
-            EventType.PRESENCE_QUERY,
-            self._handle_presence_query
+            EventType.PRESENCE_QUERY, self._handle_presence_query
         )
 
         self._initialized = False
         logger.info("Friend manager closed")
 
-    async def _handle_presence_query(
-        self,
-        event: Dict[str, Any]
-    ) -> None:
+    async def _handle_presence_query(self, event: Dict[str, Any]) -> None:
         """Handle presence query event."""
         user_id = event.get("user_id")
         query_user_id = event.get("query_user_id")
@@ -73,54 +67,45 @@ class FriendManager:
             EventType.PRESENCE_UPDATE,
             user_id=query_user_id,
             status=status_data.get("status", "unknown"),
-            last_seen=status_data.get("last_seen", 0)
+            last_seen=status_data.get("last_seen", 0),
         )
 
         logger.info(f"User {user_id} queried status of user {query_user_id}")
 
-    async def notify_presence_change(
-        self,
-        user_id: str,
-        status: str
-    ) -> None:
+    async def notify_presence_change(self, user_id: str, status: str) -> None:
         """Notify friends about a user's presence change."""
         friend_ids = await self._get_friend_ids(user_id)
         presence_data = self.presence_manager.get_user_status(user_id)
         last_seen = presence_data.get("last_seen", datetime.now().timestamp())
 
         for friend_id in friend_ids:
-            await this.socket_connector.emit_to_user(
+            await self.socket_connector.emit_to_user(
                 friend_id,
                 EventType.PRESENCE_UPDATE,
                 user_id=user_id,
                 status=status,
-                last_seen=last_seen
+                last_seen=last_seen,
             )
 
         logger.debug(
-            f"Notified {len(friend_ids)} friends about {user_id}'s {status} status"
+            f"Notified {len(friend_ids)} friends about " f"{user_id}'s {status} status"
         )
 
-    async def send_friend_statuses(
-        self,
-        user_id: str,
-        sid: str
-    ) -> None:
+    async def send_friend_statuses(self, user_id: str, sid: str) -> None:
         """Send friend statuses to a user."""
-        friend_ids = await this._get_friend_ids(user_id)
+        friend_ids = await self._get_friend_ids(user_id)
 
         for friend_id in friend_ids:
-            status_data = this.presence_manager.get_user_status(friend_id)
-            await this.socket_connector.emit_to_client(
+            status_data = self.presence_manager.get_user_status(friend_id)
+            await self.socket_connector.emit_to_client(
                 sid,
                 EventType.PRESENCE_UPDATE,
                 user_id=friend_id,
                 status=status_data.get("status", "unknown"),
-                last_seen=status_data.get("last_seen", 0)
+                last_seen=status_data.get("last_seen", 0),
             )
 
-        logger.debug(
-            f"Sent {len(friend_ids)} friend statuses to user {user_id}")
+        logger.debug(f"Sent {len(friend_ids)} friend statuses to user {user_id}")
 
     async def _get_friend_ids(self, user_id: str) -> List[str]:
         """Get a user's friend IDs."""

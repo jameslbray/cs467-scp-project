@@ -4,6 +4,7 @@ from enum import Enum
 
 class EventType(str, Enum):
     """Standard event types for service-to-service communication."""
+
     # User events
     USER_CONNECTED = "user:connected"
     USER_DISCONNECTED = "user:disconnected"
@@ -28,6 +29,7 @@ class EventType(str, Enum):
 
 class UserStatus(str, Enum):
     """User status types."""
+
     ONLINE = "online"
     OFFLINE = "offline"
     AWAY = "away"
@@ -36,6 +38,7 @@ class UserStatus(str, Enum):
 
 class BaseEvent(TypedDict):
     """Base event structure."""
+
     type: EventType
     timestamp: float
     source: str  # Service that emitted the event
@@ -43,12 +46,14 @@ class BaseEvent(TypedDict):
 
 class UserEvent(BaseEvent):
     """User-related event structure."""
+
     user_id: str
     data: Dict[str, Any]
 
 
 class ChatEvent(BaseEvent):
     """Chat-related event structure."""
+
     sender_id: str
     recipient_id: str
     message_id: str
@@ -58,6 +63,7 @@ class ChatEvent(BaseEvent):
 
 class PresenceEvent(BaseEvent):
     """Presence-related event structure."""
+
     user_id: str
     status: UserStatus
     last_seen: float
@@ -66,6 +72,7 @@ class PresenceEvent(BaseEvent):
 
 class NotificationEvent(BaseEvent):
     """Notification event structure."""
+
     recipient_id: str
     title: str
     message: str
@@ -75,21 +82,17 @@ class NotificationEvent(BaseEvent):
 
 class SystemEvent(BaseEvent):
     """System event structure."""
+
     level: str  # info, warning, error
     message: str
     details: Optional[Dict[str, Any]]
 
 
 # Type for all possible event types
-Event = Union[UserEvent, ChatEvent,
-              PresenceEvent, NotificationEvent, SystemEvent]
+Event = Union[UserEvent, ChatEvent, PresenceEvent, NotificationEvent, SystemEvent]
 
 
-def create_event(
-    event_type: EventType,
-    source: str,
-    **kwargs
-) -> Event:
+def create_event(event_type: EventType, source: str, **kwargs) -> Event:
     """Create a properly formatted event.
 
     Args:
@@ -102,10 +105,6 @@ def create_event(
     """
     import time
 
-    base_event = {
-        "type": event_type,
-        "timestamp": time.time(),
-        "source": source
-    }
+    base_event = {"type": event_type, "timestamp": time.time(), "source": source}
 
     return {**base_event, **kwargs}

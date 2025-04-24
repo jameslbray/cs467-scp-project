@@ -11,12 +11,9 @@ from sqlalchemy.orm import Session
 from ..db.database import get_db
 from ..db.models import User as DBUser, BlacklistedToken
 from ..schemas import User, JWTTokenData, Token
+from .config import get_settings
 
-# to get a string like this run:
-# openssl rand -hex 32
-SECRET_KEY = "your-secret-key-here"  # Change this in production!
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -30,9 +27,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(
-    data: dict, expires_delta: Optional[timedelta] = None
-) -> Token:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> Token:
     to_encode = data.copy()
     now = datetime.utcnow()
 
@@ -44,28 +39,27 @@ def create_access_token(
 
     # Create JWT token data
     token_data = JWTTokenData(
-        username=data.get("sub"),
-        exp=expire,
-        iat=now,
-        jti=str(uuid.uuid4())
+        username=data.get("sub"), exp=expire, iat=now, jti=str(uuid.uuid4())
     )
 
     # Convert to dict for JWT encoding
     to_encode.update(token_data.model_dump(exclude_none=True))
 
     # Encode the JWT
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-    # Return Token model with access_token, token_type, and expires_at
-    return Token(
-        access_token=encoded_jwt,
-        token_type="bearer",
-        expires_at=expire
+    encoded_jwt = jwt.encode(
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
     )
 
+    # Return Token model with access_token, token_type, and expires_at
+    return Token(access_token=encoded_jwt, token_type="bearer", expires_at=expire)
 
-def blacklist_token(token: str, db: Session, user_id: Optional[int] = None,
-                    username: Optional[str] = None) -> None:
+
+def blacklist_token(
+    token: str,
+    db: Session,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+) -> None:
     """
     Add a token to the blacklist in the database.
 
@@ -77,14 +71,18 @@ def blacklist_token(token: str, db: Session, user_id: Optional[int] = None,
     """
     try:
         # Decode the token to get expiration time
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
         exp_timestamp = payload.get("exp")
 
         if exp_timestamp:
             expires_at = datetime.fromtimestamp(exp_timestamp)
         else:
             # Default expiration if not found in token
-            expires_at = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            expires_at = datetime.utcnow() + timedelta(
+                minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+            )
 
         # Create blacklisted token record
         blacklisted_token = BlacklistedToken(
@@ -92,7 +90,7 @@ def blacklist_token(token: str, db: Session, user_id: Optional[int] = None,
             user_id=user_id,
             username=username,
             blacklisted_at=datetime.utcnow(),
-            expires_at=expires_at
+            expires_at=expires_at,
         )
 
         db.add(blacklisted_token)
@@ -105,7 +103,7 @@ def blacklist_token(token: str, db: Session, user_id: Optional[int] = None,
             user_id=user_id,
             username=username,
             blacklisted_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(days=30)  # Default 30 days
+            expires_at=datetime.utcnow() + timedelta(days=30),  # Default 30 days
         )
 
         db.add(blacklisted_token)
@@ -124,9 +122,9 @@ def is_token_blacklisted(token: str, db: Session) -> bool:
         bool: True if token is blacklisted, False otherwise
     """
     # Check if token exists in blacklist
-    blacklisted = db.query(BlacklistedToken).filter(
-        BlacklistedToken.token == token
-    ).first()
+    blacklisted = (
+        db.query(BlacklistedToken).filter(BlacklistedToken.token == token).first()
+    )
 
     return blacklisted is not None
 
@@ -154,7 +152,9 @@ def get_token_data(token: str, db: Session) -> JWTTokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
         username: str = payload.get("sub")
         if username is None:
             raise HTTPException(
@@ -166,11 +166,17 @@ def get_token_data(token: str, db: Session) -> JWTTokenData:
         # Parse JWT payload into JWTTokenData model
         token_data = JWTTokenData(
             username=username,
-            exp=datetime.fromtimestamp(payload.get(
-                "exp")) if payload.get("exp") else None,
-            iat=datetime.fromtimestamp(payload.get(
-                "iat")) if payload.get("iat") else None,
-            jti=payload.get("jti")
+            exp=(
+                datetime.fromtimestamp(payload.get("exp"))
+                if payload.get("exp")
+                else None
+            ),
+            iat=(
+                datetime.fromtimestamp(payload.get("iat"))
+                if payload.get("iat")
+                else None
+            ),
+            jti=payload.get("jti"),
         )
         return token_data
     except JWTError:
@@ -188,8 +194,7 @@ async def get_current_user(
     token_data = get_token_data(token, db)
 
     # Get user from database
-    user = db.query(DBUser).filter(
-        DBUser.username == token_data.username).first()
+    user = db.query(DBUser).filter(DBUser.username == token_data.username).first()
 
     if user is None:
         raise HTTPException(
@@ -203,13 +208,12 @@ async def get_current_user(
 
 
 async def get_current_active_user(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ) -> User:
     """Check if the current user is active."""
     if not current_user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
         )
     return current_user
 

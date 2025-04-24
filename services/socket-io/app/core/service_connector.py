@@ -25,8 +25,7 @@ class ServiceConnector:
         self.sid_to_user: Dict[str, str] = {}  # sid -> user_id mapping
         self._connected = False
         self.event_handlers: Dict[
-            EventType,
-            List[Callable[[Event], Awaitable[None]]]
+            EventType, List[Callable[[Event], Awaitable[None]]]
         ] = {}
         self._initialized = False
 
@@ -36,10 +35,10 @@ class ServiceConnector:
             return
 
         # Register default event handlers
-        self.sio.on('connect', self._on_connect)
-        self.sio.on('disconnect', self._on_disconnect)
-        self.sio.on('error', self._on_error)
-        self.sio.on('event', self._handle_event)
+        self.sio.on("connect", self._on_connect)
+        self.sio.on("disconnect", self._on_disconnect)
+        self.sio.on("error", self._on_error)
+        self.sio.on("event", self._handle_event)
 
         # Connect to the Socket.IO service
         try:
@@ -97,9 +96,7 @@ class ServiceConnector:
             logger.error(f"Error handling event {event_type}: {e}")
 
     def on_event(
-        self,
-        event_type: EventType,
-        handler: Callable[[Event], Awaitable[None]]
+        self, event_type: EventType, handler: Callable[[Event], Awaitable[None]]
     ) -> None:
         """Register an event handler.
 
@@ -113,9 +110,7 @@ class ServiceConnector:
         logger.debug(f"Registered handler for event {event_type}")
 
     def off_event(
-        self,
-        event_type: EventType,
-        handler: Callable[[Event], Awaitable[None]]
+        self, event_type: EventType, handler: Callable[[Event], Awaitable[None]]
     ) -> None:
         """Unregister an event handler.
 
@@ -143,22 +138,18 @@ class ServiceConnector:
             else:
                 # Fallback to HTTP API if not connected
                 async with self.http_client.post(
-                    f"{self.socket_url}/api/emit",
-                    json=event
+                    f"{self.socket_url}/api/emit", json=event
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"Error emitting event: {error_text}")
-                        raise Exception(
-                            f"Error emitting event: {response.status}")
+                        raise Exception(f"Error emitting event: {response.status}")
                 logger.debug(f"Emitted event {event.get('type')} via HTTP API")
         except Exception as e:
             logger.error(f"Error emitting event {event.get('type')}: {e}")
             raise
 
-    async def emit_to_user(
-        self, user_id: str, event_type: EventType, **kwargs
-    ) -> bool:
+    async def emit_to_user(self, user_id: str, event_type: EventType, **kwargs) -> bool:
         """Emit an event to a specific user.
 
         Args:
@@ -198,14 +189,12 @@ class ServiceConnector:
             else:
                 # Fallback to HTTP API if not connected
                 async with self.http_client.post(
-                    f"{self.socket_url}/api/join_room",
-                    json={"room": room}
+                    f"{self.socket_url}/api/join_room", json={"room": room}
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"Error joining room: {error_text}")
-                        raise Exception(
-                            f"Error joining room: {response.status}")
+                        raise Exception(f"Error joining room: {response.status}")
                 logger.debug(f"Joined room {room} via HTTP API")
         except Exception as e:
             logger.error(f"Error joining room {room}: {e}")
@@ -224,14 +213,12 @@ class ServiceConnector:
             else:
                 # Fallback to HTTP API if not connected
                 async with self.http_client.post(
-                    f"{self.socket_url}/api/leave_room",
-                    json={"room": room}
+                    f"{self.socket_url}/api/leave_room", json={"room": room}
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"Error leaving room: {error_text}")
-                        raise Exception(
-                            f"Error leaving room: {response.status}")
+                        raise Exception(f"Error leaving room: {response.status}")
                 logger.debug(f"Left room {room} via HTTP API")
         except Exception as e:
             logger.error(f"Error leaving room {room}: {e}")
@@ -254,18 +241,15 @@ class ServiceConnector:
                 # Fallback to HTTP API if not connected
                 async with self.http_client.post(
                     f"{self.socket_url}/api/emit_to_room",
-                    json={"room": room, "event": event}
+                    json={"room": room, "event": event},
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"Error emitting to room: {error_text}")
-                        raise Exception(
-                            f"Error emitting to room: {response.status}")
-                logger.debug(
-                    f"Emitted event {event_type} to room {room} via HTTP API")
+                        raise Exception(f"Error emitting to room: {response.status}")
+                logger.debug(f"Emitted event {event_type} to room {room} via HTTP API")
         except Exception as e:
-            logger.error(
-                f"Error emitting event {event_type} to room {room}: {e}")
+            logger.error(f"Error emitting event {event_type} to room {room}: {e}")
             raise
 
     def register_user(self, sid: str, user_id: str) -> None:
@@ -334,16 +318,13 @@ class ServiceConnector:
                 # Fallback to HTTP API if not connected
                 async with self.http_client.post(
                     f"{self.socket_url}/api/emit_to_client",
-                    json={"sid": sid, "event": event}
+                    json={"sid": sid, "event": event},
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"Error emitting to client: {error_text}")
-                        raise Exception(
-                            f"Error emitting to client: {response.status}")
-                logger.debug(
-                    f"Emitted event {event_type} to client {sid} via HTTP API")
+                        raise Exception(f"Error emitting to client: {response.status}")
+                logger.debug(f"Emitted event {event_type} to client {sid} via HTTP API")
         except Exception as e:
-            logger.error(
-                f"Error emitting event {event_type} to client {sid}: {e}")
+            logger.error(f"Error emitting event {event_type} to client {sid}: {e}")
             raise

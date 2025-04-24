@@ -15,13 +15,9 @@ class Settings(BaseSettings):
 
     # MongoDB configuration
     MONGO_URI: str = Field(
-        default="mongodb://localhost:27017",
-        description="MongoDB connection string"
+        default="mongodb://localhost:27017", description="MongoDB connection string"
     )
-    MONGO_DB: str = Field(
-        default="chat_db",
-        description="MongoDB database name"
-    )
+    MONGO_DB: str = Field(default="chat_db", description="MongoDB database name")
 
     # PostgreSQL configuration
     PG_USER: str = Field(default="postgres")
@@ -45,8 +41,7 @@ class Settings(BaseSettings):
 
     # Socket.IO service URL
     SOCKET_IO_URL: str = Field(
-        default="http://localhost:8000",
-        description="URL of the Socket.IO service"
+        default="http://localhost:8000", description="URL of the Socket.IO service"
     )
 
     # CORS
@@ -57,9 +52,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30)
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=True
     )
 
 
@@ -108,9 +101,9 @@ def get_presence_service_config() -> Dict[str, Dict]:
 
 # Export settings and config functions
 __all__ = [
-    'settings',
-    'get_pg_config',
-    'get_redis_config',
-    'get_rabbitmq_config',
-    'get_presence_service_config',
+    "settings",
+    "get_pg_config",
+    "get_redis_config",
+    "get_rabbitmq_config",
+    "get_presence_service_config",
 ]

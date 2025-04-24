@@ -21,14 +21,12 @@ class ChatSocketConnector:
         await self.connector.initialize()
 
         # Register event handlers
-        self.connector.on_event(EventType.USER_CONNECTED,
-                                self._handle_user_connected)
+        self.connector.on_event(EventType.USER_CONNECTED, self._handle_user_connected)
         self.connector.on_event(
-            EventType.USER_DISCONNECTED, self._handle_user_disconnected)
-        self.connector.on_event(EventType.CHAT_MESSAGE,
-                                self._handle_chat_message)
-        self.connector.on_event(EventType.CHAT_TYPING,
-                                self._handle_chat_typing)
+            EventType.USER_DISCONNECTED, self._handle_user_disconnected
+        )
+        self.connector.on_event(EventType.CHAT_MESSAGE, self._handle_chat_message)
+        self.connector.on_event(EventType.CHAT_TYPING, self._handle_chat_typing)
 
     async def shutdown(self) -> None:
         """Shutdown the connector."""
@@ -58,8 +56,7 @@ class ChatSocketConnector:
         content = event["content"]
 
         logger.info(
-            f"Chat message from {sender_id} to {recipient_id}: "
-            f"{content[:50]}..."
+            f"Chat message from {sender_id} to {recipient_id}: " f"{content[:50]}..."
         )
 
         # Process the message (e.g., save to database)
@@ -72,7 +69,7 @@ class ChatSocketConnector:
             sender_id=sender_id,
             recipient_id=recipient_id,
             message_id=message_id,
-            content=content
+            content=content,
         )
 
     async def _handle_chat_typing(self, event: Event) -> None:
@@ -92,7 +89,7 @@ class ChatSocketConnector:
             EventType.CHAT_TYPING,
             sender_id=sender_id,
             recipient_id=recipient_id,
-            is_typing=is_typing
+            is_typing=is_typing,
         )
 
     async def send_message(
@@ -119,7 +116,7 @@ class ChatSocketConnector:
             sender_id=sender_id,
             recipient_id=recipient_id,
             message_id=message_id,
-            content=content
+            content=content,
         )
 
         return message_id
@@ -139,5 +136,5 @@ class ChatSocketConnector:
             EventType.CHAT_TYPING,
             sender_id=sender_id,
             recipient_id=recipient_id,
-            is_typing=is_typing
+            is_typing=is_typing,
         )

@@ -22,7 +22,7 @@ class SocketServer:
             async_mode="asgi",
             cors_allowed_origins=settings.CORS_ORIGINS,
             logger=True,
-            **get_socket_io_config()
+            **get_socket_io_config(),
         )
         self.app = socketio.ASGIApp(self.sio)
         self.sid_to_user: Dict[str, str] = {}  # sid -> user_id mapping
@@ -30,9 +30,9 @@ class SocketServer:
         self._initialized = False
 
         # Register event handlers
-        self.sio.on('connect', self._on_connect)
-        self.sio.on('disconnect', self._on_disconnect)
-        self.sio.on('error', self._on_error)
+        self.sio.on("connect", self._on_connect)
+        self.sio.on("disconnect", self._on_disconnect)
+        self.sio.on("error", self._on_error)
 
     async def initialize(self) -> None:
         """Initialize the Socket.IO server."""
@@ -94,7 +94,9 @@ class SocketServer:
         """Get socket ID from user ID."""
         return self.user_to_sid.get(user_id)
 
-    async def emit_to_user(self, user_id: str, event: str, data: Dict[str, Any]) -> bool:
+    async def emit_to_user(
+        self, user_id: str, event: str, data: Dict[str, Any]
+    ) -> bool:
         """Emit an event to a specific user."""
         sid = self.get_sid_from_user_id(user_id)
         if sid:

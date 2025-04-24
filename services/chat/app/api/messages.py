@@ -16,8 +16,7 @@ async def get_message_service():
 
 @router.get("/chat/{chat_id}", response_model=MessageListResponse)
 async def get_chat_messages(
-    chat_id: str,
-    message_service: MessageService = Depends(get_message_service)
+    chat_id: str, message_service: MessageService = Depends(get_message_service)
 ):
     """Get all messages for a specific chat"""
     try:
@@ -30,7 +29,7 @@ async def get_chat_messages(
 @router.post("/", response_model=MessageResponse)
 async def create_message(
     message: MessageCreate,
-    message_service: MessageService = Depends(get_message_service)
+    message_service: MessageService = Depends(get_message_service),
 ):
     """Create a new message"""
     try:
@@ -42,8 +41,7 @@ async def create_message(
 
 @router.get("/{message_id}", response_model=MessageResponse)
 async def get_message(
-    message_id: str,
-    message_service: MessageService = Depends(get_message_service)
+    message_id: str, message_service: MessageService = Depends(get_message_service)
 ):
     """Get a specific message by ID"""
     try:

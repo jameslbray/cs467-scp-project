@@ -49,12 +49,9 @@ presence_manager = PresenceManager(
     {
         "postgres": DB_CONFIG,
         "rabbitmq": {
-            "url": os.getenv(
-                "RABBITMQ_URL",
-                "amqp://guest:guest@localhost:5672/"
-            )
-        }
-    }
+            "url": os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+        },
+    },
 )
 
 # Initialize database pool
@@ -108,6 +105,7 @@ async def shutdown_event():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
 
 # Mount Socket.IO app
 app.mount("/", socket_server.app)

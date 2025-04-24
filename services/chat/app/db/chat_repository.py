@@ -74,7 +74,7 @@ class ChatRepository(Repository[Chat, ChatCreate, ChatCreate]):
             "created_at": now,
             "updated_at": now,
             "created_by": obj_in.created_by,
-            "participant_ids": obj_in.participant_ids
+            "participant_ids": obj_in.participant_ids,
         }
 
         await db[self.collection_name].insert_one(chat_data)
@@ -105,13 +105,10 @@ class ChatRepository(Repository[Chat, ChatCreate, ChatCreate]):
             "description": obj_in.description,
             "is_private": obj_in.is_private,
             "updated_at": self.get_current_time(),
-            "participant_ids": obj_in.participant_ids
+            "participant_ids": obj_in.participant_ids,
         }
 
-        await db[self.collection_name].update_one(
-            {"_id": id},
-            {"$set": update_data}
-        )
+        await db[self.collection_name].update_one({"_id": id}, {"$set": update_data})
 
         return await self.get(id)
 
