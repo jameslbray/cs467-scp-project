@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncpg
 
 from app.core.socket_server import SocketServer
-from app.core.presence_manager import PresenceManager
+from services.presence.app.core.presence_manager import PresenceManager
 
 # Load environment variables
 load_dotenv()
@@ -45,13 +45,13 @@ socket_server = SocketServer()
 
 # Create presence manager
 presence_manager = PresenceManager(
-    socket_server,
     {
         "postgres": DB_CONFIG,
         "rabbitmq": {
             "url": os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
-        },
+        }
     },
+    socket_server=socket_server
 )
 
 # Initialize database pool

@@ -19,11 +19,11 @@ class Settings(BaseSettings):
     USERS_QUEUE: str = Field("users_tasks", env="USERS_QUEUE")
 
     # Database settings
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_HOST: str
-    POSTGRES_PORT: str
-    POSTGRES_DB: str
+    POSTGRES_USER: str = Field(..., env="POSTGRES_USER")
+    POSTGRES_PASSWORD: str = Field(..., env="POSTGRES_PASSWORD")
+    POSTGRES_HOST: str = Field(..., env="POSTGRES_HOST")
+    POSTGRES_PORT: str = Field(..., env="POSTGRES_PORT")
+    POSTGRES_DB: str = Field(..., env="POSTGRES_DB")
 
     # JWT settings
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(
-            Path(__file__).parent.parent.parent.parent, ".env"),
+            Path(__file__).parent.parent.parent, ".env.sh"),
         env_file_encoding="utf-8",
         extra='allow'
     )

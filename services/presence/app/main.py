@@ -37,10 +37,10 @@ presence_manager = PresenceManager(
             "url": os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
         },
         "postgres": {
-            "user": os.getenv("PRESENCE_POSTGRES_USER", "postgres"),
-            "password": os.getenv("PRESENCE_POSTGRES_PASSWORD", "postgres"),
-            "host": os.getenv("PRESENCE_POSTGRES_HOST", "localhost"),
-            "database": os.getenv("PRESENCE_POSTGRES_DB", "presence_db"),
+            "user": os.getenv("PRESENCE_POSTGRES_USER", "sahdude"),
+            "password": os.getenv("PRESENCE_POSTGRES_PASSWORD", "CS467"),
+            "host": os.getenv("PRESENCE_POSTGRES_HOST", "209.46.124.94"),
+            "database": os.getenv("PRESENCE_POSTGRES_DB", "postgres"),
             "port": int(os.getenv("PRESENCE_POSTGRES_PORT", "5432")),
         },
     }

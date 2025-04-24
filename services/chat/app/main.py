@@ -1,7 +1,7 @@
 # services/chat/app/main.py
 
 from app.db.mongo import init_mongo, close_mongo_connection, get_db
-from app.core.socket_connector import ChatSocketConnector
+from app.core.socket_connector import SocketManager
 from app.core.rabbitmq import ChatRabbitMQClient
 from app.api.routers import router as api_router
 import logging
@@ -59,7 +59,7 @@ async def test_mongo_connection():
 app.include_router(api_router, prefix="/api")
 
 # Initialize services
-socket_connector = ChatSocketConnector()
+socket_connector = SocketManager()
 rabbitmq_client = ChatRabbitMQClient()
 
 

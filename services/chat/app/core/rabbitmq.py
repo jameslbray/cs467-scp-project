@@ -1,4 +1,5 @@
-from rabbitmq_client import RabbitMQClient, Settings
+from services.rabbitmq.core.client import RabbitMQClient
+from services.rabbitmq.core.config import Settings
 import logging
 
 logger = logging.getLogger(__name__)
