@@ -10,8 +10,6 @@ SQLALCHEMY_DATABASE_URL = f"postgresql://{settings.POSTGRES_USER}:{settings.POST
 
 # SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
-# SQLALCHEMY_DATABASE_URL = "postgresql://sahdude:CS467@209.46.124.94:5432/postgres"
-
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
