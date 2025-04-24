@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, List, Any
 from datetime import datetime
+from services.presence.app.core.presence_manager import PresenceManager
 
 from services.socket_io.app.core.service_connector import ServiceConnector
 from services.socket_io.app.core.event_schema import EventType
@@ -89,7 +90,7 @@ class FriendManager:
         last_seen = presence_data.get("last_seen", datetime.now().timestamp())
 
         for friend_id in friend_ids:
-            await this.socket_connector.emit_to_user(
+            await self.socket_connector.emit_to_user(
                 friend_id,
                 EventType.PRESENCE_UPDATE,
                 user_id=user_id,
@@ -98,7 +99,8 @@ class FriendManager:
             )
 
         logger.debug(
-            f"Notified {len(friend_ids)} friends about {user_id}'s {status} status"
+            f"Notified {len(friend_ids)} friends about "
+            f"{user_id}'s {status} status"
         )
 
     async def send_friend_statuses(
@@ -107,11 +109,11 @@ class FriendManager:
         sid: str
     ) -> None:
         """Send friend statuses to a user."""
-        friend_ids = await this._get_friend_ids(user_id)
+        friend_ids = await self._get_friend_ids(user_id)
 
         for friend_id in friend_ids:
-            status_data = this.presence_manager.get_user_status(friend_id)
-            await this.socket_connector.emit_to_client(
+            status_data = self.presence_manager.get_user_status(friend_id)
+            await self.socket_connector.emit_to_client(
                 sid,
                 EventType.PRESENCE_UPDATE,
                 user_id=friend_id,

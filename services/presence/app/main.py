@@ -40,11 +40,11 @@ presence_manager = PresenceManager(
             )
         },
         "postgres": {
-            "user": os.getenv("PG_USER", "postgres"),
-            "password": os.getenv("PG_PASSWORD", "postgres"),
-            "host": os.getenv("PG_HOST", "localhost"),
-            "database": os.getenv("PG_DATABASE", "presence"),
-            "port": int(os.getenv("PG_PORT", "5432")),
+            "user": os.getenv("PRESENCE_POSTGRES_USER", "postgres"),
+            "password": os.getenv("PRESENCE_POSTGRES_PASSWORD", "postgres"),
+            "host": os.getenv("PRESENCE_POSTGRES_HOST", "localhost"),
+            "database": os.getenv("PRESENCE_POSTGRES_DB", "presence_db"),
+            "port": int(os.getenv("PRESENCE_POSTGRES_PORT", "5432")),
         }
     }
 )
