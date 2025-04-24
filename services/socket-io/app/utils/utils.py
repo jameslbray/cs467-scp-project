@@ -15,7 +15,7 @@ class CustomJSON:
     @staticmethod
     def dumps(*args, **kwargs):
         # Ensure our default serializer is used
-        kwargs.setdefault('default', json_serial)
+        kwargs.setdefault("default", json_serial)
         return json.dumps(*args, **kwargs)
 
     @staticmethod

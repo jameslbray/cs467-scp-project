@@ -17,8 +17,7 @@ class ChatRabbitMQClient:
             await self.client.connect()
             # Declare the exchange
             await self.client.declare_exchange(
-                self.exchange_name,
-                exchange_type="direct"
+                self.exchange_name, exchange_type="direct"
             )
             # Declare queues
             await self.client.declare_queue(self.message_queue)
@@ -32,11 +31,7 @@ class ChatRabbitMQClient:
         """Publish a chat message"""
         try:
             routing_key = routing_key or self.message_queue
-            await self.client.publish_message(
-                self.exchange_name,
-                routing_key,
-                message
-            )
+            await self.client.publish_message(self.exchange_name, routing_key, message)
             logger.info(f"Message published to {routing_key}")
         except Exception as e:
             logger.error(f"Failed to publish message: {str(e)}")
@@ -46,9 +41,7 @@ class ChatRabbitMQClient:
         """Publish a chat notification"""
         try:
             await self.client.publish_message(
-                self.exchange_name,
-                self.notification_queue,
-                notification
+                self.exchange_name, self.notification_queue, notification
             )
             logger.info("Notification published")
         except Exception as e:

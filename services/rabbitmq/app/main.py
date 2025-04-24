@@ -21,7 +21,7 @@ class QueueRequest(BaseModel):
 
 class ExchangeRequest(BaseModel):
     exchange_name: str
-    exchange_type: str = 'direct'
+    exchange_type: str = "direct"
 
 
 @app.on_event("startup")
@@ -36,10 +36,7 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "rabbitmq_connected": rabbitmq_client.is_connected()
-    }
+    return {"status": "healthy", "rabbitmq_connected": rabbitmq_client.is_connected()}
 
 
 @app.post("/publish")
@@ -48,12 +45,9 @@ async def publish_message(message_request: MessageRequest):
         await rabbitmq_client.publish_message(
             message_request.exchange,
             message_request.routing_key,
-            message_request.message
+            message_request.message,
         )
-        return {
-            "status": "success",
-            "message": "Message published successfully"
-        }
+        return {"status": "success", "message": "Message published successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -62,14 +56,11 @@ async def publish_message(message_request: MessageRequest):
 async def create_queue(queue_request: QueueRequest):
     try:
         await rabbitmq_client.declare_queue(
-            queue_request.queue_name,
-            queue_request.durable
+            queue_request.queue_name, queue_request.durable
         )
         return {
             "status": "success",
-            "message": (
-                f"Queue {queue_request.queue_name} declared successfully"
-            )
+            "message": (f"Queue {queue_request.queue_name} declared successfully"),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -79,14 +70,13 @@ async def create_queue(queue_request: QueueRequest):
 async def create_exchange(exchange_request: ExchangeRequest):
     try:
         await rabbitmq_client.declare_exchange(
-            exchange_request.exchange_name,
-            exchange_request.exchange_type
+            exchange_request.exchange_name, exchange_request.exchange_type
         )
         return {
             "status": "success",
             "message": (
                 f"Exchange {exchange_request.exchange_name} declared successfully"
-            )
+            ),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

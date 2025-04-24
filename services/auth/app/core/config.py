@@ -8,15 +8,12 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field("info", env="LOG_LEVEL")
 
     # Database (PostgreSQL)
-    DATABASE_URL: PostgresDsn = Field(
-        ..., env="DATABASE_URL"
-    )
+    DATABASE_URL: PostgresDsn = Field(..., env="DATABASE_URL")
 
     # JWT Auth
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
     JWT_ALGORITHM: str = Field("HS256", env="JWT_ALGORITHM")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
-        60, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(60, env="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     # CORS
     CORS_ORIGINS: list[str] = Field(

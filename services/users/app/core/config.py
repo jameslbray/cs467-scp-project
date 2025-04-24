@@ -12,9 +12,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field("info", env="LOG_LEVEL")
 
     # Database (PostgreSQL)
-    DATABASE_URL: PostgresDsn = Field(
-        ..., env="DATABASE_URL"
-    )
+    DATABASE_URL: PostgresDsn = Field(..., env="DATABASE_URL")
 
     # RabbitMQ (for background tasks & notifications)
     RABBITMQ_URL: str = Field(..., env="RABBITMQ_URL")
@@ -34,26 +32,15 @@ class Settings(BaseSettings):
 
     # CORS settings
     CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8000"],
-        env="CORS_ORIGINS"
+        default=["http://localhost:3000", "http://localhost:8000"], env="CORS_ORIGINS"
     )
-    CORS_CREDENTIALS: bool = Field(
-        default=True,
-        env="CORS_CREDENTIALS"
-    )
-    CORS_METHODS: List[str] = Field(
-        default=["*"],
-        env="CORS_METHODS"
-    )
-    CORS_HEADERS: List[str] = Field(
-        default=["*"],
-        env="CORS_HEADERS"
-    )
+    CORS_CREDENTIALS: bool = Field(default=True, env="CORS_CREDENTIALS")
+    CORS_METHODS: List[str] = Field(default=["*"], env="CORS_METHODS")
+    CORS_HEADERS: List[str] = Field(default=["*"], env="CORS_HEADERS")
 
     model_config = SettingsConfigDict(
-        env_file=os.path.join(
-            Path(__file__).parent.parent.parent.parent, ".env"),
-        env_file_encoding="utf-8"
+        env_file=os.path.join(Path(__file__).parent.parent.parent.parent, ".env"),
+        env_file_encoding="utf-8",
     )
 
 

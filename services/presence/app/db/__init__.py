@@ -1,2 +1,1 @@
 # Presence service database module
-

@@ -19,8 +19,7 @@ class UserRabbitMQClient:
             await self.client.connect()
             # Declare the exchange
             await self.client.declare_exchange(
-                self.exchange_name,
-                exchange_type="direct"
+                self.exchange_name, exchange_type="direct"
             )
             # Declare queues
             await self.client.declare_queue(self.user_events_queue)
@@ -33,14 +32,9 @@ class UserRabbitMQClient:
     async def publish_user_event(self, event_type: str, user_data: dict):
         """Publish a user-related event"""
         try:
-            message = {
-                "event_type": event_type,
-                "user_data": user_data
-            }
+            message = {"event_type": event_type, "user_data": user_data}
             await self.client.publish_message(
-                self.exchange_name,
-                self.user_events_queue,
-                json.dumps(message)
+                self.exchange_name, self.user_events_queue, json.dumps(message)
             )
             logger.info(f"User event published: {event_type}")
         except Exception as e:
@@ -51,9 +45,7 @@ class UserRabbitMQClient:
         """Publish a user notification"""
         try:
             await self.client.publish_message(
-                self.exchange_name,
-                self.notification_queue,
-                notification
+                self.exchange_name, self.notification_queue, notification
             )
             logger.info("User notification published")
         except Exception as e:

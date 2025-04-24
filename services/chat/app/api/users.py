@@ -25,8 +25,7 @@ async def get_users(user_service: UserService = Depends(get_user_service)):
 
 @router.post("/", response_model=UserResponse)
 async def create_user(
-    user: UserCreate,
-    user_service: UserService = Depends(get_user_service)
+    user: UserCreate, user_service: UserService = Depends(get_user_service)
 ):
     """Create a new user"""
     try:
@@ -37,10 +36,7 @@ async def create_user(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(
-    user_id: str,
-    user_service: UserService = Depends(get_user_service)
-):
+async def get_user(user_id: str, user_service: UserService = Depends(get_user_service)):
     """Get a specific user by ID"""
     try:
         user = await user_service.get_user(user_id)

@@ -36,8 +36,7 @@ class User(Base):
     )
 
     # Relationship to blacklisted tokens
-    blacklisted_tokens = relationship(
-        "BlacklistedToken", back_populates="user")
+    blacklisted_tokens = relationship("BlacklistedToken", back_populates="user")
 
 
 class UserStatus(Base):
@@ -47,10 +46,12 @@ class UserStatus(Base):
             "status IN ('online', 'away', 'offline')",
             name="ck_user_status_enum",
         ),
-        {"comment": (
-            "Stores the current online status of users "
-            "and when it was last updated"
-        )},
+        {
+            "comment": (
+                "Stores the current online status of users "
+                "and when it was last updated"
+            )
+        },
     )
 
     user_id = Column(

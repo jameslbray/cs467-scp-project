@@ -26,8 +26,7 @@ async def get_chats(chat_service: ChatService = Depends(get_chat_service)):
 
 @router.post("/", response_model=ChatResponse)
 async def create_chat(
-    chat: ChatCreate,
-    chat_service: ChatService = Depends(get_chat_service)
+    chat: ChatCreate, chat_service: ChatService = Depends(get_chat_service)
 ):
     """Create a new chat"""
     try:
@@ -38,10 +37,7 @@ async def create_chat(
 
 
 @router.get("/{chat_id}", response_model=ChatResponse)
-async def get_chat(
-    chat_id: str,
-    chat_service: ChatService = Depends(get_chat_service)
-):
+async def get_chat(chat_id: str, chat_service: ChatService = Depends(get_chat_service)):
     """Get a specific chat by ID"""
     try:
         chat = await chat_service.get_chat(chat_id)

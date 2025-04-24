@@ -25,8 +25,7 @@ async def get_rooms(room_service: RoomService = Depends(get_room_service)):
 
 @router.post("/", response_model=RoomResponse)
 async def create_room(
-    room: RoomCreate,
-    room_service: RoomService = Depends(get_room_service)
+    room: RoomCreate, room_service: RoomService = Depends(get_room_service)
 ):
     """Create a new room"""
     try:
@@ -37,10 +36,7 @@ async def create_room(
 
 
 @router.get("/{room_id}", response_model=RoomResponse)
-async def get_room(
-    room_id: str,
-    room_service: RoomService = Depends(get_room_service)
-):
+async def get_room(room_id: str, room_service: RoomService = Depends(get_room_service)):
     """Get a specific room by ID"""
     try:
         room = await room_service.get_room(room_id)

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class User(BaseModel):
     """User domain model"""
+
     id: str = Field(..., description="User ID")
     username: str = Field(..., description="Username")
     email: str = Field(..., description="Email address")
@@ -12,10 +13,10 @@ class User(BaseModel):
     is_active: bool = Field(True, description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    last_login: Optional[datetime] = Field(
-        None, description="Last login timestamp")
+    last_login: Optional[datetime] = Field(None, description="Last login timestamp")
     chat_ids: List[str] = Field(
-        default_factory=list, description="IDs of chats the user is in")
+        default_factory=list, description="IDs of chats the user is in"
+    )
 
     def update_last_login(self) -> None:
         """Update the last login timestamp"""

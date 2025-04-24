@@ -34,10 +34,7 @@ app.add_middleware(
 presence_manager = PresenceManager(
     {
         "rabbitmq": {
-            "url": os.getenv(
-                "RABBITMQ_URL",
-                "amqp://guest:guest@localhost:5672/"
-            )
+            "url": os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
         },
         "postgres": {
             "user": os.getenv("PRESENCE_POSTGRES_USER", "postgres"),
@@ -45,7 +42,7 @@ presence_manager = PresenceManager(
             "host": os.getenv("PRESENCE_POSTGRES_HOST", "localhost"),
             "database": os.getenv("PRESENCE_POSTGRES_DB", "presence_db"),
             "port": int(os.getenv("PRESENCE_POSTGRES_PORT", "5432")),
-        }
+        },
     }
 )
 

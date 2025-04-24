@@ -5,10 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
-from slowapi import (
-    Limiter,
-    _rate_limit_exceeded_handler
-)
+from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -58,9 +55,7 @@ app.add_middleware(
 
 # Add rate limiter to the app
 app.state.limiter = limiter
-app.add_exception_handler(
-    RateLimitExceeded, _rate_limit_exceeded_handler
-)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
@@ -75,29 +70,29 @@ rabbitmq_client = UserRabbitMQClient()
 @app.post("/register", response_model=User)
 async def register_user(user: UserCreate, db: Session = Depends(database.get_db)):
     # Check if user already exists
-    db_user = db.query(models.User).filter(
-        (models.User.email == user.email) |
-        (models.User.username == user.username)
-    ).first()
+    db_user = (
+        db.query(models.User)
+        .filter(
+            (models.User.email == user.email) | (models.User.username == user.username)
+        )
+        .first()
+    )
     if db_user:
         raise HTTPException(
-            status_code=400,
-            detail="Email or Username already registered"
+            status_code=400, detail="Email or Username already registered"
         )
 
     # Validate password strength
     if not security.validate_password_strength(user.password):
         raise HTTPException(
             status_code=400,
-            detail="Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character"
+            detail="Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character",
         )
 
     # Create new user
     hashed_password = security.get_password_hash(user.password)
     db_user = models.User(
-        email=user.email,
-        username=user.username,
-        hashed_password=hashed_password
+        email=user.email, username=user.username, hashed_password=hashed_password
     )
     db.add(db_user)
     db.commit()
@@ -106,11 +101,7 @@ async def register_user(user: UserCreate, db: Session = Depends(database.get_db)
     # Publish user registration event
     await rabbitmq_client.publish_user_event(
         "user_registered",
-        {
-            "user_id": db_user.id,
-            "username": db_user.username,
-            "email": db_user.email
-        }
+        {"user_id": db_user.id, "username": db_user.username, "email": db_user.email},
     )
 
     return db_user
@@ -121,38 +112,34 @@ async def register_user(user: UserCreate, db: Session = Depends(database.get_db)
 async def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(database.get_db),
 ):
-    user = db.query(models.User).filter(
-        models.User.username == form_data.username).first()
-    if not user or not security.verify_password(form_data.password, user.hashed_password):
+    user = (
+        db.query(models.User).filter(models.User.username == form_data.username).first()
+    )
+    if not user or not security.verify_password(
+        form_data.password, user.hashed_password
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(
-        minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
 
     # Publish user login event
     await rabbitmq_client.publish_user_event(
-        "user_logged_in",
-        {
-            "user_id": user.id,
-            "username": user.username
-        }
+        "user_logged_in", {"user_id": user.id, "username": user.username}
     )
 
     return access_token
 
 
 @app.get("/users/me", response_model=User)
-async def read_users_me(
-    current_user: User = Depends(security.get_current_user)
-):
+async def read_users_me(current_user: User = Depends(security.get_current_user)):
     return current_user
 
 
@@ -171,9 +158,11 @@ async def health_check():
 def cleanup_expired_tokens(db: Session):
     """Remove expired tokens from the blacklist."""
     now = datetime.utcnow()
-    expired_tokens = db.query(models.BlacklistedToken).filter(
-        models.BlacklistedToken.expires_at < now
-    ).all()
+    expired_tokens = (
+        db.query(models.BlacklistedToken)
+        .filter(models.BlacklistedToken.expires_at < now)
+        .all()
+    )
 
     for token in expired_tokens:
         db.delete(token)
@@ -187,14 +176,11 @@ async def logout(
     current_user: User = Depends(security.get_current_user),
     token: str = Depends(security.oauth2_scheme),
     db: Session = Depends(database.get_db),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Logout the current user by blacklisting their token."""
     security.blacklist_token(
-        token=token,
-        db=db,
-        user_id=current_user.id,
-        username=current_user.username
+        token=token, db=db, user_id=current_user.id, username=current_user.username
     )
 
     # Schedule cleanup of expired tokens
@@ -203,10 +189,7 @@ async def logout(
     # Publish user logout event
     await rabbitmq_client.publish_user_event(
         "user_logged_out",
-        {
-            "user_id": current_user.id,
-            "username": current_user.username
-        }
+        {"user_id": current_user.id, "username": current_user.username},
     )
 
     return {"message": "Successfully logged out"}
