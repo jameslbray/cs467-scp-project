@@ -1,6 +1,9 @@
 from pydantic import Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+import os
+from pathlib import Path
+from typing import List
 
 
 class Settings(BaseSettings):
@@ -25,12 +28,31 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
 
     # JWT settings
-    SECRET_KEY: str = "your-secret-key-here"  # Change in production!
-    ALGORITHM: str = "HS256"
+    JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
+    JWT_ALGORITHM: str = Field("HS256", env="JWT_ALGORITHM")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # CORS settings
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:3000", "http://localhost:8000"],
+        env="CORS_ORIGINS"
+    )
+    CORS_CREDENTIALS: bool = Field(
+        default=True,
+        env="CORS_CREDENTIALS"
+    )
+    CORS_METHODS: List[str] = Field(
+        default=["*"],
+        env="CORS_METHODS"
+    )
+    CORS_HEADERS: List[str] = Field(
+        default=["*"],
+        env="CORS_HEADERS"
+    )
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=os.path.join(
+            Path(__file__).parent.parent.parent.parent, ".env"),
         env_file_encoding="utf-8"
     )
 

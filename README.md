@@ -8,8 +8,7 @@ This repository contains a collection of microservices that power the SCP Projec
 2. [Prerequisites](#prerequisites)
 3. [Installation](#installation)
 4. [Service Management](#service-management)
-   - [Using Direct Execution](#using-direct-execution)
-   - [Using Supervisor](#using-supervisor)
+   - [Using run_service.sh](#using-run_service.sh)
 5. [Development Workflow](#development-workflow)
 6. [Production Deployment](#production-deployment)
 7. [Troubleshooting](#troubleshooting)
@@ -63,62 +62,27 @@ Each service is implemented as a FastAPI application that communicates with othe
 
 ## Service Management
 
-The project includes a service management script (`manage_services.sh`) that provides a convenient way to start, stop, and check the status of all services.
+The project includes a service management script (`run_service.sh`) that provides a convenient way to run individual services or all services at once.
 
-### Using Direct Execution
+### Using run_service.sh
 
-This mode runs each service directly without using Supervisor.
+This script provides a simple way to run individual services or all services at once.
 
 ```bash
 # Show available commands
-./manage_services.sh
+./run_service.sh --help
 
-# Start all services
-./manage_services.sh --direct start-all
+# Run a specific service
+./run_service.sh users --port 8005 --workers 2
 
-# Start a specific service
-./manage_services.sh --direct start socket-io
+# Run all services at once
+./run_service.sh -a
 
-# Check status of all services
-./manage_services.sh --direct status
-
-# Stop a specific service
-./manage_services.sh --direct stop chat
-
-# Stop all services
-./manage_services.sh --direct stop-all
+# Run all services with custom port and workers
+./run_service.sh -a --port 8000 --workers 2
 ```
 
-### Using Supervisor
-
-Supervisor provides process management for production environments.
-
-```bash
-# Start all services with supervisor
-./manage_services.sh --supervisor start-all
-
-# Check status
-./manage_services.sh --supervisor status
-
-# Stop all services
-./manage_services.sh --supervisor stop-all
-```
-
-To start supervisor manually:
-
-```bash
-supervisord -c supervisor/supervisord.conf
-```
-
-To control services with supervisorctl:
-
-```bash
-supervisorctl -c supervisor/supervisord.conf status
-supervisorctl -c supervisor/supervisord.conf start socket-io
-supervisorctl -c supervisor/supervisord.conf stop chat
-supervisorctl -c supervisor/supervisord.conf restart presence
-supervisorctl -c supervisor/supervisord.conf start scp-project:*  # All services
-```
+For production environments, consider using a process manager like Supervisor to ensure services stay running and automatically restart if they crash.
 
 ## Development Workflow
 

@@ -11,12 +11,9 @@ from sqlalchemy.orm import Session
 from ..db.database import get_db
 from ..db.models import User as DBUser, BlacklistedToken
 from ..schemas import User, JWTTokenData, Token
+from .config import get_settings
 
-# to get a string like this run:
-# openssl rand -hex 32
-SECRET_KEY = "your-secret-key-here"  # Change this in production!
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -54,7 +51,11 @@ def create_access_token(
     to_encode.update(token_data.model_dump(exclude_none=True))
 
     # Encode the JWT
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(
+        to_encode,
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM
+    )
 
     # Return Token model with access_token, token_type, and expires_at
     return Token(
@@ -77,14 +78,18 @@ def blacklist_token(token: str, db: Session, user_id: Optional[int] = None,
     """
     try:
         # Decode the token to get expiration time
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
         exp_timestamp = payload.get("exp")
 
         if exp_timestamp:
             expires_at = datetime.fromtimestamp(exp_timestamp)
         else:
             # Default expiration if not found in token
-            expires_at = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            expires_at = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
         # Create blacklisted token record
         blacklisted_token = BlacklistedToken(
@@ -154,7 +159,11 @@ def get_token_data(token: str, db: Session) -> JWTTokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
         username: str = payload.get("sub")
         if username is None:
             raise HTTPException(
