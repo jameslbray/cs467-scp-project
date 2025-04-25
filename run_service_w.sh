@@ -82,6 +82,11 @@ function run_service {
         ;;
     esac
 
+    if [[ ! -f "${SERVICE_DIR}/.env" ]]; then
+        echo "Creating minimal .env file for ${service}..."
+        echo "# Minimal environment file for ${service}" >"${SERVICE_DIR}/.env"
+    fi
+
     # Load environment variables from the root .env file
     ENV_SH_FILE="${PROJECT_ROOT}/services/.env.sh"
     if [[ -f "$ENV_SH_FILE" ]]; then
@@ -89,7 +94,7 @@ function run_service {
         echo "Loading environment variables from: $ENV_SH_FILE"
         source "$ENV_SH_FILE"
         # Export other required variables that match what Pydantic expects
-        export DATABASE_URL="$PG_CONNECTION_STRING"
+        export DATABASE_URL="$DATABASE_URL"
         export POSTGRES_USER="$PG_USER"
         export POSTGRES_PASSWORD="$PG_PASSWORD"
         export POSTGRES_HOST="$PG_HOST"
