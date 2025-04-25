@@ -7,7 +7,7 @@ import logging
 import socketio
 from typing import Dict, Any, Optional
 
-from app.core.config import get_socket_io_config, settings
+from .config import get_socket_io_config, settings
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ class SocketServer:
     def __init__(self):
         """Initialize the Socket.IO server."""
         self.sio = socketio.AsyncServer(
-            async_mode="asgi",
-            cors_allowed_origins=settings.CORS_ORIGINS,
+            # async_mode="asgi",
+            # cors_allowed_origins=settings.CORS_ORIGINS,
             logger=True,
             **get_socket_io_config(),
         )
