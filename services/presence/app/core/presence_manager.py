@@ -5,10 +5,17 @@ Presence manager for handling user presence state.
 import logging
 import json
 import aio_pika
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from datetime import datetime
 import asyncpg
 from enum import Enum
+
+if TYPE_CHECKING:
+    # Import only for type checking to avoid circular imports
+    from services.socket_io.app.core.socket_server import SocketServer as SocketManager
+else:
+    # Use a placeholder type at runtime
+    SocketManager = Any  # This makes Python ignore the actual type at runtime
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -44,7 +51,7 @@ class UserStatus:
 class PresenceManager:
     """Manages user presence state."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], socket_server: SocketManager=None):
         """Initialize the presence manager.
 
         Args:

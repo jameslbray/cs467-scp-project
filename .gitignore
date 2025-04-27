@@ -1,4 +1,3 @@
-
 # Python related
 venv/
 .venv/
@@ -6,6 +5,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.env
+*.env.sh
 
 # Node
 **/node_modules/

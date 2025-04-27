@@ -8,7 +8,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-class ChatSocketConnector:
+class SocketManager:
     """Socket.IO connector for the chat service."""
 
     def __init__(self):

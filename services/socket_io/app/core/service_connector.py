@@ -3,7 +3,7 @@ from typing import Dict, Callable, Awaitable, List, Optional
 import socketio
 import aiohttp
 
-from app.core.event_schema import Event, EventType, create_event
+from .event_schema import Event, EventType, create_event
 
 logger = logging.getLogger(__name__)
 
