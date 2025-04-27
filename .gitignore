@@ -161,5 +161,4 @@ dist
 *.idx
 *.vscode
 settings.json
-/.vscode
 .vscode/settings.json
