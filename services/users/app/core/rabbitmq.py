@@ -1,5 +1,5 @@
-# Try different import approaches to ensure compatibility
-from services.rabbitmq.core.client import RabbitMQClient
+# Import from local rabbitmq client implementation
+from app.rabbitmq.client import RabbitMQClient
 import logging
 import json
 
@@ -14,7 +14,9 @@ class UserRabbitMQClient:
         self.notification_queue = "user_notifications"
 
     async def initialize(self):
-        """Initialize RabbitMQ connection and declare necessary queues/exchanges"""
+        """
+        Initialize RabbitMQ connection and declare necessary queues/exchanges
+        """
         try:
             await self.client.connect()
             # Declare the exchange

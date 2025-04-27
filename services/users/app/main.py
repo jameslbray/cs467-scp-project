@@ -1,4 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    status,
+    Request,
+    BackgroundTasks
+)
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -14,6 +21,7 @@ from .db import models, database
 from .schemas import User, UserCreate, Token
 from .core import security
 from .core.rabbitmq import UserRabbitMQClient
+from .core.config import Settings, get_settings
 
 # Create database tables
 models.Base.metadata.create_all(bind=database.engine)
@@ -73,7 +81,8 @@ async def register_user(user: UserCreate, db: Session = Depends(database.get_db)
     db_user = (
         db.query(models.User)
         .filter(
-            (models.User.email == user.email) | (models.User.username == user.username)
+            (models.User.email == user.email) | (
+                models.User.username == user.username)
         )
         .first()
     )
@@ -113,9 +122,11 @@ async def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(database.get_db),
+    settings: Settings = Depends(get_settings),
 ):
     user = (
-        db.query(models.User).filter(models.User.username == form_data.username).first()
+        db.query(models.User).filter(
+            models.User.username == form_data.username).first()
     )
     if not user or not security.verify_password(
         form_data.password, user.hashed_password
@@ -125,9 +136,10 @@ async def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        subject=user.username, expires_delta=access_token_expires
     )
 
     # Publish user login event

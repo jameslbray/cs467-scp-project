@@ -15,7 +15,8 @@ class FriendManager:
     """
 
     def __init__(
-        self, socket_connector: ServiceConnector, presence_manager: "PresenceManager"
+        self, socket_connector: ServiceConnector,
+        presence_manager: "PresenceManager"
     ):
         """
         Initialize the Friend Manager.
@@ -88,7 +89,8 @@ class FriendManager:
             )
 
         logger.debug(
-            f"Notified {len(friend_ids)} friends about " f"{user_id}'s {status} status"
+            f"Notified {len(friend_ids)} friends about "
+            f"{user_id}'s {status} status"
         )
 
     async def send_friend_statuses(self, user_id: str, sid: str) -> None:
@@ -105,7 +107,8 @@ class FriendManager:
                 last_seen=status_data.get("last_seen", 0),
             )
 
-        logger.debug(f"Sent {len(friend_ids)} friend statuses to user {user_id}")
+        logger.debug(
+            f"Sent {len(friend_ids)} friend statuses to user {user_id}")
 
     async def _get_friend_ids(self, user_id: str) -> List[str]:
         """Get a user's friend IDs."""

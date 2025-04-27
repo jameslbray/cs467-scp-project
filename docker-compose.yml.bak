@@ -1,0 +1,54 @@
+services:
+  users:
+    build: ./services/users
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - rabbitmq
+    command: ["python", "-m", "gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+
+  rabbitmq:
+    build: ./services/rabbitmq
+    ports:
+      - "5672:5672"  # AMQP port
+      - "15672:15672"  # Management UI port
+    environment:
+      - PYTHONPATH=/app
+
+  notifications:
+    build: ./services/notifications
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - rabbitmq
+
+  presence:
+    build: ./services/presence
+    ports:
+      - "8002:8000"
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - rabbitmq
+
+  socket-io:
+    build: ./services/socket_io
+    ports:
+      - "8003:8000"
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - rabbitmq
+
+  chat:
+    build: ./services/chat
+    ports:
+      - "8004:8000"
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - rabbitmq

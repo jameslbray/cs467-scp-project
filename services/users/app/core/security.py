@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, UTC
+from typing import Optional, Union, Any
 import uuid
 import re
 from jose import JWTError, jwt
@@ -7,7 +7,6 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-
 from ..db.database import get_db
 from ..db.models import User as DBUser, BlacklistedToken
 from ..schemas import User, JWTTokenData, Token
@@ -19,7 +18,19 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def verify_password(
+    plain_password: str, hashed_password: str
+) -> bool:
+    """
+    Verify a plain password against a hashed password.
+
+    Args:
+        plain_password: The plain text password to verify
+        hashed_password: The hashed password to compare against
+
+    Returns:
+        True if passwords match, False otherwise
+    """
     return pwd_context.verify(plain_password, hashed_password)
 
 
@@ -27,9 +38,21 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> Token:
-    to_encode = data.copy()
-    now = datetime.utcnow()
+def create_access_token(
+    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
+) -> Token:
+    """
+    Create a new JWT access token.
+
+    Args:
+        subject: Subject to encode in the token (typically username)
+        expires_delta: Optional expiration time delta
+
+    Returns:
+        Token object containing the JWT access token
+    """
+    to_encode = {"sub": subject}  # Set sub claim first
+    now = datetime.now(UTC)
 
     # Set expiration time
     if expires_delta:
@@ -38,16 +61,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = now + timedelta(minutes=15)
 
     # Create JWT token data
+    token_id = str(uuid.uuid4())
     token_data = JWTTokenData(
-        username=data.get("sub"), exp=expire, iat=now, jti=str(uuid.uuid4())
+        username=subject,
+        exp=expire,
+        iat=now,
+        jti=token_id
     )
 
     # Convert to dict for JWT encoding
     to_encode.update(token_data.model_dump(exclude_none=True))
 
     # Encode the JWT
+    secret_key = str(settings.JWT_SECRET_KEY.get_secret_value())
     encoded_jwt = jwt.encode(
-        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+        to_encode, secret_key, algorithm=settings.JWT_ALGORITHM
     )
 
     # Return Token model with access_token, token_type, and expires_at
@@ -71,16 +99,17 @@ def blacklist_token(
     """
     try:
         # Decode the token to get expiration time
+        secret_key = settings.JWT_SECRET_KEY.get_secret_value()
         payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+            token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
         exp_timestamp = payload.get("exp")
 
         if exp_timestamp:
-            expires_at = datetime.fromtimestamp(exp_timestamp)
+            expires_at = datetime.fromtimestamp(exp_timestamp, tz=UTC)
         else:
             # Default expiration if not found in token
-            expires_at = datetime.utcnow() + timedelta(
+            expires_at = datetime.now(UTC) + timedelta(
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
 
@@ -89,7 +118,7 @@ def blacklist_token(
             token=token,
             user_id=user_id,
             username=username,
-            blacklisted_at=datetime.utcnow(),
+            blacklisted_at=datetime.now(UTC),
             expires_at=expires_at,
         )
 
@@ -102,8 +131,9 @@ def blacklist_token(
             token=token,
             user_id=user_id,
             username=username,
-            blacklisted_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(days=30),  # Default 30 days
+            blacklisted_at=datetime.now(UTC),
+            expires_at=datetime.now(
+                UTC) + timedelta(days=30),  # Default 30 days
         )
 
         db.add(blacklisted_token)
@@ -123,7 +153,8 @@ def is_token_blacklisted(token: str, db: Session) -> bool:
     """
     # Check if token exists in blacklist
     blacklisted = (
-        db.query(BlacklistedToken).filter(BlacklistedToken.token == token).first()
+        db.query(BlacklistedToken).filter(
+            BlacklistedToken.token == token).first()
     )
 
     return blacklisted is not None
@@ -152,10 +183,13 @@ def get_token_data(token: str, db: Session) -> JWTTokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        secret_key = settings.JWT_SECRET_KEY.get_secret_value()
         payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+            token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
-        username: str = payload.get("sub")
+
+        # Try both 'sub' and 'username' claims
+        username: str = payload.get("sub") or payload.get("username")
         if username is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -194,7 +228,8 @@ async def get_current_user(
     token_data = get_token_data(token, db)
 
     # Get user from database
-    user = db.query(DBUser).filter(DBUser.username == token_data.username).first()
+    user = db.query(DBUser).filter(
+        DBUser.username == token_data.username).first()
 
     if user is None:
         raise HTTPException(

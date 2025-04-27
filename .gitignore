@@ -159,3 +159,5 @@ dist
 *.log
 *.dt
 *.idx
+*.vscode
+settings.json

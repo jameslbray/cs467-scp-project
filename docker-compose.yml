@@ -1,0 +1,104 @@
+services:
+  db:
+    image: postgres:17-alpine               # official Postgres image
+    restart: unless-stopped
+    env_file:
+      - .env                                 # pulls in POSTGRES_* and PGDATA
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"                          # expose for local development
+    healthcheck:                            # ensures users service waits for readiness
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./services/users/db/init:/docker-entrypoint-initdb.d  # Mount initialization scripts
+
+  users:
+    build: ./services/users
+    ports:
+      - "${USERS_PORT}:8001"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_URL=${RABBITMQ_URL}
+    volumes:
+      - ./.env:/app/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"  # AMQP port
+      - "15672:15672"  # Management UI port
+    env_file:
+      - .env
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  notifications:
+    build: ./services/notifications
+    ports:
+      - "${NOTIFICATIONS_PORT}:8002"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_URL=${RABBITMQ_URL}
+    depends_on:
+      - rabbitmq
+
+  presence:
+    build: ./services/presence
+    ports:
+      - "${PRESENCE_PORT}:8003"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_URL=${RABBITMQ_URL}
+    depends_on:
+      - rabbitmq
+
+  socket-io:
+    build: ./services/socket_io
+    ports:
+      - "${SOCKET_IO_PORT}:8004"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_URL=${RABBITMQ_URL}
+    depends_on:
+      - rabbitmq
+
+  chat:
+    build: ./services/chat
+    ports:
+      - "${CHAT_PORT}:8005"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_URL=${RABBITMQ_URL}
+    depends_on:
+      - rabbitmq
+
+volumes:
+  postgres_data:

@@ -6,14 +6,18 @@ from ..core.config import get_settings
 
 settings = get_settings()
 
-SQLALCHEMY_DATABASE_URL = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+SQLALCHEMY_DATABASE_URL = (
+    f"postgresql://{settings.POSTGRES_USER}:"
+    f"{settings.POSTGRES_PASSWORD.get_secret_value()}@"
+    f"{settings.POSTGRES_HOST}:"
+    f"{settings.POSTGRES_PORT}/"
+    "users_db"  # hardcoded to match docker-compose.yml
+)
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
-
-# Dependency
 
 
 def get_db():
