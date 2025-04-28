@@ -45,7 +45,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const validateToken = async (tokenToValidate: string) => {
     try {
-      const userData = await authApi.validateToken();
+      const userData = await authApi.validateToken(tokenToValidate);
       setUser(userData);
     } catch (error) {
       console.error('Error validating token:', error);
@@ -60,13 +60,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setIsLoading(true);
     try {
       const data = await authApi.login(username, password);
-      setToken(data.access_token);
-      localStorage.setItem('auth_token', data.access_token);
-      
-      // Get user data
-      const userData = await authApi.validateToken();
+      const newToken = data.access_token;
+      setToken(newToken);
+      localStorage.setItem('auth_token', newToken);
+
+      // Get user data using the new token
+      const userData = await authApi.validateToken(newToken);
       setUser(userData);
-      
+
       return true;
     } catch (error) {
       console.error('Login error:', error);
@@ -101,7 +102,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.error('Error during logout:', error);
       }
     }
-    
+
     // Clear local state
     localStorage.removeItem('auth_token');
     setToken(null);
@@ -119,4 +120,4 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}; 
+};

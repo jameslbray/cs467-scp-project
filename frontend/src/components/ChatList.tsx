@@ -34,7 +34,7 @@ const initialMessages: Omit<ChatMessageProps, 'isCurrentUser'>[] = [
   {
     id: '1',
     content: 'Hello everyone! Welcome to SycoLibre chat.',
-    author: otherUsers['2'],
+    author: otherUsers['2'] as User,
     timestamp: new Date(Date.now() - 3600000) // 1 hour ago
   },
   {
@@ -46,13 +46,13 @@ const initialMessages: Omit<ChatMessageProps, 'isCurrentUser'>[] = [
   {
     id: '3',
     content: 'Great to see markdown support! Check out this code:\n```python\ndef hello_world():\n    print("Hello, world!")\n```',
-    author: otherUsers['3'],
+    author: otherUsers['3'] as User,
     timestamp: new Date(Date.now() - 900000) // 15 minutes ago
   },
   {
     id: '4',
     content: 'You can also include:\n- Bullet points\n- In your messages\n\nAlong with [links](https://example.com)',
-    author: otherUsers['2'],
+    author: otherUsers['2'] as User,
     timestamp: new Date(Date.now() - 300000) // 5 minutes ago
   }
 ];
@@ -74,12 +74,12 @@ const ChatList: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!newMessage.trim()) return;
-    
+
     // Simulate sending a message
     setIsLoading(true);
-    
+
     // Simulate network delay
     setTimeout(() => {
       const message: Omit<ChatMessageProps, 'isCurrentUser'> = {
@@ -88,7 +88,7 @@ const ChatList: React.FC = () => {
         author: currentUser,
         timestamp: new Date()
       };
-      
+
       setMessages(prevMessages => [...prevMessages, message]);
       setNewMessage('');
       setIsLoading(false);
@@ -101,7 +101,7 @@ const ChatList: React.FC = () => {
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Chat Room</h2>
       </div>
-      
+
       {/* Messages Container */}
       <div className="flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900">
         {messages.length === 0 ? (
@@ -124,7 +124,7 @@ const ChatList: React.FC = () => {
           </div>
         )}
       </div>
-      
+
       {/* Message Input */}
       <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
         <form onSubmit={handleSubmit} className="flex items-end gap-2">

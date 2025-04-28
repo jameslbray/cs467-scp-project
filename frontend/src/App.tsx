@@ -5,7 +5,7 @@ import LandingPage from './pages/LandingPage';
 import ChatPage from './pages/ChatPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import ProtectedRoute from './components/ProtectedRoute';
+import AuthenticatedLayout from './layouts/AuthenticatedLayout';
 import { ThemeProvider, AuthProvider } from './contexts';
 
 // Define types for our context and props
@@ -30,9 +30,9 @@ const App: React.FC = () => {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            
+
             {/* Protected routes */}
-            <Route element={<ProtectedRoute />}>
+            <Route element={<AuthenticatedLayout />}>
               <Route path="/chat" element={<ChatPage />} />
             </Route>
           </Routes>

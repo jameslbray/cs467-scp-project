@@ -4,8 +4,8 @@
 const API_BASE_URL = 'http://localhost:8001';
 
 // Helper function to get headers with authentication
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('auth_token');
+const getAuthHeaders = (providedToken?: string) => {
+  const token = providedToken || localStorage.getItem('auth_token');
   return {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -55,10 +55,10 @@ export const authApi = {
     return response.json();
   },
 
-  validateToken: async () => {
+  validateToken: async (tokenToValidate?: string) => {
     const response = await fetch(`${API_BASE_URL}/users/me`, {
       method: 'GET',
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders(tokenToValidate),
     });
 
     if (!response.ok) {

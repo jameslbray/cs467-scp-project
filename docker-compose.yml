@@ -120,18 +120,12 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-5173}:5173"
     env_file:
       - .env
     environment:
       - VITE_API_URL=${API_URL:-http://localhost:8001}
       - VITE_SOCKET_URL=${SOCKET_URL:-http://localhost:8000}
-    depends_on:
-      - users
-      - socket_io
-      - chat
-      - presence
-      - notifications
     volumes:
       - ./frontend:/app
       - /app/node_modules
