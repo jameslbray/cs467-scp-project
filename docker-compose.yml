@@ -8,6 +8,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_MAX_CONNECTIONS: 200
+      POSTGRES_SHARED_BUFFERS: 256MB
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_line_prefix='%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+      -c log_destination='stderr,csvlog'
+      -c logging_collector=on
+      -c log_directory=/var/log/postgresql
+      -c log_filename=postgresql-%Y-%m-%d_%H%M%S.log
     ports:
       - "5433:5432"                          # expose for local development
     healthcheck:                            # ensures users service waits for readiness
@@ -19,6 +32,34 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./services/users/db/init:/docker-entrypoint-initdb.d  # Mount initialization scripts
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"  # AMQP port
+      - "15672:15672"  # Management UI port
+    env_file:
+      - .env
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  socket_io:
+    build:
+      context: .
+      dockerfile: services/socket_io/Dockerfile
+    ports:
+      - "${SOCKET_IO_PORT}:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_URL=${RABBITMQ_URL}
+    depends_on:
+      - rabbitmq
   users:
     build: ./services/users
     ports:
@@ -36,21 +77,6 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    ports:
-      - "5672:5672"  # AMQP port
-      - "15672:15672"  # Management UI port
-    env_file:
-      - .env
-    environment:
-      - RABBITMQ_DEFAULT_USER=guest
-      - RABBITMQ_DEFAULT_PASS=guest
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   notifications:
     build: ./services/notifications
@@ -76,10 +102,11 @@ services:
     depends_on:
       - rabbitmq
 
-  socket-io:
-    build: ./services/socket_io
+
+  chat:
+    build: ./services/chat
     ports:
-      - "${SOCKET_IO_PORT}:8004"
+      - "${CHAT_PORT}:8004"
     env_file:
       - .env
     environment:
@@ -88,17 +115,26 @@ services:
     depends_on:
       - rabbitmq
 
-  chat:
-    build: ./services/chat
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
-      - "${CHAT_PORT}:8005"
+      - "${FRONTEND_PORT:-3000}:3000"
     env_file:
       - .env
     environment:
-      - PYTHONPATH=/app
-      - RABBITMQ_URL=${RABBITMQ_URL}
+      - VITE_API_URL=${API_URL:-http://localhost:8001}
+      - VITE_SOCKET_URL=${SOCKET_URL:-http://localhost:8000}
     depends_on:
-      - rabbitmq
+      - users
+      - socket_io
+      - chat
+      - presence
+      - notifications
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
 volumes:
   postgres_data:

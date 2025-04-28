@@ -1,37 +1,28 @@
-# Build stage
-FROM python:3.11-slim as builder
+# services/socket_io/Dockerfile
 
-# Install Rust and other build dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-alpine
 
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+# 1) Install system deps
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    python3-dev
 
-# Set working directory
+# 2) Set /app as our workspace
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+# 3) Copy only what we need for pip install (cache layer)
+COPY services/socket_io/requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
-COPY . .
+# 4) Bring in the entire services/ folder from context
+COPY services ./services
 
-# Final stage
-FROM python:3.11-slim
+# 5) Expose your app port (default to 8000 if not set)
+ARG PORT=8000
+ENV PORT=$PORT
+EXPOSE $PORT
 
-# Copy only the necessary files from the builder stage
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /app /app
-
-WORKDIR /app
-
-# Expose the port
-EXPOSE 8000
-
-# Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 6) Launch via the top-level services namespace
+CMD ["sh", "-c", "gunicorn -c services/socket_io/gunicorn_config.py services.socket_io.app.main:app --bind 0.0.0.0:${PORT} --worker-class uvicorn.workers.UvicornWorker"]

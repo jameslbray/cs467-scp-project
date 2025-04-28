@@ -1,0 +1,4 @@
+include services/py.typed
+include services/shared/py.typed
+include services/shared/utils/py.typed
+recursive-include services *.py
