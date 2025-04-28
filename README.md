@@ -264,7 +264,7 @@ sycolibre/
 │   │   ├── app/            # Application package
 │   │   │   ├── core/       # Core components
 │   │   │   │   ├── socket_service.py  # Socket.IO server implementation
-│   │   │   │   └── config.py         # Configuration 
+│   │   │   │   └── config.py         # Configuration
 │   │   │   ├── db/         # Database models and connections
 │   │   │   └── main.py     # Application entry point
 │   │   └── tests/          # Test suite

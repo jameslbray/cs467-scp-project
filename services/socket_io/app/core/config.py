@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["*"]
 
     # Socket.IO settings
-    SOCKET_IO_PORT: int = 8000
+    SOCKET_IO_PORT: int = int(os.getenv("SOCKET_IO_PORT", "8000"))
     SOCKET_IO_HOST: str = "0.0.0.0"
     SOCKET_IO_PATH: str = "/socket.io"
     SOCKET_IO_ASYNC_MODE: str = "asgi"
@@ -26,10 +26,10 @@ class Settings(BaseSettings):
 
     # Security settings
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "supersecretkey")
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 
     # Logging
-    LOG_LEVEL: str = "INFO"
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     class Config:
         env_file = ".env"

@@ -5,7 +5,7 @@ Presence manager for handling user presence state.
 import logging
 import json
 import aio_pika
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, TYPE_CHECKING, Never
 from datetime import datetime
 import asyncpg
 from enum import Enum
@@ -51,7 +51,7 @@ class UserStatus:
 class PresenceManager:
     """Manages user presence state."""
 
-    def __init__(self, config: Dict[str, Any], socket_server: SocketManager=None):
+    def __init__(self, config: Dict[str, Any], socket_server: SocketManager = None):
         """Initialize the presence manager.
 
         Args:
@@ -63,7 +63,8 @@ class PresenceManager:
         self.rabbitmq_channel = None
         self.rabbitmq_exchange = None
         self._initialized = False
-        self.db_pool = None
+        self.db_pool = None if "postgres" not in config else None
+        self.socket_server = socket_server
 
         # User presence data
         self.presence_data: Dict[str, Dict[str, Any]] = {}
@@ -71,16 +72,24 @@ class PresenceManager:
     async def initialize(self) -> None:
         """Initialize the presence manager."""
         if self._initialized:
+            logger.warning("Presence manager already initialized")
             return
 
-        # Connect to database
-        await self._connect_database()
+        try:
+            # Initialize RabbitMQ client
+            await self._connect_rabbitmq()
 
-        # Connect to RabbitMQ
-        await self._connect_rabbitmq()
+            # Initialize database connection only if this is the presence service
+            if "postgres" in self.config:
+                await self._connect_database()
 
-        logger.info("Presence manager initialized")
-        self._initialized = True
+            self._initialized = True
+            logger.info("Presence manager initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize presence manager: {e}")
+            self._initialized = False  # Reset initialization flag on failure
+            raise
 
     async def shutdown(self) -> None:
         """Shutdown the presence manager."""
@@ -96,7 +105,11 @@ class PresenceManager:
         """Connect to PostgreSQL database."""
         try:
             # Connect to PostgreSQL
-            self.db_pool = await asyncpg.create_pool(**self.config["postgres"])
+            self.db_pool = await asyncpg.create_pool(
+                min_size=2,
+                max_size=10,
+                **self.config["postgres"]
+            )
             logger.info("Connected to PostgreSQL database")
 
             # Create tables if they don't exist
@@ -170,17 +183,31 @@ class PresenceManager:
         """Process a presence message from RabbitMQ."""
         async with message.process():
             try:
-                # Parse message body
                 body = json.loads(message.body.decode())
-                user_id = body.get("user_id")
-                status = body.get("status")
-                last_changed = body.get("last_changed")
+                message_type = body.get("type")
 
-                if user_id and status:
-                    # Update user status
-                    await self._update_user_status(
-                        user_id, StatusType(status), last_changed
-                    )
+                if message_type == "status_update":
+                    user_id = body.get("user_id")
+                    status = body.get("status")
+                    last_changed = body.get("last_changed")
+
+                    if user_id and status:
+                        if self.db_pool:  # Only handle DB operations in presence service
+                            await self._save_user_status(user_id, StatusType(status), last_changed)
+                        else:  # Socket.IO service just updates in-memory state
+                            self.presence_data[user_id] = {
+                                "status": status,
+                                "last_seen": last_changed or datetime.now().timestamp()
+                            }
+
+                elif message_type == "status_query":
+                    # Handle status queries through RabbitMQ
+                    if self.db_pool:
+                        user_id = body.get("user_id")
+                        status = await self._get_user_status(user_id)
+                        # Publish status back
+                        await self._publish_status_update(user_id, status.status if status else StatusType.OFFLINE)
+
             except Exception as e:
                 logger.error(f"Error processing presence message: {e}")
 

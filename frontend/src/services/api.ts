@@ -1,6 +1,7 @@
 // API service for authentication and other API calls
 
-const API_BASE_URL = 'http://localhost:8000';
+
+const API_BASE_URL = 'http://localhost:8001';
 
 // Helper function to get headers with authentication
 const getAuthHeaders = () => {
@@ -17,7 +18,7 @@ export const authApi = {
     const params = new URLSearchParams();
     params.append('username', username);
     params.append('password', password);
-    
+
     const response = await fetch(`${API_BASE_URL}/token`, {
       method: 'POST',
       headers: {
@@ -25,19 +26,18 @@ export const authApi = {
       },
       body: params.toString(),
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.message || 'Login failed');
     }
-    
+
     return response.json();
   },
-  
+
   register: async (username: string, password: string, email: string) => {
     const requestData = { username, password, email };
-    console.log('Registration request data:', requestData);
-    
+
     const response = await fetch(`${API_BASE_URL}/register`, {
       method: 'POST',
       headers: {
@@ -45,39 +45,39 @@ export const authApi = {
       },
       body: JSON.stringify(requestData),
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json();
       console.error('Registration error:', errorData);
       throw new Error(errorData.detail || 'Registration failed');
     }
-    
+
     return response.json();
   },
-  
+
   validateToken: async () => {
     const response = await fetch(`${API_BASE_URL}/users/me`, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
-    
+
     if (!response.ok) {
       throw new Error('Token validation failed');
     }
-    
+
     return response.json();
   },
-  
+
   logout: async () => {
     const response = await fetch(`${API_BASE_URL}/logout`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });
-    
+
     if (!response.ok) {
       console.error('Logout failed:', await response.text());
     }
-    
+
     return response.ok;
   },
 };
@@ -89,26 +89,26 @@ export const userApi = {
       method: 'GET',
       headers: getAuthHeaders(),
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch user profile');
     }
-    
+
     return response.json();
   },
-  
+
   updateProfile: async (data: { username?: string; email?: string; profilePicture?: string }) => {
     const response = await fetch(`${API_BASE_URL}/profile`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.message || 'Failed to update profile');
     }
-    
+
     return response.json();
   },
-}; 
+};
