@@ -4,20 +4,15 @@ Presence manager for handling user presence state.
 
 import logging
 import json
-import aio_pika
-from typing import Dict, Any, Optional, List, TYPE_CHECKING, Never
+from typing import Dict, Any, Optional, List
 from datetime import datetime
-import asyncpg
+import asyncpg  # type: ignore
 from enum import Enum
+from services.shared.utils.retry import CircuitBreaker, with_retry
+from services.rabbitmq.core.client import RabbitMQClient
+from services.socket_io.app.core.socket_server import SocketServer as SocketManager
 
-if TYPE_CHECKING:
-    # Import only for type checking to avoid circular imports
-    from services.socket_io.app.core.socket_server import SocketServer as SocketManager
-else:
-    # Use a placeholder type at runtime
-    SocketManager = Any  # This makes Python ignore the actual type at runtime
-
-# Configure logging
+# configure logging
 logger = logging.getLogger(__name__)
 
 
@@ -59,15 +54,27 @@ class PresenceManager:
             settings
         """
         self.config = config
-        self.rabbitmq_connection = None
-        self.rabbitmq_channel = None
-        self.rabbitmq_exchange = None
         self._initialized = False
-        self.db_pool = None if "postgres" not in config else None
+        self.db_pool: Optional[asyncpg.Pool] = None
         self.socket_server = socket_server
 
         # User presence data
         self.presence_data: Dict[str, Dict[str, Any]] = {}
+
+        # Initialize RabbitMQ client
+        self.rabbitmq = RabbitMQClient()
+
+        # Initialize circuit breakers
+        self.rabbitmq_cb = CircuitBreaker(
+            "rabbitmq",
+            failure_threshold=3,
+            reset_timeout=30.0
+        )
+        self.db_cb = CircuitBreaker(
+            "postgres",
+            failure_threshold=3,
+            reset_timeout=30.0
+        )
 
     async def initialize(self) -> None:
         """Initialize the presence manager."""
@@ -76,12 +83,24 @@ class PresenceManager:
             return
 
         try:
-            # Initialize RabbitMQ client
-            await self._connect_rabbitmq()
+            # Initialize RabbitMQ client with circuit breaker
+            await with_retry(
+                self._connect_rabbitmq,
+                max_attempts=5,
+                initial_delay=5.0,
+                max_delay=60.0,
+                circuit_breaker=self.rabbitmq_cb
+            )
 
             # Initialize database connection only if this is the presence service
             if "postgres" in self.config:
-                await self._connect_database()
+                await with_retry(
+                    self._connect_database,
+                    max_attempts=5,
+                    initial_delay=5.0,
+                    max_delay=60.0,
+                    circuit_breaker=self.db_cb
+                )
 
             self._initialized = True
             logger.info("Presence manager initialized successfully")
@@ -93,8 +112,7 @@ class PresenceManager:
 
     async def shutdown(self) -> None:
         """Shutdown the presence manager."""
-        if self.rabbitmq_connection:
-            await self.rabbitmq_connection.close()
+        await self.rabbitmq.close()
 
         if self.db_pool:
             await self.db_pool.close()
@@ -146,92 +164,121 @@ class PresenceManager:
     async def _connect_rabbitmq(self) -> None:
         """Connect to RabbitMQ."""
         try:
-            # Connect to RabbitMQ
-            self.rabbitmq_connection = await aio_pika.connect_robust(
-                self.config["rabbitmq"]["url"]
-            )
-
-            # Create a channel
-            self.rabbitmq_channel = await self.rabbitmq_connection.channel()
+            # Connect to RabbitMQ using the shared client
+            connected = await self.rabbitmq.connect()
+            if not connected:
+                raise Exception("Failed to connect to RabbitMQ")
 
             # Declare exchange
-            self.rabbitmq_exchange = await (
-                self.rabbitmq_channel.declare_exchange(
-                    "user_events", aio_pika.ExchangeType.TOPIC, durable=True
-                )
-            )
+            await self.rabbitmq.declare_exchange("user_events", "topic")
 
             # Declare queue
-            queue = await self.rabbitmq_channel.declare_queue(
-                "presence_updates", durable=True
-            )
+            await self.rabbitmq.declare_queue("presence_updates", durable=True)
 
             # Bind queue to exchange
-            await queue.bind(self.rabbitmq_exchange, "status.#")
+            await self.rabbitmq.bind_queue("presence_updates", "user_events", "status.#")
 
             # Start consuming messages
-            await queue.consume(self._process_presence_message)
+            await self.rabbitmq.consume("presence_updates", self._process_presence_message)
 
             logger.info("Connected to RabbitMQ")
         except Exception as e:
             logger.error(f"Failed to connect to RabbitMQ: {e}")
             raise
 
-    async def _process_presence_message(
-        self, message: aio_pika.IncomingMessage
-    ) -> None:
+    async def _process_presence_message(self, message: Any) -> None:
         """Process a presence message from RabbitMQ."""
-        async with message.process():
-            try:
-                body = json.loads(message.body.decode())
-                message_type = body.get("type")
+        try:
+            body = json.loads(message.body.decode())
+            message_type = body.get("type")
 
-                if message_type == "status_update":
+            if message_type == "status_update":
+                user_id = body.get("user_id")
+                status = body.get("status")
+                last_changed = body.get("last_changed")
+
+                if user_id and status:
+                    if self.db_pool:  # Only handle DB operations in presence service
+                        await with_retry(
+                            lambda: self._save_user_status(
+                                user_id, StatusType(status), last_changed),
+                            max_attempts=3,
+                            circuit_breaker=self.db_cb
+                        )
+                    else:  # Socket.IO service just updates in-memory state
+                        self.presence_data[user_id] = {
+                            "status": status,
+                            "last_seen": last_changed or datetime.now().timestamp()
+                        }
+
+            elif message_type == "status_query":
+                # Handle status queries through RabbitMQ
+                if self.db_pool:
                     user_id = body.get("user_id")
-                    status = body.get("status")
-                    last_changed = body.get("last_changed")
+                    status = await with_retry(
+                        lambda: self._get_user_status(user_id),
+                        max_attempts=3,
+                        circuit_breaker=self.db_cb
+                    )
+                    # Publish status back
+                    await with_retry(
+                        lambda: self._publish_status_update(
+                            user_id,
+                            status.status if status else StatusType.OFFLINE
+                        ),
+                        max_attempts=3,
+                        circuit_breaker=self.rabbitmq_cb
+                    )
 
-                    if user_id and status:
-                        if self.db_pool:  # Only handle DB operations in presence service
-                            await self._save_user_status(user_id, StatusType(status), last_changed)
-                        else:  # Socket.IO service just updates in-memory state
-                            self.presence_data[user_id] = {
-                                "status": status,
-                                "last_seen": last_changed or datetime.now().timestamp()
-                            }
-
-                elif message_type == "status_query":
-                    # Handle status queries through RabbitMQ
-                    if self.db_pool:
-                        user_id = body.get("user_id")
-                        status = await self._get_user_status(user_id)
-                        # Publish status back
-                        await self._publish_status_update(user_id, status.status if status else StatusType.OFFLINE)
-
-            except Exception as e:
-                logger.error(f"Error processing presence message: {e}")
+        except Exception as e:
+            logger.error(f"Error processing presence message: {e}")
+            await message.nack(requeue=False)
+        else:
+            await message.ack()
 
     async def _update_user_status(
         self, user_id: str, status: StatusType, last_changed: float = None
     ) -> None:
         """Update a user's status."""
         # Update in-memory data
-        if user_id in self.presence_data:
+        if user_id not in self.presence_data:
+            return False
+
+        try:
+            status_type = StatusType(status)
             self.presence_data[user_id].update(
-                {
-                    "status": status.value,
-                    "last_seen": last_changed or datetime.now().timestamp(),
-                }
+                {"status": status_type.value,
+                 "last_seen": last_changed or datetime.now().timestamp()}
             )
 
-            # Save to database
-            await self._save_user_status(user_id, status, last_changed)
+            # Update status in database and notify others with circuit breaker
+            await with_retry(
+                lambda: self._save_user_status(
+                    user_id, status_type, last_changed),
+                max_attempts=3,
+                circuit_breaker=self.db_cb
+            )
 
-            # Publish status update to RabbitMQ
-            await self._publish_status_update(user_id, status, last_changed)
+            # Publish status update to RabbitMQ with circuit breaker
+            await with_retry(
+                lambda: self._publish_status_update(
+                    user_id, status_type, last_changed),
+                max_attempts=3,
+                circuit_breaker=self.rabbitmq_cb
+            )
 
-            # Notify friends
-            await self._notify_friends(user_id, status)
+            # Notify friends with circuit breaker
+            await with_retry(
+                lambda: self._notify_friends(user_id, status_type),
+                max_attempts=3,
+                circuit_breaker=self.rabbitmq_cb
+            )
+
+            logger.info(f"User {user_id} status updated to {status}")
+            return True
+        except ValueError:
+            logger.error(f"Invalid status: {status}")
+            return False
 
     async def _save_user_status(
         self, user_id: str, status: StatusType, last_changed: float = None
@@ -257,32 +304,26 @@ class PresenceManager:
                 )
         except Exception as e:
             logger.error(f"Failed to save user status: {e}")
+            raise
 
     async def _publish_status_update(
         self, user_id: str, status: StatusType, last_changed: float = None
     ) -> None:
         """Publish status update to RabbitMQ."""
-        if not self.rabbitmq_exchange:
-            logger.warning("RabbitMQ exchange not available")
-            return
-
         try:
-            message = aio_pika.Message(
-                body=json.dumps(
-                    {
-                        "user_id": user_id,
-                        "status": status.value,
-                        "last_changed": last_changed
-                        or datetime.now().timestamp(),  # type: ignore
-                    }
-                ).encode(),
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            )
-            await self.rabbitmq_exchange.publish(
-                message, routing_key=f"status.{user_id}"
+            message = json.dumps({
+                "user_id": user_id,
+                "status": status.value,
+                "last_changed": last_changed or datetime.now().timestamp(),
+            })
+            await self.rabbitmq.publish_message(
+                exchange="user_events",
+                routing_key=f"status.{user_id}",
+                message=message
             )
         except Exception as e:
             logger.error(f"Failed to publish status update: {e}")
+            raise
 
     async def _notify_friends(self, user_id: str, status: StatusType) -> None:
         """Notify friends about a user's status change."""
@@ -291,14 +332,23 @@ class PresenceManager:
             return
 
         try:
-            # Get friends
-            friends = await self._get_friends(user_id)
+            # Get friends with circuit breaker
+            friends = await with_retry(
+                lambda: self._get_friends(user_id),
+                max_attempts=3,
+                circuit_breaker=self.db_cb
+            )
 
-            # Publish status update for each friend
+            # Publish status update for each friend with circuit breaker
             for friend_id in friends:
-                await self._publish_status_update(user_id, status)
+                await with_retry(
+                    lambda: self._publish_status_update(user_id, status),
+                    max_attempts=3,
+                    circuit_breaker=self.rabbitmq_cb
+                )
         except Exception as e:
             logger.error(f"Failed to notify friends: {e}")
+            raise
 
     async def _get_friends(self, user_id: str) -> List[str]:
         """Get a user's friends."""
@@ -365,7 +415,7 @@ class PresenceManager:
             "last_seen": presence_data.get("last_seen", 0),
         }
 
-    def set_user_status(self, user_id: str, status: str) -> bool:
+    async def set_user_status(self, user_id: str, status: str) -> bool:
         """Set user's status."""
         if user_id not in self.presence_data:
             return False
@@ -376,6 +426,14 @@ class PresenceManager:
                 {"status": status_type.value,
                  "last_seen": datetime.now().timestamp()}
             )
+
+            # Update status in database and notify others with circuit breaker
+            await with_retry(
+                lambda: self._update_user_status(user_id, status_type),
+                max_attempts=3,
+                circuit_breaker=self.db_cb
+            )
+
             logger.info(f"User {user_id} status set to {status}")
             return True
         except ValueError:

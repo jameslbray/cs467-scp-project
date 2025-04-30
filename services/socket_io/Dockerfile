@@ -6,7 +6,11 @@ FROM python:3.12-alpine
 RUN apk add --no-cache \
     gcc \
     musl-dev \
-    python3-dev
+    python3-dev \
+    linux-headers \
+    libffi-dev \
+    openssl-dev \
+    make
 
 # 2) Set /app as our workspace
 WORKDIR /app
@@ -14,6 +18,7 @@ WORKDIR /app
 # 3) Copy only what we need for pip install (cache layer)
 COPY services/socket_io/requirements.txt .
 
+# Install dependencies with pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 4) Bring in the entire services/ folder from context

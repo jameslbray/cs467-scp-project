@@ -17,10 +17,8 @@ services:
       -c log_connections=on
       -c log_disconnections=on
       -c log_line_prefix='%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
-      -c log_destination='stderr,csvlog'
-      -c logging_collector=on
-      -c log_directory=/var/log/postgresql
-      -c log_filename=postgresql-%Y-%m-%d_%H%M%S.log
+      -c log_destination='stderr'
+      -c logging_collector=off
     ports:
       - "5433:5432"                          # expose for local development
     healthcheck:                            # ensures users service waits for readiness
@@ -30,7 +28,9 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./services/users/db/init:/docker-entrypoint-initdb.d  # Mount initialization scripts
+      # Mount all service initialization scripts
+      - ./services/users/db/init:/docker-entrypoint-initdb.d/01_users  # Users service init scripts
+      - ./services/presence/db/init:/docker-entrypoint-initdb.d/02_presence  # Presence service init scripts
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
@@ -42,6 +42,15 @@ services:
     environment:
       - RABBITMQ_DEFAULT_USER=guest
       - RABBITMQ_DEFAULT_PASS=guest
+      # Enable debug logging
+      - RABBITMQ_LOG_LEVEL=debug
+      # Enable firehose (captures all messages)
+      - RABBITMQ_FIREHOSE_TRACER=true
+      # Enable message tracing
+      - RABBITMQ_TRACE=1
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_logs:/var/log/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
       interval: 10s
@@ -61,7 +70,9 @@ services:
     depends_on:
       - rabbitmq
   users:
-    build: ./services/users
+    build:
+      context: .
+      dockerfile: services/users/Dockerfile
     ports:
       - "${USERS_PORT}:8001"
     env_file:
@@ -79,7 +90,9 @@ services:
 
 
   notifications:
-    build: ./services/notifications
+    build:
+      context: .
+      dockerfile: services/notifications/Dockerfile
     ports:
       - "${NOTIFICATIONS_PORT}:8002"
     env_file:
@@ -91,7 +104,9 @@ services:
       - rabbitmq
 
   presence:
-    build: ./services/presence
+    build:
+      context: .
+      dockerfile: services/presence/Dockerfile
     ports:
       - "${PRESENCE_PORT}:8003"
     env_file:
@@ -104,7 +119,9 @@ services:
 
 
   chat:
-    build: ./services/chat
+    build:
+      context: .
+      dockerfile: services/chat/Dockerfile
     ports:
       - "${CHAT_PORT}:8004"
     env_file:
@@ -120,21 +137,17 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-5173}:5173"
     env_file:
       - .env
     environment:
       - VITE_API_URL=${API_URL:-http://localhost:8001}
       - VITE_SOCKET_URL=${SOCKET_URL:-http://localhost:8000}
-    depends_on:
-      - users
-      - socket_io
-      - chat
-      - presence
-      - notifications
     volumes:
       - ./frontend:/app
       - /app/node_modules
 
 volumes:
   postgres_data:
+  rabbitmq_data:
+  rabbitmq_logs:

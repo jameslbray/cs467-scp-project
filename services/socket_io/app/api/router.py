@@ -15,7 +15,7 @@ SERVICE_REGISTRY = {
     "users": "http://users:8001",
     "chat": "http://chat:8001",
     "notifications": "http://notifications:8004",
-    "presence": "http://presence:8000",
+    "presence": "http://presence:8005",
 }
 
 
