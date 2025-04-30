@@ -28,7 +28,9 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./services/users/db/init:/docker-entrypoint-initdb.d  # Mount initialization scripts
+      # Mount all service initialization scripts
+      - ./services/users/db/init:/docker-entrypoint-initdb.d/01_users  # Users service init scripts
+      - ./services/presence/db/init:/docker-entrypoint-initdb.d/02_presence  # Presence service init scripts
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
@@ -88,7 +90,9 @@ services:
 
 
   notifications:
-    build: ./services/notifications
+    build:
+      context: .
+      dockerfile: services/notifications/Dockerfile
     ports:
       - "${NOTIFICATIONS_PORT}:8002"
     env_file:
@@ -100,7 +104,9 @@ services:
       - rabbitmq
 
   presence:
-    build: ./services/presence
+    build:
+      context: .
+      dockerfile: services/presence/Dockerfile
     ports:
       - "${PRESENCE_PORT}:8003"
     env_file:
@@ -113,7 +119,9 @@ services:
 
 
   chat:
-    build: ./services/chat
+    build:
+      context: .
+      dockerfile: services/chat/Dockerfile
     ports:
       - "${CHAT_PORT}:8004"
     env_file:

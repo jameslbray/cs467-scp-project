@@ -159,3 +159,28 @@ class RabbitMQClient:
         await self.channel.declare_exchange(
             name=exchange_name, type=exchange_type_enum, durable=True
         )
+
+    async def bind_queue(self, queue_name: str, exchange_name: str, routing_key: str):
+        """Bind a queue to an exchange with a routing key"""
+        if not self.is_connected():
+            raise Exception("Not connected to RabbitMQ")
+
+        # Get the queue
+        queue = await self.channel.get_queue(queue_name)
+
+        # Get the exchange
+        exchange = await self.channel.get_exchange(exchange_name)
+
+        # Bind the queue to the exchange with the routing key
+        await queue.bind(exchange=exchange, routing_key=routing_key)
+
+    async def consume(self, queue_name: str, callback):
+        """Start consuming messages from a queue"""
+        if not self.is_connected():
+            raise Exception("Not connected to RabbitMQ")
+
+        # Get the queue
+        queue = await self.channel.get_queue(queue_name)
+
+        # Start consuming
+        await queue.consume(callback)

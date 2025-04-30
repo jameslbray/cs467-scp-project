@@ -1,11 +1,9 @@
 """
 Configuration settings for the presence service.
 """
-
-import os
 from typing import List, Dict, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, SecretStr
 
 
 class Settings(BaseSettings):
@@ -90,6 +88,14 @@ class Settings(BaseSettings):
         description="Logging level"
     )
 
+    # Database settings
+    POSTGRES_USER: str = Field(default="postgres")
+    POSTGRES_PASSWORD: str = Field(default="postgres")
+    POSTGRES_HOST: str = Field(default="localhost")
+    # Note: Using 5433 as per docker-compose
+    POSTGRES_PORT: str = Field(default="5433")
+    POSTGRES_DB: str = Field(default="sycolibre")
+
     @field_validator("ENV")
     @classmethod
     def validate_env(cls, v: str) -> str:
@@ -136,4 +142,15 @@ def get_socket_io_config() -> Dict[str, Any]:
         "ping_timeout": settings.SOCKET_IO_PING_TIMEOUT,
         "ping_interval": settings.SOCKET_IO_PING_INTERVAL,
         "max_http_buffer_size": settings.SOCKET_IO_MAX_HTTP_BUFFER_SIZE,
+    }
+
+
+def get_db_config() -> Dict[str, str]:
+    """Return PostgreSQL configuration dictionary"""
+    return {
+        "user": settings.POSTGRES_USER,
+        "password": settings.POSTGRES_PASSWORD,
+        "host": settings.POSTGRES_HOST,
+        "port": settings.POSTGRES_PORT,
+        "database": settings.POSTGRES_DB,
     }

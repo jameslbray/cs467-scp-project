@@ -186,6 +186,18 @@ async def login_for_access_token(
         })
     )
 
+    # Publish presence update
+    await rabbitmq_client.publish_message(
+        exchange="user_events",
+        routing_key=f"status.{user.id}",
+        message=json.dumps({
+            "type": "status_update",
+            "user_id": user.id,
+            "status": "online",
+            "last_changed": datetime.now().timestamp()
+        })
+    )
+
     return access_token
 
 
@@ -261,6 +273,18 @@ async def logout(
         message=json.dumps({
             "user_id": current_user.id,
             "username": current_user.username
+        })
+    )
+
+    # Publish presence update
+    await rabbitmq_client.publish_message(
+        exchange="user_events",
+        routing_key=f"status.{current_user.id}",
+        message=json.dumps({
+            "type": "status_update",
+            "user_id": current_user.id,
+            "status": "offline",
+            "last_changed": datetime.now().timestamp()
         })
     )
 

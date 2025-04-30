@@ -1,10 +1,9 @@
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
-    Header,
     WebSocket,
     WebSocketDisconnect,
     Query,
@@ -12,15 +11,15 @@ from fastapi import (
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, validator
 from datetime import datetime
-import jwt
+from jose import jwt
 from starlette.status import (
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
 )
 
-from app.core.config import settings
-from app.core.presence_manager import PresenceManager
+from ..core.config import settings
+from ..core.presence_manager import PresenceManager
 
 # Set up OAuth2 with password flow (token-based authentication)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -43,7 +42,9 @@ class StatusUpdate(BaseModel):
     def status_must_be_valid(cls, v):
         valid_statuses = ["online", "offline", "away", "busy", "invisible"]
         if v not in valid_statuses:
-            raise ValueError(f"Status must be one of: {', '.join(valid_statuses)}")
+            raise ValueError(
+                f"Status must be one of: {', '.join(valid_statuses)}"
+            )
         return v
 
 
@@ -66,7 +67,11 @@ class FriendStatusesResponse(BaseModel):
 class SubscriptionRequest(BaseModel):
     """Model for status subscription requests"""
 
-    user_ids: List[str] = Field(..., min_items=1, max_items=100)
+    user_ids: List[str] = Field(
+        default=...,
+        min_items=1,
+        max_items=100
+    )
 
 
 class SubscriptionResponse(BaseModel):
@@ -115,10 +120,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
 
 def get_presence_manager():
     """Get the global PresenceManager instance from the app state"""
-    from app.main import presence_manager
+    from ..main import presence_manager
 
     if presence_manager is None:
-        raise HTTPException(status_code=503, detail="Presence service not initialized")
+        raise HTTPException(
+            status_code=503,
+            detail="Presence service not initialized"
+        )
     return presence_manager
 
 
@@ -186,11 +194,15 @@ async def update_user_status(
     # Check if the user is trying to update their own status
     if user_id != current_user:
         raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN, detail="You can only update your own status"
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only update your own status"
         )
 
     # Update status
-    success = await presence_manager.set_user_status(user_id, status_update.status)
+    success = await presence_manager.set_user_status(
+        user_id,
+        status_update.status
+    )
     if not success:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
@@ -264,7 +276,8 @@ async def status_updates_websocket(
     """
     WebSocket endpoint to subscribe to status updates for multiple users
 
-    Connect with a valid JWT token and send a JSON message with user_ids to subscribe to
+    Connect with a valid JWT token and send a JSON message with user_ids to
+    subscribe to
     """
     # Authenticate the user
     try:
@@ -287,9 +300,10 @@ async def status_updates_websocket(
         user_ids = data.get("user_ids", [])
 
         if not user_ids:
-            await websocket.send_json(
-                {"type": "error", "message": "No user IDs provided for subscription"}
-            )
+            await websocket.send_json({
+                "type": "error",
+                "message": "No user IDs provided for subscription"
+            })
             return
 
         # Send initial status for all requested users
