@@ -4,10 +4,11 @@ Presence manager for handling user presence state.
 
 import logging
 import json
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 import asyncpg  # type: ignore
 from enum import Enum
+from uuid import UUID
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.rabbitmq.core.client import RabbitMQClient
 from services.socket_io.app.core.socket_server import SocketServer as SocketManager
@@ -28,16 +29,26 @@ class StatusType(str, Enum):
 class UserStatus:
     """User status model."""
 
-    def __init__(self, user_id: str, status: StatusType,
-                 last_changed: float = None):
-        self.user_id = user_id
+    def __init__(
+        self,
+        user_id: str,
+        status: StatusType,
+        last_changed: Optional[float] = None
+    ):
+        try:
+            # Convert string to UUID if it's not already
+            self.user_id = UUID(user_id) if isinstance(
+                user_id, str) else user_id
+        except ValueError:
+            logger.error(f"Invalid UUID format for user_id: {user_id}")
+            raise
         self.status = status
         self.last_changed = last_changed or datetime.now().timestamp()
 
     def dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "user_id": self.user_id,
+            "user_id": str(self.user_id),  # Convert UUID to string for JSON
             "status": self.status.value,
             "last_changed": self.last_changed,
         }
@@ -46,12 +57,16 @@ class UserStatus:
 class PresenceManager:
     """Manages user presence state."""
 
-    def __init__(self, config: Dict[str, Any], socket_server: SocketManager = None):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        socket_server: Optional[SocketManager] = None
+    ):
         """Initialize the presence manager.
 
         Args:
-            config: Configuration dictionary containing RabbitMQ and other
-            settings
+            config: Configuration dictionary containing RabbitMQ settings
+            socket_server: Optional Socket.IO server instance
         """
         self.config = config
         self._initialized = False
@@ -92,7 +107,7 @@ class PresenceManager:
                 circuit_breaker=self.rabbitmq_cb
             )
 
-            # Initialize database connection only if this is the presence service
+            # Initialize database if this is the presence service
             if "postgres" in self.config:
                 await with_retry(
                     self._connect_database,
@@ -123,24 +138,34 @@ class PresenceManager:
         """Connect to PostgreSQL database."""
         try:
             # Connect to PostgreSQL
+            config = self.config["postgres"].copy()
+            if "options" in config:
+                # Remove options as it's not supported by asyncpg
+                del config["options"]
+
             self.db_pool = await asyncpg.create_pool(
                 min_size=2,
                 max_size=10,
-                **self.config["postgres"]
+                **config
             )
             logger.info("Connected to PostgreSQL database")
 
-            # Create tables if they don't exist
+            # Set search path for all connections in the pool
             async with self.db_pool.acquire() as conn:
+                await conn.execute('SET search_path TO presence, public')
+
+                # Create schema and tables if they don't exist
+                await conn.execute('CREATE SCHEMA IF NOT EXISTS presence')
+
                 # Create user_status table
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS user_status (
                         user_id TEXT PRIMARY KEY,
                         status TEXT NOT NULL,
-                        last_changed TIMESTAMP NOT NULL
+                        last_changed TIMESTAMP NOT NULL DEFAULT NOW()
                     )
-                """
+                    """
                 )
 
                 # Create connections table
@@ -153,7 +178,21 @@ class PresenceManager:
                         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                         PRIMARY KEY (user_id, connected_user_id)
                     )
-                """
+                    """
+                )
+
+                # Create indexes
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_user_status_last_changed
+                    ON user_status (last_changed)
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_connections_status
+                    ON connections (connection_status)
+                    """
                 )
 
             logger.info("Database tables initialized")
@@ -172,14 +211,22 @@ class PresenceManager:
             # Declare exchange
             await self.rabbitmq.declare_exchange("user_events", "topic")
 
-            # Declare queue
-            await self.rabbitmq.declare_queue("presence_updates", durable=True)
-
-            # Bind queue to exchange
-            await self.rabbitmq.bind_queue("presence_updates", "user_events", "status.#")
+            # Declare and bind queue
+            await self.rabbitmq.declare_queue(
+                "presence_updates",
+                durable=True
+            )
+            await self.rabbitmq.bind_queue(
+                "presence_updates",
+                "user_events",
+                "status.#"
+            )
 
             # Start consuming messages
-            await self.rabbitmq.consume("presence_updates", self._process_presence_message)
+            await self.rabbitmq.consume(
+                "presence_updates",
+                self._process_presence_message
+            )
 
             logger.info("Connected to RabbitMQ")
         except Exception as e:
@@ -237,37 +284,49 @@ class PresenceManager:
             await message.ack()
 
     async def _update_user_status(
-        self, user_id: str, status: StatusType, last_changed: float = None
-    ) -> None:
-        """Update a user's status."""
-        # Update in-memory data
+        self,
+        user_id: str,
+        status: StatusType,
+        last_changed: Optional[float] = None
+    ) -> bool:
+        """Update a user's status.
+
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
         if user_id not in self.presence_data:
             return False
 
         try:
             status_type = StatusType(status)
-            self.presence_data[user_id].update(
-                {"status": status_type.value,
-                 "last_seen": last_changed or datetime.now().timestamp()}
-            )
+            self.presence_data[user_id].update({
+                "status": status_type.value,
+                "last_seen": last_changed or datetime.now().timestamp()
+            })
 
-            # Update status in database and notify others with circuit breaker
+            # Update status in database and notify others
             await with_retry(
                 lambda: self._save_user_status(
-                    user_id, status_type, last_changed),
+                    user_id,
+                    status_type,
+                    last_changed
+                ),
                 max_attempts=3,
                 circuit_breaker=self.db_cb
             )
 
-            # Publish status update to RabbitMQ with circuit breaker
+            # Publish status update to RabbitMQ
             await with_retry(
                 lambda: self._publish_status_update(
-                    user_id, status_type, last_changed),
+                    user_id,
+                    status_type,
+                    last_changed
+                ),
                 max_attempts=3,
                 circuit_breaker=self.rabbitmq_cb
             )
 
-            # Notify friends with circuit breaker
+            # Notify friends
             await with_retry(
                 lambda: self._notify_friends(user_id, status_type),
                 max_attempts=3,
@@ -276,29 +335,76 @@ class PresenceManager:
 
             logger.info(f"User {user_id} status updated to {status}")
             return True
+
         except ValueError:
             logger.error(f"Invalid status: {status}")
             return False
 
     async def _save_user_status(
-        self, user_id: str, status: StatusType, last_changed: float = None
+        self,
+        user_id: Union[str, int, UUID],
+        status: StatusType,
+        last_changed: Optional[float] = None
     ) -> None:
-        """Save user status to database."""
+        """Save user status to database.
+
+        Args:
+            user_id: User ID as string, int, or UUID
+            status: User's status
+            last_changed: Timestamp of last status change
+        """
         if not self.db_pool:
             logger.warning("Database pool not available")
             return
 
         try:
             last_changed = last_changed or datetime.now().timestamp()
+
+            # Handle different user_id types
+            if isinstance(user_id, str):
+                try:
+                    # Try to parse as UUID first
+                    uuid_user_id = UUID(user_id)
+                except ValueError:
+                    # If not a valid UUID string, generate a v4 UUID
+                    uuid_user_id = UUID(int=int(user_id)) if user_id.isdigit() \
+                        else UUID(bytes=user_id.encode(), version=4)
+                    logger.debug(
+                        f"Generated UUID v4 from string: {user_id} -> {uuid_user_id}"
+                    )
+            elif isinstance(user_id, int):
+                # For integers, we create a UUID v4 using the int value
+                # This maintains consistency for the same integer input
+                try:
+                    uuid_user_id = UUID(int=user_id)
+                except ValueError:
+                    # If integer is too large, fall back to random UUID
+                    uuid_user_id = UUID(
+                        bytes=str(user_id).encode(),
+                        version=4
+                    )
+                logger.debug(
+                    f"Generated UUID v4 from int: {user_id} -> {uuid_user_id}"
+                )
+            elif isinstance(user_id, UUID):
+                uuid_user_id = user_id
+            else:
+                raise ValueError(f"Unsupported user_id type: {type(user_id)}")
+
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO user_status (user_id, status, last_changed)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id) DO UPDATE
-                    SET status = $2, last_changed = $3
-                """,
-                    user_id,
+                    INSERT INTO presence.user_status (
+                        user_id,
+                        status,
+                        last_changed
+                    ) VALUES ($1, $2, to_timestamp($3))
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET
+                        status = $2,
+                        last_changed = to_timestamp($3)
+                    """,
+                    str(uuid_user_id),  # Convert UUID to string for PostgreSQL
                     status.value,
                     last_changed,
                 )
@@ -307,7 +413,10 @@ class PresenceManager:
             raise
 
     async def _publish_status_update(
-        self, user_id: str, status: StatusType, last_changed: float = None
+        self,
+        user_id: str,
+        status: StatusType,
+        last_changed: Optional[float] = None
     ) -> None:
         """Publish status update to RabbitMQ."""
         try:
@@ -386,6 +495,9 @@ class PresenceManager:
             return None
 
         try:
+            # Convert string to UUID
+            uuid_user_id = UUID(user_id) if isinstance(
+                user_id, str) else user_id
             async with self.db_pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
@@ -393,16 +505,19 @@ class PresenceManager:
                     FROM user_status
                     WHERE user_id = $1
                 """,
-                    user_id,
+                    uuid_user_id,
                 )
 
                 if row:
                     return UserStatus(
-                        user_id=row["user_id"],
+                        user_id=str(row["user_id"]),  # Convert UUID to string
                         status=StatusType(row["status"]),
                         last_changed=row["last_changed"].timestamp(),
                     )
                 return None
+        except ValueError as e:
+            logger.error(f"Invalid UUID format for user_id: {user_id}")
+            return None
         except Exception as e:
             logger.error(f"Failed to get user status: {e}")
             return None

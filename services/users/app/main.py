@@ -6,21 +6,24 @@ from fastapi import (
     Request,
     BackgroundTasks
 )
+from typing import cast
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ExceptionHandler
 import json
 import logging
 import sys
 import os
 
-from .db import models, database
+from services.db_init.app.models import User as UserModel, BlacklistedToken
+from .db.database import get_db
 from .schemas import User, UserCreate, Token
 from .core import security
 from .core.rabbitmq import UserRabbitMQClient
@@ -38,8 +41,6 @@ logging.basicConfig(
 # Get logger for this file
 logger = logging.getLogger(__name__)
 
-# Create database tables
-models.Base.metadata.create_all(bind=database.engine)
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
@@ -70,6 +71,10 @@ app = FastAPI(
     description="Service for managing user authentication and profiles",
     version="0.1.0",
 )
+app.add_middleware(SlowAPIMiddleware)
+app.state.limiter = limiter
+
+app.add_exception_handler(RateLimitExceeded, cast(ExceptionHandler, _rate_limit_exceeded_handler))
 
 # Add CORS middleware
 app.add_middleware(
@@ -80,9 +85,6 @@ app.add_middleware(
     allow_headers=settings.CORS_HEADERS,
 )
 
-# Add rate limiter to the app
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
@@ -94,14 +96,14 @@ rabbitmq_client = UserRabbitMQClient(settings=settings)
 @app.post("/register", response_model=User)
 async def register_user(
     user: UserCreate,
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(get_db)
 ):
     # Check if user already exists
     db_user = (
-        db.query(models.User)
+        db.query(UserModel)
         .filter(
-            (models.User.email == user.email) |
-            (models.User.username == user.username)
+            (UserModel.email == user.email) |
+            (UserModel.username == user.username)
         )
         .first()
     )
@@ -123,7 +125,7 @@ async def register_user(
 
     # Create new user
     hashed_password = security.get_password_hash(user.password)
-    db_user = models.User(
+    db_user = UserModel(
         email=user.email,
         username=user.username,
         hashed_password=hashed_password
@@ -137,7 +139,7 @@ async def register_user(
         exchange="auth",
         routing_key="user.registered",
         message=json.dumps({
-            "user_id": db_user.id,
+            "user_id": str(db_user.id),
             "username": db_user.username,
             "email": db_user.email
         })
@@ -151,12 +153,12 @@ async def register_user(
 async def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(database.get_db),
+    db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
     user = (
-        db.query(models.User)
-        .filter(models.User.username == form_data.username)
+        db.query(UserModel)
+        .filter(UserModel.username == form_data.username)
         .first()
     )
     if not user or not security.verify_password(
@@ -181,7 +183,7 @@ async def login_for_access_token(
         exchange="auth",
         routing_key="user.login",
         message=json.dumps({
-            "user_id": user.id,
+            "user_id": str(user.id),
             "username": user.username
         })
     )
@@ -192,7 +194,7 @@ async def login_for_access_token(
         routing_key=f"status.{user.id}",
         message=json.dumps({
             "type": "status_update",
-            "user_id": user.id,
+            "user_id": str(user.id),
             "status": "online",
             "last_changed": datetime.now().timestamp()
         })
@@ -236,8 +238,8 @@ def cleanup_expired_tokens(db: Session):
     """Remove expired tokens from the blacklist."""
     now = datetime.utcnow()
     expired_tokens = (
-        db.query(models.BlacklistedToken)
-        .filter(models.BlacklistedToken.expires_at < now)
+        db.query(BlacklistedToken)
+        .filter(BlacklistedToken.expires_at < now)
         .all()
     )
 
@@ -252,7 +254,7 @@ def cleanup_expired_tokens(db: Session):
 async def logout(
     current_user: User = Depends(security.get_current_user),
     token: str = Depends(security.oauth2_scheme),
-    db: Session = Depends(database.get_db),
+    db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Logout the current user by blacklisting their token."""

@@ -124,7 +124,7 @@ class RabbitMQClient:
             # Publish to the named exchange
             await exchange_obj.publish(message_body, routing_key=routing_key)
         else:
-            # Use default exchange if no exchange name is provided
+            # Use default exchange if no exchange name is ovided
             await self.channel.default_exchange.publish(
                 message_body, routing_key=routing_key
             )

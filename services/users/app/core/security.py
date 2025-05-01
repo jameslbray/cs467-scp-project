@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from ..db.database import get_db
-from ..db.models import User as DBUser, BlacklistedToken
+from services.db_init.app.models import User as UserModel, BlacklistedToken
 from ..schemas import User, JWTTokenData, Token
 from .config import get_settings
 
@@ -228,8 +228,8 @@ async def get_current_user(
     token_data = get_token_data(token, db)
 
     # Get user from database
-    user = db.query(DBUser).filter(
-        DBUser.username == token_data.username).first()
+    user = db.query(UserModel).filter(
+        UserModel.username == token_data.username).first()
 
     if user is None:
         raise HTTPException(

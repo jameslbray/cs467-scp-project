@@ -91,9 +91,8 @@ class Settings(BaseSettings):
     # Database settings
     POSTGRES_USER: str = Field(default="postgres")
     POSTGRES_PASSWORD: str = Field(default="postgres")
-    POSTGRES_HOST: str = Field(default="localhost")
-    # Note: Using 5433 as per docker-compose
-    POSTGRES_PORT: str = Field(default="5433")
+    POSTGRES_HOST: str = Field(default="db")
+    POSTGRES_PORT: str = Field(default="5432")
     POSTGRES_DB: str = Field(default="sycolibre")
 
     @field_validator("ENV")

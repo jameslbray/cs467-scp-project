@@ -1,11 +1,18 @@
-FROM rabbitmq:3.12-management-alpine
+FROM python:3.13-slim
 
-# The management plugin is included for easier monitoring
-# Default ports:
-# - 5672: AMQP protocol
-# - 15672: Management UI
+WORKDIR /app
 
-# RabbitMQ will automatically use the environment variables:
-# - RABBITMQ_DEFAULT_USER (if set)
-# - RABBITMQ_DEFAULT_PASS (if set)
-# - RABBITMQ_DEFAULT_VHOST (if set)
+# Copy requirements file
+COPY requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the service code
+COPY services/rabbitmq /app/services/rabbitmq/
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Run setup script
+CMD ["python", "-m", "services.rabbitmq.setup"]
