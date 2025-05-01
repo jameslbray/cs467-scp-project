@@ -17,24 +17,26 @@ This repository contains a collection of microservices that power the SCP Projec
 
 The application is divided into the following microservices:
 
-| Service | Port | Description |
-|---------|------|-------------|
-| socket-io | 8000 | WebSocket service that handles real-time communication |
-| chat | 8001 | Chat service that manages messaging between users |
-| auth | 8002 | Authentication service that handles user login/registration |
-| notifications | 8003 | Notifications service that manages user notifications |
-| presence | 8004 | Presence service that tracks user online status |
-| users | 8005 | User management service that handles user profiles |
+- **PostgreSQL Database**: Central data storage with separate schemas for different services
+- **RabbitMQ**: Message broker for inter-service communication and event-driven architecture
+- **Socket.IO Server**: Real-time WebSocket communication with clients
+- **User Service**: Handles authentication, registration, and user profile management
+- **Presence Service**: Tracks user online status and availability
+- **Chat Service**: Manages message delivery and storage
+- **Notifications Service**: Processes and delivers system notifications
+- **Frontend**: React-based client application
 
 Each service is implemented as a FastAPI application that communicates with other services through HTTP/WebSocket APIs.
 
 ## Prerequisites
 
-- Python 3.9+
+- Python 3.12+
 - Virtual environment (venv)
 - Gunicorn
 - Uvicorn
 - Supervisor (optional, for production)
+- Docker
+- Docker Compose
 
 ## Installation
 
@@ -43,66 +45,54 @@ Each service is implemented as a FastAPI application that communicates with othe
    git clone https://github.com/your-username/cs467-scp-project.git
    cd cs467-scp-project
    ```
+2. Create a `.env` file with the following variables:
+  ```
+  ENV=development
+  DEBUG=True
+  LOG_LEVEL=INFO
+  JWT_SECRET_KEY=3a11374cd633b1d251e5c4cc40c81e81d43357f1b6d6e0f96f94c33a4cc0439d
+  JWT_ALGORITHM=HS256
+  ACCESS_TOKEN_EXPIRE_MINUTES=60
+  CORS_ORIGINS=["http://localhost:5173"]
+  
+  USERS_QUEUE=users_tasks
+  
+  POSTGRES_DB=sycolibre
+  POSTGRES_USER=postgres
+  POSTGRES_PASSWORD=postgres
+  POSTGRES_HOST=postgres_db
+  POSTGRES_PORT=5432
+  DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/sycolibre
+  
+  RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+  RABBITMQ_HOST=localhost
+  RABBITMQ_PORT=5672
+  RABBITMQ_USER=guest
+  RABBITMQ_PASSWORD=guest
+  RABBITMQ_VHOST=/
+  
+  SOCKET_IO_PORT=8000
+  USERS_PORT=8001
+  NOTIFICATIONS_PORT=8002
+  PRESENCE_PORT=8003
+  CHAT_PORT=8004
+  FRONTEND_PORT=5173
+  ```
 
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+3. Start the services:
+  ```
+  docker-compose up -d
+      ```
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
 
-4. Install additional dependencies for production:
-   ```bash
-   pip install gunicorn supervisor
-   ```
+## Using docker-compose
 
-## Service Management
-
-The project includes a service management script (`run_service.sh`) that provides a convenient way to run individual services or all services at once.
-
-### Using run_service.sh
-
-This script provides a simple way to run individual services or all services at once.
-
-```bash
-# Show available commands
-./run_service.sh --help
-
-# Run a specific service
-./run_service.sh users --port 8005 --workers 2
-
-# Run all services at once
-./run_service.sh -a
-
-# Run all services with custom port and workers
-./run_service.sh -a --port 8000 --workers 2
+Docker compose also allows you to run individual services. Just specify the name of the service(s) you want to run.
 ```
-
-For production environments, consider using a process manager like Supervisor to ensure services stay running and automatically restart if they crash.
-
-## Development Workflow
-
-During development, you can run each service individually:
-
-1. Activate the virtual environment:
-   ```bash
-   source venv/bin/activate
-   ```
-
-2. Start a specific service with hot-reloading:
-   ```bash
-   cd services/chat
-   uvicorn app.main:app --reload --port 8001
-   ```
-
-3. For testing API endpoints, each service provides a Swagger UI at `/docs`:
-   - http://localhost:8001/docs (Chat service)
-   - http://localhost:8002/docs (Auth service)
-   - etc.
+docker-compose up -d notifications
+docker-compose up -d presence chat socket_io
+docker-compose up -d frontend
+```
 
 ## Production Deployment
 
@@ -110,58 +100,8 @@ For production deployment, consider the following:
 
 1. Set up appropriate environment variables for each service
 2. Configure proper logging
-3. Use Supervisor for process management
-4. Set up a reverse proxy (Nginx/Apache) in front of the services
-5. Configure SSL/TLS for secure communication
+3. Configure SSL/TLS for secure communication
 
-### Sample Nginx Configuration
-
-```nginx
-# Socket.IO Service
-server {
-    listen 80;
-    server_name socket.example.com;
-
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-}
-
-# API Gateway for other services
-server {
-    listen 80;
-    server_name api.example.com;
-
-    # Auth Service
-    location /auth/ {
-        proxy_pass http://localhost:8002/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    # Chat Service
-    location /chat/ {
-        proxy_pass http://localhost:8001/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    # Add other services as needed
-}
-```
-
-### Docker Deployment
-
-For containerized deployment, consider using Docker Compose:
-
-1. Create a Dockerfile for each service
-2. Set up a docker-compose.yml file
-3. Configure networking between containers
-4. Set up data persistence for databases
 
 ## Troubleshooting
 
@@ -184,18 +124,6 @@ For containerized deployment, consider using Docker Compose:
   cat logs/<service-name>.log
   ```
 
-#### Supervisor issues
-
-- Check supervisor logs:
-  ```bash
-  cat logs/supervisord.log
-  ```
-
-- Restart supervisor:
-  ```bash
-  supervisorctl -c supervisor/supervisord.conf shutdown
-  supervisord -c supervisor/supervisord.conf
-  ```
 
 #### Import errors
 
@@ -223,142 +151,10 @@ If you encounter import errors like `ModuleNotFoundError`, ensure:
 - Review FastAPI documentation at https://fastapi.tiangolo.com/
 - For supervisor issues, see https://supervisord.org/
 
-# SycoLibre: Open-Source Synchronous Communication Platform
-
-## 📝 Project Overview
-
-SycoLibre is an open-source web-based synchronous communication platform similar to Slack/Discord, designed to be customizable for organizations, groups, and individuals. This platform addresses limitations in existing solutions by providing:
-
-- A reliable and efficient open-source communication alternative
-- Customizable features that can be adapted to specific needs
-- Transparency in how user data is processed
-- A balance between simplicity and robust functionality
-
-## ✨ Key Features
-
-- **Real-time Communication**: Send and receive messages instantly
-- **User Authentication**: Register, login, and logout securely
-- **Direct Messaging**: Private communication between users
-- **Notification System**: Alerts for new messages and mentions
-- **Member List**: View available users for communication
-- **Status Indicators**: See who's online, away, or offline
-- **Emoji Support**: Express yourself beyond plain text
-
-## 🏗️ Project Architecture
-```
-sycolibre/
-│
-├── client/                 # React frontend
-│   ├── public/             # Static assets
-│   ├── src/                # React components and logic
-│   │   ├── components/     # UI components
-│   │   ├── contexts/       # React contexts
-│   │   ├── pages/          # Page components
-│   │   ├── services/       # API services
-│   │   └── App.jsx         # Main application
-│   ├── package.json        # Dependencies and scripts
-│   └── vite.config.js      # Vite configuration
-│
-├── services/               # Backend services
-│   ├── chat/               # Chat service with integrated socket server
-│   │   ├── app/            # Application package
-│   │   │   ├── core/       # Core components
-│   │   │   │   ├── socket_service.py  # Socket.IO server implementation
-│   │   │   │   └── config.py         # Configuration
-│   │   │   ├── db/         # Database models and connections
-│   │   │   └── main.py     # Application entry point
-│   │   └── tests/          # Test suite
-│   └── presence/           # User presence service
-│
-├── fastapi-backend/        # Python FastAPI backend
-│   ├── app/                # Application package
-│   │   ├── main.py         # FastAPI application
-│   │   ├── routes/         # API endpoints
-│   │   ├── models/         # Data models
-│   │   ├── schemas/        # Pydantic schemas
-│   │   └── services/       # Business logic
-│   ├── requirements.txt    # Python dependencies
-│   └── .env.example        # Environment variables template
-│
-├── .gitignore              # Git ignore file
-├── README.md               # This file
-└── docker-compose.yml      # Container configuration
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js (v16+)
-- Python 3.8+
-- MongoDB
-- PostgreSQL
-- RabbitMQ
-
-### Setup Instructions
-
-#### 1. Clone the repository
-
-```bash
-git clone https://github.com/jameslbray/cs467-scp-project.git
-cd sycolibre
-```
-
-#### 2. Setup the Frontend
-
-```bash
-cd client
-npm install
-npm run dev
-```
-#### 3. Setup the Chat Service (with integrated Socket.IO Server)
-
-```bash
-cd services/chat
-python3 -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 3001
-```
-
-#### 4. Setup the FastAPI Backend
-
-```bash
-cd fastapi-backend
-python3 -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-#### 5. Database Configuration
-
-MongoDB Connection:
-
-`mongodb://username:password@host:27017/scp-db`
-
-You can use MongoDB Compass for connecting to the database.
-
-PostgreSQL Setup:
-
-__Install PostgreSQL adapter for Node.js__
-
-`npm install pg`
-
-Configure your PostgreSQL connection in the appropriate configuration files.
-
-
-## 💻 Technology Stack
-- **Frontend:** React, Vite, Redux Toolkit, ChakraUI
-- **Backend:** FastAPI, Python, Socket.io
-- **Databases:** PostgreSQL (relational data), MongoDB (messages)
-- **Message Queue:** RabbitMQ
-- **Authentication:** JWT, OAuth 2.0
-
-## 👥 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request after our initial project is complete, turned in, and a grade has been issued.
 
-## 📄 License
+## License
 
 This project is licensed under the AGPL3.0 License - see the LICENSE file for details.
