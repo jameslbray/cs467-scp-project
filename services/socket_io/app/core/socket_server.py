@@ -7,6 +7,7 @@ import logging
 import socketio  # type: ignore
 import json
 from typing import Dict, Any, Optional, Never
+from datetime import datetime
 
 from .config import get_socket_io_config
 from services.rabbitmq.core.client import RabbitMQClient
@@ -133,12 +134,13 @@ class SocketServer:
     ) -> Never:
         """Publish presence update to RabbitMQ."""
         await self.rabbitmq.publish_message(
-            exchange="presence",
-            routing_key="status",
+            exchange="user_events",
+            routing_key=f"status.{user_id}",
             message=json.dumps({
+                "type": "status_update",
                 "user_id": user_id,
                 "status": status,
-                "timestamp": "now"  # TODO: add proper timestamp
+                "last_changed": datetime.now().timestamp()
             })
         )
         # Ensures Never return type
@@ -206,16 +208,17 @@ class SocketServer:
         # Add user_id to presence data
         presence_data = {
             **data,
+            "type": "status_update",
             "user_id": user_id,
-            "timestamp": "now"  # In real implementation, use proper timestamp
+            "last_changed": datetime.now().timestamp()
         }
 
         # Publish presence update to RabbitMQ with retry
         try:
             await with_retry(
                 lambda: self.rabbitmq.publish_message(
-                    exchange="presence",
-                    routing_key="status",
+                    exchange="user_events",
+                    routing_key=f"status.{user_id}",
                     message=json.dumps(presence_data)
                 ),
                 max_attempts=3,

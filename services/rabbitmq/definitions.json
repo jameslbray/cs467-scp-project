@@ -1,0 +1,127 @@
+{
+  "rabbit_version": "3.13",
+  "users": [
+    {
+      "name": "guest",
+      "password_hash": "guest",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"]
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "guest",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "presence",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "chat",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "notifications",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "users",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "presence_updates",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "chat_messages",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "notifications",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "user_events",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "presence",
+      "vhost": "/",
+      "destination": "presence_updates",
+      "destination_type": "queue",
+      "routing_key": "updates",
+      "arguments": {}
+    },
+    {
+      "source": "chat",
+      "vhost": "/",
+      "destination": "chat_messages",
+      "destination_type": "queue",
+      "routing_key": "messages",
+      "arguments": {}
+    },
+    {
+      "source": "notifications",
+      "vhost": "/",
+      "destination": "notifications",
+      "destination_type": "queue",
+      "routing_key": "all",
+      "arguments": {}
+    },
+    {
+      "source": "users",
+      "vhost": "/",
+      "destination": "user_events",
+      "destination_type": "queue",
+      "routing_key": "events",
+      "arguments": {}
+    }
+  ]
+}

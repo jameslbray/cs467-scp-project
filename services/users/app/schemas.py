@@ -1,27 +1,25 @@
 from pydantic import BaseModel, EmailStr, field_validator
-from typing import Optional, Dict, Any
+from uuid import UUID  # Import UUID type
+from typing import Optional
 from datetime import datetime
 import uuid
 
-
 class UserBase(BaseModel):
-    email: EmailStr
     username: str
-
+    email: EmailStr
 
 class UserCreate(UserBase):
     password: str
 
-
 class User(UserBase):
-    id: int
-    created_at: datetime
+    id: UUID  # Change from int to UUID
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    is_active: bool = True
-
-    model_config = {
-        "from_attributes": True,
-    }
+    profile_picture_url: Optional[str] = None
+    last_login: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True 
 
 
 class Token(BaseModel):

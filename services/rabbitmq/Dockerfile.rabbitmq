@@ -1,0 +1,26 @@
+FROM rabbitmq:3.13-management-alpine
+
+# Install Python and pip
+RUN apk add --no-cache python3 py3-pip
+
+# Set up working directory
+WORKDIR /app
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy the service code
+COPY services/rabbitmq /app/services/rabbitmq/
+
+# Make our entrypoint script executable
+COPY services/rabbitmq/docker-entrypoint.sh /usr/local/bin/custom-entrypoint.sh
+RUN chmod +x /usr/local/bin/custom-entrypoint.sh
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Use our custom entrypoint
+ENTRYPOINT ["custom-entrypoint.sh"]

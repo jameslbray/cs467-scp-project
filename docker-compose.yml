@@ -1,9 +1,9 @@
 services:
-  db:
-    image: postgres:17-alpine               # official Postgres image
+  postgres_db:
+    image: postgres:17-alpine
     restart: unless-stopped
     env_file:
-      - .env                                 # pulls in POSTGRES_* and PGDATA
+      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -20,42 +20,58 @@ services:
       -c log_destination='stderr'
       -c logging_collector=off
     ports:
-      - "5433:5432"                          # expose for local development
-    healthcheck:                            # ensures users service waits for readiness
+      - "5432:5432"
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Mount all service initialization scripts
-      - ./services/users/db/init:/docker-entrypoint-initdb.d/01_users  # Users service init scripts
-      - ./services/presence/db/init:/docker-entrypoint-initdb.d/02_presence  # Presence service init scripts
 
+  db_init:
+    build:
+      context: .
+      dockerfile: services/db_init/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=postgres_db
+      - POSTGRES_PORT=5432
+      - APP_USER=${APP_USER:-app_user}
+      - APP_PASSWORD=${APP_PASSWORD:-app_password}
+      - LOG_LEVEL=info
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    restart: "no"
+  
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     ports:
-      - "5672:5672"  # AMQP port
-      - "15672:15672"  # Management UI port
+      - "5672:5672"
+      - "15672:15672"
     env_file:
       - .env
     environment:
       - RABBITMQ_DEFAULT_USER=guest
       - RABBITMQ_DEFAULT_PASS=guest
-      # Enable debug logging
       - RABBITMQ_LOG_LEVEL=debug
-      # Enable firehose (captures all messages)
       - RABBITMQ_FIREHOSE_TRACER=true
-      # Enable message tracing
       - RABBITMQ_TRACE=1
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - rabbitmq_logs:/var/log/rabbitmq
+      - ./services/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
       interval: 10s
       timeout: 5s
       retries: 3
+  
   socket_io:
     build:
       context: .
@@ -68,7 +84,9 @@ services:
       - PYTHONPATH=/app
       - RABBITMQ_URL=${RABBITMQ_URL}
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+  
   users:
     build:
       context: .
@@ -80,15 +98,20 @@ services:
     environment:
       - PYTHONPATH=/app
       - RABBITMQ_URL=${RABBITMQ_URL}
+      - POSTGRES_HOST=postgres_db
+      - POSTGRES_PORT=5432
     volumes:
       - ./.env:/app/.env
     depends_on:
-      db:
+      postgres_db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-
-
+      db_init:
+        condition: service_completed_successfully
+    tty: true
+    stdin_open: true
+  
   notifications:
     build:
       context: .
@@ -101,8 +124,9 @@ services:
       - PYTHONPATH=/app
       - RABBITMQ_URL=${RABBITMQ_URL}
     depends_on:
-      - rabbitmq
-
+      rabbitmq:
+        condition: service_healthy
+  
   presence:
     build:
       context: .
@@ -114,10 +138,19 @@ services:
     environment:
       - PYTHONPATH=/app
       - RABBITMQ_URL=${RABBITMQ_URL}
+      - POSTGRES_HOST=postgres_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     depends_on:
-      - rabbitmq
-
-
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      db_init:
+        condition: service_completed_successfully
+  
   chat:
     build:
       context: .
@@ -130,8 +163,9 @@ services:
       - PYTHONPATH=/app
       - RABBITMQ_URL=${RABBITMQ_URL}
     depends_on:
-      - rabbitmq
-
+      rabbitmq:
+        condition: service_healthy
+  
   frontend:
     build:
       context: ./frontend

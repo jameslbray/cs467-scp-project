@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..db.database import get_db
 from ..schemas import User
 from . import security
-from ..db import models
+from services.db_init.app.models import User as UserModel
 from .config import Settings as UserSettings
 
 # Configure logging
@@ -186,10 +186,10 @@ class UserRabbitMQClient:
         """Handle user registration"""
         # Check if user exists
         db_user = (
-            db.query(models.User)
+            db.query(UserModel)
             .filter(
-                (models.User.email == data["email"]) |
-                (models.User.username == data["username"])
+                (UserModel.email == data["email"]) |
+                (UserModel.username == data["username"])
             )
             .first()
         )
@@ -201,7 +201,7 @@ class UserRabbitMQClient:
 
         # Create user
         hashed_password = security.get_password_hash(data["password"])
-        db_user = models.User(
+        db_user = UserModel(
             email=data["email"],
             username=data["username"],
             hashed_password=hashed_password
@@ -222,8 +222,8 @@ class UserRabbitMQClient:
     ) -> Dict[str, Any]:
         """Handle user login"""
         user = (
-            db.query(models.User)
-            .filter(models.User.username == data["username"])
+            db.query(UserModel)
+            .filter(UserModel.username == data["username"])
             .first()
         )
 
@@ -261,7 +261,7 @@ class UserRabbitMQClient:
             }
 
         # Get user
-        user = db.query(models.User).filter(models.User.id == user_id).first()
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
         if not user:
             return {
                 "error": True,
@@ -289,8 +289,8 @@ class UserRabbitMQClient:
         try:
             token_data = security.get_token_data(token, db)
             user = (
-                db.query(models.User)
-                .filter(models.User.username == token_data.username)
+                db.query(UserModel)
+                .filter(UserModel.username == token_data.username)
                 .first()
             )
 
