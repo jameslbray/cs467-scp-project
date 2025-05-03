@@ -1,98 +1,84 @@
 import React, { useState, useEffect } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { UserStatus, StatusType, ClientEvents, ServerEvents } from '../types';
+import { StatusType } from '../types'; // ServerEvents, UserStatus, ClientEvents
+import { useAuth } from '../contexts/auth/index.tsx';
+
+// const API_BASE_URL = 'http://localhost:8000';
 
 // Style types
 type StyleObject = Record<string, React.CSSProperties>;
 
 const UserStatusDropdown: React.FC = () => {
   const [status, setStatus] = useState<StatusType>(StatusType.OFFLINE);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [message, setMessage] = useState<string>('');
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const userId = '1'; // This should be the actual user ID from your auth system
-  
-  // Connect to socket server when component mounts
+
+  const { user } = useAuth();
+
+  // Load previous status from storage
+  const loadStatus = async () => {
+    if (!user) {
+      console.error('User is null. Cannot fetch status.');
+      return;
+    }
+    const response = await fetch(`/api/status/${user.id}`);
+    const prevStatus = await response.json();
+    setStatus(prevStatus);
+  }
+
+  //   const addStatus = async () => {
+  //     const newProperty = {};
+  //     const response = await fetch('/properties', {
+  //         method: 'post',
+  //         body: JSON.stringify(newProperty),
+  //         headers: {
+  //             'Content-Type': 'application/json',
+  //         },
+  //     });
+  //     if(response.status === 201){
+  //         alert(`Successfully added ${newProperty}!`);
+  //     } else {
+  //         alert(`Problem adding item. Response status = ${response.status}`);
+  //     }
+  // };
+
+
   useEffect(() => {
-    // Initialize socket connection
-    const socketConnection = io('http://localhost:3001',
-      {
-      auth: {
-        userId: userId
-      }
-    }); // Your server.py port
-    setSocket(socketConnection);
-    
-    // Set up event listeners
-    socketConnection.on('connect', () => {
-      console.log('Connected to socket server');
-      
-      // Request current status after connection
-      socketConnection.emit(ClientEvents.REQUEST_FRIEND_STATUSES, {});
-    });
-    
-    // Listen for status update confirmations
-    socketConnection.on(ServerEvents.STATUS_UPDATED, (data: UserStatus) => {
-      setStatus(data.status);
-      setMessage(`Status updated to ${data.status}`);
-      setIsLoading(false);
-    });
-    
-    // Listen for friend status changes (including our own)
-    socketConnection.on(ServerEvents.FRIEND_STATUS_CHANGED, (data: UserStatus) => {
-      if (data.userId === userId) {
-        setStatus(data.status);
-      }
-    });
-    
-    // Listen for all friend statuses
-    socketConnection.on(ServerEvents.FRIEND_STATUSES, (data: { statuses: Record<string, UserStatus> }) => {
-      const myStatus = data.statuses[userId];
-      if (myStatus) {
-        setStatus(myStatus.status);
-      }
-    });
-    
-    // Listen for errors
-    socketConnection.on(ServerEvents.ERROR, (data: { message: string }) => {
-      setMessage(`Error: ${data.message}`);
-      setIsLoading(false);
-    });
-    
-    // Clean up on unmount
-    return () => {
-      socketConnection.disconnect();
-    };
-  }, [userId]);
-  
+    loadStatus();
+  }, []);
+
+
+  // const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+  //   const newStatus = e.target.value as StatusType;
+  //   setStatus(newStatus);
+  //   setIsLoading(true);
+  //   setMessage('');
+
+  //   if (socket && socket.connected) {
+  //     // Use socket to update status based on your presence/events.py
+  //     socket.emit(ClientEvents.UPDATE_STATUS, {
+  //       status: newStatus
+  //     });
+  //   } else {
+  //     // Fallback if socket is not connected
+  //     setIsLoading(false);
+  //     setMessage('Error: Not connected to server');
+  //   }
+  // };
+
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
     const newStatus = e.target.value as StatusType;
+    console.log('Selected status:', newStatus);
     setStatus(newStatus);
-    setIsLoading(true);
-    setMessage('');
-    
-    if (socket && socket.connected) {
-      // Use socket to update status based on your presence/events.py
-      socket.emit(ClientEvents.UPDATE_STATUS, {
-        status: newStatus
-      });
-    } else {
-      // Fallback if socket is not connected
-      setIsLoading(false);
-      setMessage('Error: Not connected to server');
-    }
-  };
-  
+  }
+
   return (
     <div className="status-dropdown-container" style={styles.container}>
-      <h2>User Status Updater (User ID: {userId})</h2>
+      <h2>User Status Updater {user ? `(User ID: ${user.id})` : '(No User Logged In)'}</h2>
       <div style={styles.connectionIndicator}>
-        {socket?.connected ? 
-          <span style={styles.connected}>Connected to socket server</span> : 
-          <span style={styles.disconnected}>Not connected to socket server</span>
+        {user ?
+          <span style={styles.connected}>Logged in</span> :
+          <span style={styles.disconnected}>Not logged in</span>
         }
       </div>
-      
+
       <div style={styles.dropdownContainer}>
         <label htmlFor="status-select" style={styles.label}>
           Status:
@@ -101,7 +87,6 @@ const UserStatusDropdown: React.FC = () => {
           id="status-select"
           value={status}
           onChange={handleStatusChange}
-          disabled={isLoading}
           style={styles.select}
         >
           <option value="" disabled>Select status...</option>
@@ -109,31 +94,18 @@ const UserStatusDropdown: React.FC = () => {
           <option value="away">Away</option>
           <option value="offline">Offline</option>
         </select>
-        
-        {isLoading && <span style={styles.loading}>Updating...</span>}
       </div>
-      
-      {message && (
-        <div style={
-          message.includes('Error') 
-            ? {...styles.message, ...styles.errorMessage}
-            : {...styles.message, ...styles.successMessage}
-        }>
-          {message}
-        </div>
-      )}
-      
       <div style={styles.statusIndicator}>
         <div style={{
           ...styles.indicator,
-          backgroundColor: 
-            status === 'online' ? '#4CAF50' : 
-            status === 'away' ? '#FFC107' : 
-            status === 'offline' ? '#9E9E9E' : '#CCCCCC'
+          backgroundColor:
+            status === 'online' ? '#4CAF50' :
+              status === 'away' ? '#FFC107' :
+                status === 'offline' ? '#9E9E9E' : '#CCCCCC'
         }}></div>
         <span>Current Status: {status || 'Loading...'}</span>
       </div>
-    </div>
+    </div >
   );
 };
 

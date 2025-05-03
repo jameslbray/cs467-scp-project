@@ -11,7 +11,7 @@ from enum import Enum
 from uuid import UUID
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.rabbitmq.core.client import RabbitMQClient
-from services.socket_io.app.core.socket_server import SocketServer as SocketManager
+# from services.socket_io.app.core.socket_server import SocketServer as SocketManager
 
 # configure logging
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class PresenceManager:
     def __init__(
         self,
         config: Dict[str, Any],
-        socket_server: Optional[SocketManager] = None
+        # socket_server: Optional[SocketManager] = None
     ):
         """Initialize the presence manager.
 
@@ -71,10 +71,25 @@ class PresenceManager:
         self.config = config
         self._initialized = False
         self.db_pool: Optional[asyncpg.Pool] = None
-        self.socket_server = socket_server
+        # self.socket_server = socket_server
 
         # User presence data
-        self.presence_data: Dict[str, Dict[str, Any]] = {}
+        self.presence_data: dict[str, dict[str, Any]] = {}
+
+        # Initialize RabbitMQ client
+        self.rabbitmq = RabbitMQClient()
+
+        # Initialize circuit breakers
+        self.rabbitmq_cb = CircuitBreaker(
+            "rabbitmq",
+            failure_threshold=3,
+            reset_timeout=30.0
+        )
+        self.db_cb = CircuitBreaker(
+            "postgres",
+            failure_threshold=3,
+            reset_timeout=30.0
+        )
 
         # Initialize RabbitMQ client
         self.rabbitmq = RabbitMQClient()
@@ -488,7 +503,7 @@ class PresenceManager:
             logger.error(f"Failed to get friends: {e}")
             return []
 
-    async def _get_user_status(self, user_id: str) -> Optional[UserStatus]:
+    async def _get_user_status(self, user_id: str) -> UserStatus | None:
         """Get user status from database."""
         if not self.db_pool:
             logger.warning("Database pool not available")
@@ -522,7 +537,7 @@ class PresenceManager:
             logger.error(f"Failed to get user status: {e}")
             return None
 
-    def get_user_status(self, user_id: str) -> Dict[str, Any]:
+    def get_user_status(self, user_id: str) -> dict[str, Any]:
         """Get user's current status."""
         presence_data = self.presence_data.get(user_id, {})
         return {
