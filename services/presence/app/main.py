@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..app.core.presence_manager import PresenceManager
 from ..app.core.config import settings
+from .api.routers import router
 
 # Load environment variables
 load_dotenv()
@@ -29,6 +30,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(router, prefix=settings.API_PREFIX)
 
 # Create presence manager
 presence_manager = PresenceManager(

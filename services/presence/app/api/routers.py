@@ -53,7 +53,7 @@ class StatusResponse(BaseModel):
 
     user_id: str
     status: str
-    last_seen: Optional[str] = None
+    last_seen: Optional[float] = None
     additional_info: Optional[str] = None
 
 
@@ -96,18 +96,22 @@ class ErrorResponse(BaseModel):
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
     """Extract and validate user ID from JWT token"""
     try:
+        secret_key = settings.JWT_SECRET_KEY.get_secret_value()
         payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+            token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
-        user_id = payload.get("sub")
-        if user_id is None:
+        
+        # Try both 'sub' and 'username' claims
+        username: str = payload.get("sub") or payload.get("username")
+        if username is None:
             raise HTTPException(
-                status_code=HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return user_id
-    except jwt.PyJWTError:
+            
+        return username
+    except jwt.JWTError:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
@@ -155,7 +159,7 @@ async def get_user_status(
     Returns:
     - **StatusResponse**: User's current status information
     """
-    status_data = await presence_manager.get_user_status(user_id)
+    status_data = presence_manager.get_user_status(user_id)
 
     # Create response with required fields
     return StatusResponse(
@@ -192,7 +196,7 @@ async def update_user_status(
     - **StatusResponse**: Updated status information
     """
     # Check if the user is trying to update their own status
-    if user_id != current_user:
+    if status_update.additional_info != current_user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only update your own status"
@@ -210,7 +214,7 @@ async def update_user_status(
         )
 
     # Get updated status
-    status_data = await presence_manager.get_user_status(user_id)
+    status_data = presence_manager.get_user_status(user_id)
 
     # Create response
     return StatusResponse(
@@ -220,6 +224,54 @@ async def update_user_status(
         additional_info=status_update.additional_info,
     )
 
+
+@router.post(
+    "/status/register/{user_id}",
+    response_model=StatusResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"}
+    },
+)
+async def register_user_status(
+    user_id: str,
+    current_user: str = Depends(get_current_user),
+    presence_manager: PresenceManager = Depends(get_presence_manager),
+):
+    """
+    Register a new user's status
+
+    Parameters:
+    - **user_id**: ID of the user whose status is being updated
+
+    Returns:
+    - **StatusResponse**: New status information
+    """  
+    if user_id != current_user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only register your own status"
+        )
+    
+    # Update status
+    success = await presence_manager.set_new_user_status(
+        user_id
+    )
+    if not success:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="User not found or status update failed",
+        )
+
+    # Get updated status
+    status_data = await presence_manager.get_user_status(user_id)
+
+    # Create response
+    return StatusResponse(
+        user_id=user_id,
+        status=status_data.get("status", "offline"),
+        last_seen=status_data.get("last_seen")
+    )
 
 @router.get(
     "/status/friends/{user_id}",

@@ -4,6 +4,32 @@ Configuration settings for the presence service.
 from typing import List, Dict, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator, SecretStr
+import os
+from pathlib import Path
+
+def find_env_file() -> str:
+    """Find the .env file in potential locations."""
+    # Check environment variable first
+    env_file = os.getenv("ENV_FILE")
+    if env_file and os.path.exists(env_file):
+        return env_file
+    
+    # Try multiple possible locations
+    possible_locations = [
+        # Original path (for local development)
+        os.path.join(Path(__file__).parent.parent.parent.parent, ".env"),
+        # Docker container root
+        "/app/.env",
+        # Current directory
+        ".env",
+    ]
+    
+    for location in possible_locations:
+        if os.path.exists(location):
+            return location
+    
+    # If we get here, return the default location
+    return possible_locations[0]
 
 
 class Settings(BaseSettings):
@@ -22,7 +48,13 @@ class Settings(BaseSettings):
 
     # CORS settings
     CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:5173", "http://127.0.0.1:5173"],
+        default=["http://localhost:5173",
+                 "http://127.0.0.1:5173",
+                 "http://localhost:8000",
+                 "http://localhost:8001",
+                 "http://localhost:8002",
+                 "http://localhost:8003",
+                 "http://localhost:8004"],
         description="CORS allowed origins"
     )
     CORS_CREDENTIALS: bool = Field(
@@ -73,7 +105,7 @@ class Settings(BaseSettings):
     # )
 
     # Security settings
-    JWT_SECRET_KEY: str = Field(
+    JWT_SECRET_KEY: SecretStr = Field(
         default=...,
         description="JWT secret key for token signing"
     )
@@ -123,7 +155,7 @@ class Settings(BaseSettings):
         return v
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=find_env_file(),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="allow"
@@ -146,6 +178,9 @@ settings = Settings()
 
 def get_db_config() -> Dict[str, str]:
     """Return PostgreSQL configuration dictionary"""
+    
+    
+    
     return {
         "user": settings.POSTGRES_USER,
         "password": settings.POSTGRES_PASSWORD,

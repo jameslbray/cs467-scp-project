@@ -114,7 +114,7 @@ def init_database():
                 logger.info("Creating test user status...")
                 test_status = UserStatus(
                     user_id=test_user.id,
-                    status="offline"
+                    status="away"
                 )
                 db.add(test_status)
                 db.commit()
