@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StatusType } from '../types'; // ServerEvents, UserStatus, ClientEvents
 import { useAuth } from '../contexts/auth/index.tsx';
 
-// const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8003';
 
 // Style types
 type StyleObject = Record<string, React.CSSProperties>;
@@ -10,7 +10,7 @@ type StyleObject = Record<string, React.CSSProperties>;
 const UserStatusDropdown: React.FC = () => {
   const [status, setStatus] = useState<StatusType>(StatusType.OFFLINE);
 
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
   // Load previous status from storage
   const loadStatus = async () => {
@@ -18,26 +18,53 @@ const UserStatusDropdown: React.FC = () => {
       console.error('User is null. Cannot fetch status.');
       return;
     }
-    const response = await fetch(`/api/status/${user.id}`);
+
+    const response = await fetch(`${API_BASE_URL}/api/status/${user.id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+    });
     const prevStatus = await response.json();
-    setStatus(prevStatus);
+
+    if (response.status !== 200) {
+      console.error('Error fetching status:', response.statusText);
+      return;
+    }
+    if (prevStatus.status) {
+      setStatus(prevStatus.status as StatusType);
+    }
+    console.log('Setting status to:', prevStatus.status);
   }
 
-  //   const addStatus = async () => {
-  //     const newProperty = {};
-  //     const response = await fetch('/properties', {
-  //         method: 'post',
-  //         body: JSON.stringify(newProperty),
-  //         headers: {
-  //             'Content-Type': 'application/json',
-  //         },
-  //     });
-  //     if(response.status === 201){
-  //         alert(`Successfully added ${newProperty}!`);
-  //     } else {
-  //         alert(`Problem adding item. Response status = ${response.status}`);
-  //     }
-  // };
+  const sendStatusUpdate = async (newStatus: StatusType) => {
+    if (!user) {
+      console.error('User is null. Cannot fetch status.');
+      return;
+    }
+
+    console.log("User: ", user);
+    const requestBody = {
+      status: newStatus, 
+      additional_info: user.username,
+    };
+
+    const response = await fetch(`${API_BASE_URL}/api/status/${user.id}`, {
+      method: 'put',
+      body: JSON.stringify(requestBody),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    console.log('Response:', response);
+    if (response.status === 201 || response.status === 200) {
+      alert(`Successfully changed ${status}!`);
+    } else {
+      alert(`Problem adding item. Response status = ${response.status}`);
+    }
+  };
 
 
   useEffect(() => {
@@ -65,8 +92,10 @@ const UserStatusDropdown: React.FC = () => {
 
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
     const newStatus = e.target.value as StatusType;
-    console.log('Selected status:', newStatus);
     setStatus(newStatus);
+    console.log('Selected status:', newStatus);
+    sendStatusUpdate(newStatus);
+
   }
 
   return (

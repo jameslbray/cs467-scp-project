@@ -309,15 +309,23 @@ class PresenceManager:
         Returns:
             bool: True if update was successful, False otherwise
         """
-        if user_id not in self.presence_data:
-            return False
-
         try:
             status_type = StatusType(status)
-            self.presence_data[user_id].update({
-                "status": status_type.value,
-                "last_seen": last_changed or datetime.now().timestamp()
-            })
+            current_time = last_changed or datetime.now().timestamp()
+        
+            # Initialize user in presence_data if not exists
+            if user_id not in self.presence_data:
+                self.presence_data[user_id] = {
+                    "status": status_type.value,
+                    "last_seen": current_time
+                }
+                logger.info(f"Created new presence entry for user {user_id}")
+            
+            else:
+                self.presence_data[user_id].update({
+                    "status": status_type.value,
+                    "last_seen": last_changed or datetime.now().timestamp()
+                })
 
             # Update status in database and notify others
             await with_retry(
@@ -545,17 +553,25 @@ class PresenceManager:
             "last_seen": presence_data.get("last_seen", 0),
         }
 
-    async def set_user_status(self, user_id: str, status: str) -> bool:
+    async def set_user_status(self, user_id: str, status: str, last_changed: Optional[float] = None) -> bool:
         """Set user's status."""
-        if user_id not in self.presence_data:
-            return False
-
         try:
             status_type = StatusType(status)
-            self.presence_data[user_id].update(
-                {"status": status_type.value,
-                 "last_seen": datetime.now().timestamp()}
-            )
+            current_time = last_changed or datetime.now().timestamp()
+        
+            # Initialize user in presence_data if not exists
+            if user_id not in self.presence_data:
+                self.presence_data[user_id] = {
+                    "status": status_type.value,
+                    "last_seen": current_time
+                }
+                logger.info(f"Created new presence entry for user {user_id}")
+            
+            else:
+                self.presence_data[user_id].update({
+                    "status": status_type.value,
+                    "last_seen": last_changed or datetime.now().timestamp()
+                })
 
             # Update status in database and notify others with circuit breaker
             await with_retry(
@@ -569,3 +585,26 @@ class PresenceManager:
         except ValueError:
             logger.error(f"Invalid status: {status}")
             return False
+
+    async def set_new_user_status(self, user_id: str) -> bool:
+        """Set user's status."""
+        try:
+            status_type = StatusType.OFFLINE
+            self.presence_data[user_id].update(
+                {"status": status_type.value,
+                 "last_seen": datetime.now().timestamp()}
+            )
+
+            # Update status in database and notify others with circuit breaker
+            await with_retry(
+                lambda: self._save_user_status(user_id, status_type),
+                max_attempts=3,
+                circuit_breaker=self.db_cb
+            )
+
+            logger.info(f"User {user_id} status set to {status}")
+            return True
+        except ValueError:
+            logger.error(f"Invalid status: {status}")
+            return False
+        
