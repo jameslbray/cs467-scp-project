@@ -1,12 +1,10 @@
-# services/auth/alembic/env.py
-
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
+
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
-from shared.db.base import metadata  # ← shared metadata
+from shared.db.base import metadata
 
-# this is the Alembic Config object
 config = context.config
 fileConfig(config.config_file_name)
 

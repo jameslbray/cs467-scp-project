@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = Field(default="5432")
     POSTGRES_DB: str = Field(default="users_db")
     
-    # App user settings
+   # App user settings
     APP_USER: str = Field(default="app_user")
     APP_PASSWORD: SecretStr = Field(default=SecretStr("app_password"))
     
