@@ -1,8 +1,10 @@
-from pydantic import BaseModel, EmailStr, field_validator
-from uuid import UUID  # Import UUID type
-from typing import Optional
-from datetime import datetime
 import uuid
+from datetime import datetime
+from typing import Optional
+from uuid import UUID  # Import UUID type
+
+from pydantic import BaseModel, EmailStr, field_validator
+
 
 class UserBase(BaseModel):
     username: str
@@ -12,7 +14,7 @@ class UserCreate(UserBase):
     password: str
 
 class User(UserBase):
-    id: UUID  # Change from int to UUID
+    id: UUID 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     profile_picture_url: Optional[str] = None
@@ -28,18 +30,23 @@ class Token(BaseModel):
     expires_at: datetime
 
 
-class TokenData(BaseModel):
-    username: Optional[str] = None
-
-
 class JWTTokenData(BaseModel):
-    username: Optional[str] = None
-    exp: Optional[datetime] = None
-    iat: Optional[datetime] = None
-    jti: Optional[str] = None
+    """JWT token payload structure that uses user_id as the subject."""
+    user_id: UUID  # UUID of the user (will be encoded as string in JWT)
+    exp: Optional[datetime] = None  # Expiration time
+    iat: Optional[datetime] = None  # Issued at time
+    jti: Optional[str] = None  # JWT ID for token identification/revocation
 
     @field_validator("jti", mode="before")
     @classmethod
     def default_jti(cls, v: Optional[str]) -> str:
         """Generate a random UUID for the token ID if not provided"""
         return v or str(uuid.uuid4())
+    
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def validate_user_id(cls, v: UUID) -> UUID:
+        """Ensure user_id is a UUID - convert from string if needed"""
+        if isinstance(v, str):
+            return uuid.UUID(v)
+        return v

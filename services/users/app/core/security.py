@@ -1,15 +1,20 @@
-from datetime import datetime, timedelta, UTC
-from typing import Optional, Union, Any
-import uuid
 import re
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from datetime import UTC, datetime, timedelta
+from typing import Optional, Union
+from uuid import UUID, uuid4
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy import Column
 from sqlalchemy.orm import Session
+
+from services.db_init.app.models import BlacklistedToken
+from services.db_init.app.models import User as UserModel
+
 from ..db.database import get_db
-from services.db_init.app.models import User as UserModel, BlacklistedToken
-from ..schemas import User, JWTTokenData, Token
+from ..schemas import JWTTokenData, Token, User
 from .config import get_settings
 
 settings = get_settings()
@@ -39,47 +44,36 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
+    user_id: Union[UUID, Column[UUID]], 
+    expires_delta: Optional[timedelta] = None
 ) -> Token:
     """
-    Create a new JWT access token.
+    Create a new JWT access token with user_id as the subject.
 
     Args:
-        subject: Subject to encode in the token (typically username)
+        user_id: UUID of the user to use as the subject
         expires_delta: Optional expiration time delta
 
     Returns:
         Token object containing the JWT access token
     """
-    to_encode = {"sub": subject}  # Set sub claim first
     now = datetime.now(UTC)
+    expires_at = now + (expires_delta or timedelta(minutes=15))
+    token_id = str(uuid4())
 
-    # Set expiration time
-    if expires_delta:
-        expire = now + expires_delta
-    else:
-        expire = now + timedelta(minutes=15)
-
-    # Create JWT token data
-    token_id = str(uuid.uuid4())
-    token_data = JWTTokenData(
-        username=subject,
-        exp=expire,
-        iat=now,
-        jti=token_id
-    )
-
-    # Convert to dict for JWT encoding
-    to_encode.update(token_data.model_dump(exclude_none=True))
-
-    # Encode the JWT
+    token_data = {
+        "sub": str(user_id),  # Convert UUID to string
+        "exp": int(expires_at.timestamp()),  # Convert to integer timestamp
+        "iat": int(now.timestamp()),  # Convert to integer timestamp
+        "jti": token_id
+    }
+    
     secret_key = str(settings.JWT_SECRET_KEY.get_secret_value())
     encoded_jwt = jwt.encode(
-        to_encode, secret_key, algorithm=settings.JWT_ALGORITHM
+        token_data, secret_key, algorithm=settings.JWT_ALGORITHM
     )
 
-    # Return Token model with access_token, token_type, and expires_at
-    return Token(access_token=encoded_jwt, token_type="bearer", expires_at=expire)
+    return Token(access_token=encoded_jwt, token_type="bearer", expires_at=expires_at)
 
 
 def blacklist_token(
@@ -188,35 +182,45 @@ def get_token_data(token: str, db: Session) -> JWTTokenData:
             token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
 
-        # Try both 'sub' and 'username' claims
-        username: str = payload.get("sub") or payload.get("username")
-        if username is None:
+        # Get user_id from the 'sub' claim
+        user_id_str = payload.get("sub")
+        if not user_id_str:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
+                detail="Could not validate credentials - missing subject",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Convert user_id string to UUID
+        try:
+            user_id = UUID(user_id_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user identifier format",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
         # Parse JWT payload into JWTTokenData model
         token_data = JWTTokenData(
-            username=username,
+            user_id=user_id,
             exp=(
-                datetime.fromtimestamp(payload.get("exp"))
+                datetime.fromtimestamp(payload.get("exp"), tz=UTC)
                 if payload.get("exp")
                 else None
             ),
             iat=(
-                datetime.fromtimestamp(payload.get("iat"))
+                datetime.fromtimestamp(payload.get("iat"), tz=UTC)
                 if payload.get("iat")
                 else None
             ),
             jti=payload.get("jti"),
         )
         return token_data
-    except JWTError:
+    except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail=f"Could not validate credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -227,9 +231,9 @@ async def get_current_user(
     """Get the current user from the JWT token in the request."""
     token_data = get_token_data(token, db)
 
-    # Get user from database
+    # Get user from database using UUID
     user = db.query(UserModel).filter(
-        UserModel.username == token_data.username).first()
+        UserModel.id == token_data.user_id).first()
 
     if user is None:
         raise HTTPException(
