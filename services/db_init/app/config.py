@@ -5,9 +5,9 @@ class Settings(BaseSettings):
     # Database connection
     POSTGRES_USER: str = Field(default="postgres")
     POSTGRES_PASSWORD: SecretStr = Field(default=SecretStr("postgres"))
-    POSTGRES_HOST: str = Field(default="db")
+    POSTGRES_HOST: str = Field(default="host.docker.internal")
     POSTGRES_PORT: str = Field(default="5432")
-    POSTGRES_DB: str = Field(default="sycolibre")
+    POSTGRES_DB: str = Field(default="users_db")
     
     # App user settings
     APP_USER: str = Field(default="app_user")
