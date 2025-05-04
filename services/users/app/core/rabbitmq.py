@@ -215,63 +215,6 @@ class UserRabbitMQClient:
             "user": User.model_validate(db_user).model_dump()
         }
 
-    async def handle_login(
-        self,
-        data: Dict[str, Any],
-        db: Session
-    ) -> Dict[str, Any]:
-        """Handle user login"""
-        user = (
-            db.query(UserModel)
-            .filter(UserModel.username == data["username"])
-            .first()
-        )
-
-        if not user or not security.verify_password(
-            data["password"],
-            str(user.hashed_password)
-        ):
-            return {
-                "error": True,
-                "message": "Invalid username or password"
-            }
-
-        # Create access token
-        access_token = security.create_access_token(subject=user.username)
-
-        return {
-            "error": False,
-            "token": access_token.access_token,
-            "token_type": access_token.token_type,
-            "expires_at": access_token.expires_at.isoformat(),
-            "user": User.model_validate(user).model_dump()
-        }
-
-    async def handle_logout(
-        self,
-        data: Dict[str, Any],
-        db: Session
-    ) -> Dict[str, Any]:
-        """Handle user logout"""
-        user_id = data.get("user_id")
-        if not user_id:
-            return {
-                "error": True,
-                "message": "User ID not provided"
-            }
-
-        # Get user
-        user = db.query(UserModel).filter(UserModel.id == user_id).first()
-        if not user:
-            return {
-                "error": True,
-                "message": "User not found"
-            }
-
-        return {
-            "error": False,
-            "message": "Successfully logged out"
-        }
 
     async def handle_validate(
         self,

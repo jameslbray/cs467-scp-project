@@ -1,17 +1,18 @@
 import logging
+from datetime import datetime
 from typing import Dict, List, Optional
+
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     WebSocket,
     WebSocketDisconnect,
-    Query,
 )
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, Field, validator
-from datetime import datetime
 from jose import jwt
+from pydantic import BaseModel, Field, field_validator
 from starlette.status import (
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
@@ -38,7 +39,7 @@ class StatusUpdate(BaseModel):
     status: str
     additional_info: Optional[str] = None
 
-    @validator("status")
+    @field_validator("status")
     def status_must_be_valid(cls, v):
         valid_statuses = ["online", "offline", "away", "busy", "invisible"]
         if v not in valid_statuses:

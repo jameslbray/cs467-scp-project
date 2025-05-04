@@ -174,7 +174,7 @@ async def login_for_access_token(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     access_token = security.create_access_token(
-        subject=user.username,
+        user_id=user.id,
         expires_delta=access_token_expires
     )
 
@@ -236,7 +236,7 @@ async def health_check():
 
 def cleanup_expired_tokens(db: Session):
     """Remove expired tokens from the blacklist."""
-    now = datetime.utcnow()
+    now = datetime.now()
     expired_tokens = (
         db.query(BlacklistedToken)
         .filter(BlacklistedToken.expires_at < now)

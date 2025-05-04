@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = Field(default="postgres")
     POSTGRES_HOST: str = Field(default="host.docker.internal")
     POSTGRES_PORT: str = Field(default="5432")
-    POSTGRES_DB: str = Field(default="users_db")
+    POSTGRES_DB: str = Field(default="sycolibre")
 
     @field_validator("ENV")
     @classmethod

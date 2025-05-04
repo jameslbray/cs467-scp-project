@@ -1,9 +1,11 @@
+import os
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, List
+
 from pydantic import Field, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from functools import lru_cache
-import os
-from pathlib import Path
-from typing import List, Any
+
 
 def find_env_file() -> str:
     """Find the .env file in potential locations."""
