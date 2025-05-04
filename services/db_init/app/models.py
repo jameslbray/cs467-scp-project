@@ -32,7 +32,7 @@ class BlacklistedToken(Base):
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
 
 class UserStatus(Base):
-    __tablename__ = "user_status"
+    __tablename__ = "presence"
     __table_args__ = (
         CheckConstraint("status IN ('online', 'away', 'offline')", name="valid_status_check"),
         {"schema": "presence"}
