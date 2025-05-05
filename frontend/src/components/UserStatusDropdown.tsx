@@ -47,7 +47,7 @@ const UserStatusDropdown: React.FC = () => {
     console.log("User: ", user);
     const requestBody = {
       status: newStatus, 
-      additional_info: user.username,
+      additional_info: null
     };
 
     const response = await fetch(`${API_BASE_URL}/api/status/${user.id}`, {

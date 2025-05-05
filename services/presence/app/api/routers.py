@@ -197,7 +197,7 @@ async def update_user_status(
     - **StatusResponse**: Updated status information
     """
     # Check if the user is trying to update their own status
-    if status_update.additional_info != current_user:
+    if user_id != current_user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only update your own status"
