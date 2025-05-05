@@ -310,7 +310,7 @@ class PresenceManager:
             bool: True if update was successful, False otherwise
         """
         try:
-            status_type = StatusType(status)
+            status_type = status
             current_time = last_changed or datetime.now().timestamp()
         
             # Initialize user in presence_data if not exists

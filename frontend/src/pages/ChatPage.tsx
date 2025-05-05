@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import UserStatusDropdown from "../components/UserStatusDropdown";
+import UserStatusDropdown from "../components/UserStatus";
 import ChatList from "../components/ChatList";
 import { MoonIcon, SunIcon } from "@heroicons/react/24/outline";
 import { useTheme, useAuth } from "../contexts";
