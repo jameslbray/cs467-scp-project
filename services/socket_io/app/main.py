@@ -2,23 +2,25 @@
 Main application module for the socket-io service.
 """
 
+import asyncio
 import logging
 import os
-import asyncio
 from contextlib import asynccontextmanager
+
+# import socketio
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import socketio
-import uvicorn
-from .core.config import get_settings
+
+from services.presence.app.core.presence_manager import PresenceManager
 from services.rabbitmq.core.client import RabbitMQClient
 from services.rabbitmq.core.config import Settings as RabbitMQSettings
-from .core.events import AuthEvents
-
-from services.socket_io.app.core.socket_server import SocketServer
-from services.presence.app.core.presence_manager import PresenceManager
 from services.shared.utils.retry import CircuitBreaker, with_retry
+from services.socket_io.app.core.socket_server import SocketServer
+
+from .core.config import get_settings
+from .core.events import AuthEvents
 
 # Load environment variables
 load_dotenv()
@@ -40,7 +42,7 @@ presence_manager = PresenceManager(
             )
         }
     },
-    socket_server=socket_server
+    # socket_server=socket_server
 )
 
 # Initialize circuit breaker for presence manager
@@ -135,7 +137,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Socket.IO Service", lifespan=lifespan)
 
 # Create ASGI app by wrapping Socket.IO
-socket_app = socketio.ASGIApp(sio, app)
+# socket_app = socketio.ASGIApp(sio, app)
 
 # Initialize auth events
 auth_events = None

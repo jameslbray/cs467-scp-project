@@ -1,12 +1,12 @@
 import logging
-import time
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import sessionmaker
 import os
+import time
 
 from config import get_settings
 from models import Base, User, UserStatus
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import sessionmaker
 
 # Configure logging
 logging.basicConfig(
@@ -15,17 +15,45 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def wait_for_db(settings, max_retries=30, retry_interval=2):
+def create_database():
+    """Create the database schema"""
+    settings = get_settings()
+    postgres_url_parts = settings.DATABASE_URL.split("/")
+    postgres_url = '/'.join(postgres_url_parts[:-1] + ['postgres'])
+
+    logger.info("Checking if sycolibre database exists...")
+    try:
+        engine = create_engine(postgres_url)
+
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = 'sycolibre'"))
+            exists = result.scalar() is not None
+
+            if not exists:
+                logger.info("Database 'sycolibre' does not exist. Creating...")
+                conn.execute(text("COMMIT"))
+                conn.execute(text("CREATE DATABASE sycolibre"))
+                logger.info("Database 'sycolibre' created successfully")
+            else:
+                logger.info("Database 'sycolibre' already exists")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating database: {e}")
+        return False
+
+def wait_for_db(max_retries: int=30, retry_interval: int=2):
     """Wait for the database to be available"""
     logger.info("Waiting for database to be available...")
-    
-    db_url = settings.DATABASE_URL
+
+    settings = get_settings()
+    postgres_url = settings.DATABASE_URL
     retries = 0
-    
+
     while retries < max_retries:
         try:
             # Try to connect to the database
-            engine = create_engine(db_url)
+            engine = create_engine(postgres_url)
             conn = engine.connect()
             conn.close()
             logger.info("Successfully connected to the database")
@@ -34,71 +62,109 @@ def wait_for_db(settings, max_retries=30, retry_interval=2):
             logger.warning(f"Database not available yet: {e}")
             retries += 1
             time.sleep(retry_interval)
-    
+
     logger.error(f"Could not connect to database after {max_retries} attempts")
     return False
+
+def create_roles():
+    """Create roles for the database"""
+    logger.info("Creating roles...")
+    settings = get_settings()
+
+    postgres_url = settings.DATABASE_URL
+    
+    # TODO: add this to env file 
+    postgres_users = [
+        "Michael",
+        "Nicholas",
+        "James"
+    ]
+    try:
+        engine = create_engine(postgres_url)
+        with engine.connect() as conn:
+            for user in postgres_users:
+                result = conn.execute(text(f"SELECT 1 FROM pg_roles WHERE rolname = '{user}'"))
+                exists = result.scalar() is not None
+                
+                if not exists:
+                    logger.info(f"Creating database user '{user}'...")
+                    # Create user with password - in production, use more secure passwords
+                    conn.execute(text(f"CREATE USER {user} WITH PASSWORD 'password'"))
+                else:
+                    logger.info(f"Database user '{user}' already exists")
+                
+                logger.info(f"Granting permissions to {user}...")
+                
+                # Schema permissions
+                conn.execute(text(f"GRANT USAGE ON SCHEMA users TO {user}"))
+                conn.execute(text(f"GRANT USAGE ON SCHEMA presence TO {user}"))
+                
+                # Table permissions
+                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA users TO {user}"))
+                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA presence TO {user}"))
+                
+                # Sequence permissions
+                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA users TO {user}"))
+                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA presence TO {user}"))
+                
+                # Set search path
+                conn.execute(text(f"ALTER ROLE {user} SET search_path TO users, presence, public"))
+                
+                # Allow user to create objects in these schemas
+                conn.execute(text(f"GRANT CREATE ON SCHEMA users TO {user}"))
+                conn.execute(text(f"GRANT CREATE ON SCHEMA presence TO {user}"))
+            
+            # Grant future permissions for new tables/sequences
+            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA users GRANT ALL ON TABLES TO " + ", ".join(postgres_users)))
+            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON TABLES TO " + ", ".join(postgres_users)))
+            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA users GRANT ALL ON SEQUENCES TO " + ", ".join(postgres_users)))
+            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON SEQUENCES TO " + ", ".join(postgres_users)))
+    except OperationalError as e:
+        logger.warning(f"Database not available yet: {e}")
+    
 
 def init_database():
     """Initialize the database with schemas and tables"""
     settings = get_settings()
-    
+
+    if not create_database():
+        logger.error("Failed to create the database")
+        return False
+
     # Wait for database to be available
-    if not wait_for_db(settings):
+    if not wait_for_db():
         logger.error("Database initialization failed: could not connect to database")
         return False
-    
+
     logger.info("Starting database initialization")
-    
+
     # Create engine
     engine = create_engine(settings.DATABASE_URL)
-    
+
     try:
         # Create schemas
         with engine.begin() as conn:
             logger.info("Creating schemas...")
             conn.execute(text("CREATE SCHEMA IF NOT EXISTS users"))
             conn.execute(text("CREATE SCHEMA IF NOT EXISTS presence"))
-            
+
             logger.info("Creating extensions...")
             conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
             conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pgcrypto"'))
-        
+
         # Create tables
         logger.info("Creating tables...")
         Base.metadata.create_all(engine)
-        
-        # Grant permissions to app_user
-        with engine.begin() as conn:
-            logger.info("Granting permissions to app_user...")
-            
-            # Schema permissions
-            conn.execute(text("GRANT USAGE ON SCHEMA users TO app_user"))
-            conn.execute(text("GRANT USAGE ON SCHEMA presence TO app_user"))
-            
-            # Table permissions
-            conn.execute(text("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA users TO app_user"))
-            conn.execute(text("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA presence TO app_user"))
-            
-            # Sequence permissions
-            conn.execute(text("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA users TO app_user"))
-            conn.execute(text("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA presence TO app_user"))
-            
-            # Set search path for app_user
-            conn.execute(text("ALTER ROLE app_user SET search_path TO users, presence, public"))
-            
-            # Allow app_user to create objects in these schemas
-            conn.execute(text("GRANT CREATE ON SCHEMA users TO app_user"))
-            conn.execute(text("GRANT CREATE ON SCHEMA presence TO app_user"))
-        
+
         # Set up initial data
         logger.info("Seeding initial data...")
         SessionLocal = sessionmaker(bind=engine)
         db = SessionLocal()
-        
+
         try:
             # Check if test user exists
             test_user = db.query(User).filter(User.username == "test_user").first()
-            
+
             if not test_user:
                 logger.info("Creating test user...")
                 test_user = User(
@@ -110,7 +176,7 @@ def init_database():
                 db.add(test_user)
                 db.commit()
                 db.refresh(test_user)
-                
+
                 logger.info("Creating test user status...")
                 test_status = UserStatus(
                     user_id=test_user.id,
@@ -120,17 +186,17 @@ def init_database():
                 db.commit()
             else:
                 logger.info(f"Test user already exists (id: {test_user.id})")
-                
+
             logger.info("Database initialization completed successfully")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error seeding data: {e}")
             db.rollback()
             return False
         finally:
             db.close()
-            
+
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
         return False
