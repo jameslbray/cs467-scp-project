@@ -46,6 +46,7 @@ const UserStatusDropdown: React.FC = () => {
 
     if (!Object.values(StatusType).includes(newStatus)) {
       console.error('Invalid status value:', newStatus);
+      alert(`Invalid status value: ${newStatus}. Please select a valid status.`);
       return;
     }
 
