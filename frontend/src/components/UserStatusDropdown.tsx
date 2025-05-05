@@ -44,6 +44,11 @@ const UserStatusDropdown: React.FC = () => {
       return;
     }
 
+    if (!Object.values(StatusType).includes(newStatus)) {
+      console.error('Invalid status value:', newStatus);
+      return;
+    }
+
     console.log("User: ", user);
     const requestBody = {
       status: newStatus, 
@@ -60,7 +65,7 @@ const UserStatusDropdown: React.FC = () => {
     });
     console.log('Response:', response);
     if (response.status === 201 || response.status === 200) {
-      alert(`Successfully changed ${status}!`);
+      alert(`Successfully changed status to ${newStatus }!`);
     } else {
       alert(`Problem adding item. Response status = ${response.status}`);
     }
