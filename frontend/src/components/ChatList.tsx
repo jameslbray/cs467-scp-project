@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
-import ChatMessage, { ChatMessageProps } from './ChatMessage';
+import React, { useState, useRef, useEffect } from "react";
+import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
+import ChatMessage, { ChatMessageProps } from "./ChatMessage";
 
 interface User {
   id: string;
@@ -10,56 +10,60 @@ interface User {
 
 // Sample current user for demonstration
 const currentUser: User = {
-  id: '1',
-  username: 'current_user',
-  profilePicture: 'https://i.pravatar.cc/150?u=1'
+  id: "1",
+  username: "current_user",
+  profilePicture: "https://i.pravatar.cc/150?u=1",
 };
 
 // Sample other users for demonstration
 const otherUsers: Record<string, User> = {
-  '2': {
-    id: '2',
-    username: 'jane_doe',
-    profilePicture: 'https://i.pravatar.cc/150?u=2'
+  "2": {
+    id: "2",
+    username: "jane_doe",
+    profilePicture: "https://i.pravatar.cc/150?u=2",
   },
-  '3': {
-    id: '3',
-    username: 'john_smith',
-    profilePicture: 'https://i.pravatar.cc/150?u=3'
-  }
+  "3": {
+    id: "3",
+    username: "john_smith",
+    profilePicture: "https://i.pravatar.cc/150?u=3",
+  },
 };
 
 // Sample messages for demonstration
-const initialMessages: Omit<ChatMessageProps, 'isCurrentUser'>[] = [
+const initialMessages: Omit<ChatMessageProps, "isCurrentUser">[] = [
   {
-    id: '1',
-    content: 'Hello everyone! Welcome to SycoLibre chat.',
-    author: otherUsers['2'] as User,
-    timestamp: new Date(Date.now() - 3600000) // 1 hour ago
+    id: "1",
+    content: "Hello everyone! Welcome to SycoLibre.",
+    author: otherUsers["2"] as User,
+    timestamp: new Date(Date.now() - 3600000), // 1 hour ago
   },
   {
-    id: '2',
-    content: 'Thanks for having me! This is a message with **bold** and *italic* formatting.',
+    id: "2",
+    content:
+      "Thanks for having me! This is a message with **bold** and *italic* formatting.",
     author: currentUser,
-    timestamp: new Date(Date.now() - 1800000) // 30 minutes ago
+    timestamp: new Date(Date.now() - 1800000), // 30 minutes ago
   },
   {
-    id: '3',
-    content: 'Great to see markdown support! Check out this code:\n```python\ndef hello_world():\n    print("Hello, world!")\n```',
-    author: otherUsers['3'] as User,
-    timestamp: new Date(Date.now() - 900000) // 15 minutes ago
+    id: "3",
+    content:
+      'Great to see markdown support! Check out this code:\n```python\ndef hello_world():\n    print("Hello, world!")\n```',
+    author: otherUsers["3"] as User,
+    timestamp: new Date(Date.now() - 900000), // 15 minutes ago
   },
   {
-    id: '4',
-    content: 'You can also include:\n- Bullet points\n- In your messages\n\nAlong with [links](https://example.com)',
-    author: otherUsers['2'] as User,
-    timestamp: new Date(Date.now() - 300000) // 5 minutes ago
-  }
+    id: "4",
+    content:
+      "You can also include:\n- Bullet points\n- In your messages\n\nAlong with [links](https://example.com)",
+    author: otherUsers["2"] as User,
+    timestamp: new Date(Date.now() - 300000), // 5 minutes ago
+  },
 ];
 
 const ChatList: React.FC = () => {
-  const [messages, setMessages] = useState<Omit<ChatMessageProps, 'isCurrentUser'>[]>(initialMessages);
-  const [newMessage, setNewMessage] = useState('');
+  const [messages, setMessages] =
+    useState<Omit<ChatMessageProps, "isCurrentUser">[]>(initialMessages);
+  const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -69,7 +73,7 @@ const ChatList: React.FC = () => {
   }, [messages]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -82,15 +86,15 @@ const ChatList: React.FC = () => {
 
     // Simulate network delay
     setTimeout(() => {
-      const message: Omit<ChatMessageProps, 'isCurrentUser'> = {
+      const message: Omit<ChatMessageProps, "isCurrentUser"> = {
         id: String(Date.now()),
         content: newMessage,
         author: currentUser,
-        timestamp: new Date()
+        timestamp: new Date(),
       };
 
-      setMessages(prevMessages => [...prevMessages, message]);
-      setNewMessage('');
+      setMessages((prevMessages) => [...prevMessages, message]);
+      setNewMessage("");
       setIsLoading(false);
     }, 500);
   };
@@ -99,7 +103,9 @@ const ChatList: React.FC = () => {
     <div className="flex flex-col h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
       {/* Chat Header */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Chat Room</h2>
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+          Chat Room
+        </h2>
       </div>
 
       {/* Messages Container */}
@@ -110,7 +116,7 @@ const ChatList: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {messages.map(message => (
+            {messages.map((message) => (
               <ChatMessage
                 key={message.id}
                 id={message.id}
@@ -129,7 +135,10 @@ const ChatList: React.FC = () => {
       <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
           <div className="flex-1">
-            <label htmlFor="message-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label
+              htmlFor="message-input"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+            >
               Message
             </label>
             <textarea
@@ -142,7 +151,8 @@ const ChatList: React.FC = () => {
               disabled={isLoading}
             />
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Supports Markdown: **bold**, *italic*, `code`, ```code blocks```, [links](url), and lists
+              Supports Markdown: **bold**, *italic*, `code`, ```code blocks```,
+              [links](url), and lists
             </p>
           </div>
           <button
@@ -164,4 +174,3 @@ const ChatList: React.FC = () => {
 };
 
 export default ChatList;
-

@@ -242,7 +242,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Use model_validate instead of from_orm (Pydantic v2 style)
+
     return User.model_validate(user, from_attributes=True)
 
 

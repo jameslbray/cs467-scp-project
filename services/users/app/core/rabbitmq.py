@@ -1,14 +1,17 @@
 # Import from local rabbitmq client implementation
+import json
+import logging
+from typing import Any, Dict, Optional, cast
+
+from sqlalchemy.orm import Session
+
+from services.db_init.app.models import User as UserModel
 from services.rabbitmq.core.client import RabbitMQClient
 from services.rabbitmq.core.config import Settings as RabbitMQSettings
-import logging
-import json
-from typing import Dict, Any, Optional, cast
-from sqlalchemy.orm import Session
+
 from ..db.database import get_db
 from ..schemas import User
 from . import security
-from services.db_init.app.models import User as UserModel
 from .config import Settings as UserSettings
 
 # Configure logging

@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts';
+import React, { useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useAuth } from "../contexts";
 
 const LandingPage: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -9,7 +9,7 @@ const LandingPage: React.FC = () => {
   useEffect(() => {
     // Only redirect if user is already authenticated
     if (!isLoading && isAuthenticated) {
-      navigate('/chat');
+      navigate("/chat");
     }
   }, [isAuthenticated, isLoading, navigate]);
 
@@ -19,7 +19,7 @@ const LandingPage: React.FC = () => {
         <div className="flex flex-col items-center justify-center min-h-screen py-12">
           <div className="text-center">
             <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl md:text-6xl text-gray-900">
-              Welcome to SycoLibre Chat
+              Welcome to SycoLibre
             </h1>
             <p className="mt-3 max-w-md mx-auto text-base sm:text-lg md:mt-5 md:text-xl text-gray-500">
               A secure, decentralized chat platform for the modern world.
@@ -52,28 +52,23 @@ const LandingPage: React.FC = () => {
             <div className="mt-12 grid gap-8 grid-cols-1 md:grid-cols-3">
               {[
                 {
-                  title: 'Secure Communication',
-                  description: 'End-to-end encryption for all your messages'
+                  title: "Secure Communication",
+                  description: "End-to-end encryption for all your messages",
                 },
                 {
-                  title: 'Real-time Updates',
-                  description: 'Instant message delivery and status updates'
+                  title: "Real-time Updates",
+                  description: "Instant message delivery and status updates",
                 },
                 {
-                  title: 'User Status',
-                  description: 'See when your friends are online and available'
-                }
+                  title: "User Status",
+                  description: "See when your friends are online and available",
+                },
               ].map((feature, index) => (
-                <div
-                  key={index}
-                  className="p-6 rounded-lg bg-white shadow-lg"
-                >
+                <div key={index} className="p-6 rounded-lg bg-white shadow-lg">
                   <h3 className="text-xl font-semibold text-gray-900">
                     {feature.title}
                   </h3>
-                  <p className="mt-2 text-gray-500">
-                    {feature.description}
-                  </p>
+                  <p className="mt-2 text-gray-500">{feature.description}</p>
                 </div>
               ))}
             </div>
