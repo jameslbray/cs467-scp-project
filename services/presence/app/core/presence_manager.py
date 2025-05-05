@@ -518,17 +518,16 @@ class PresenceManager:
             return None
 
         try:
-            # Convert string to UUID
-            uuid_user_id = UUID(user_id) if isinstance(
-                user_id, str) else user_id
+            if isinstance(user_id, UUID):
+                user_id = str(user_id)
             async with self.db_pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
                     SELECT user_id, status, last_changed
-                    FROM user_status
+                    FROM presence.user_status
                     WHERE user_id = $1
                 """,
-                    uuid_user_id,
+                    user_id,
                 )
 
                 if row:
@@ -545,13 +544,29 @@ class PresenceManager:
             logger.error(f"Failed to get user status: {e}")
             return None
 
-    def get_user_status(self, user_id: str) -> dict[str, Any]:
+    async def get_user_status(self, user_id: str) -> dict[str, Any] | None:
         """Get user's current status."""
-        presence_data = self.presence_data.get(user_id, {})
-        return {
-            "status": presence_data.get("status", StatusType.OFFLINE.value),
-            "last_seen": presence_data.get("last_seen", 0),
-        }
+        if user_id in self.presence_data:
+            # dictionary
+            presence_data = self.presence_data.get(user_id, {})
+            return {
+                "status": presence_data.get("status", StatusType.OFFLINE.value),
+                "last_seen": presence_data.get("last_seen", 0),
+            }
+        else:
+            # UserStatus object
+            user_status = await self._get_user_status(user_id)
+            
+            if user_status is None:
+                return {
+                    "status": StatusType.OFFLINE.value,
+                    "last_seen": 0,
+                }
+            
+            return {
+                "status": user_status.status.value,
+                "last_seen": user_status.last_changed,
+            }
 
     async def set_user_status(self, user_id: str, status: str, last_changed: Optional[float] = None) -> bool:
         """Set user's status."""

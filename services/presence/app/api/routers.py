@@ -160,7 +160,7 @@ async def get_user_status(
     Returns:
     - **StatusResponse**: User's current status information
     """
-    status_data = presence_manager.get_user_status(user_id)
+    status_data = await presence_manager.get_user_status(user_id)
 
     # Create response with required fields
     return StatusResponse(
@@ -215,7 +215,7 @@ async def update_user_status(
         )
 
     # Get updated status
-    status_data = presence_manager.get_user_status(user_id)
+    status_data = await presence_manager.get_user_status(user_id)
 
     # Create response
     return StatusResponse(
