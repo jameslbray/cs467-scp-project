@@ -1,6 +1,8 @@
 import logging
+
 import motor.motor_asyncio
-from services.chat.app.core.config import settings
+
+from ..core.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +15,8 @@ async def init_mongo() -> None:
     global client, db
     try:
         logger.info("Connecting to MongoDB...")
-        client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGO_URI)
-        db = client[settings.MONGO_DB]
+        client = motor.motor_asyncio.AsyncIOMotorClient(Settings.MONGO_URI)
+        db = client[Settings.MONGO_DB]
         # Verify connection
         await db.command("ping")
         logger.info("Successfully connected to MongoDB")

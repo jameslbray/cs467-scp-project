@@ -79,7 +79,7 @@ def create_access_token(
 def blacklist_token(
     token: str,
     db: Session,
-    user_id: Optional[int] = None,
+    user_id: Optional[UUID] = None,
     username: Optional[str] = None,
 ) -> None:
     """

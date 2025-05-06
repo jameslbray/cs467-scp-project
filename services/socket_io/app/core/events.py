@@ -1,9 +1,9 @@
-from typing import Dict, Any, Optional, TypedDict, Union
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, Optional, TypedDict, Union
+
 from socketio import AsyncServer
-from ..utils.utils import json_serial
-import json
+
 from services.rabbitmq.core.client import RabbitMQClient
 
 

@@ -1,11 +1,13 @@
 import logging
 import os
 
+from services.socket_io.app.core.event_schema import Event, EventType
 from services.socket_io.app.core.service_connector import ServiceConnector
-from services.socket_io.app.core.event_schema import EventType, Event
-from app.core.config import settings
+
+from .config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class SocketManager:
@@ -13,6 +15,7 @@ class SocketManager:
 
     def __init__(self):
         """Initialize the chat socket connector."""
+        logger.info(f"SOCKET IO URL: {settings.SOCKET_IO_URL}")
         socket_url = os.environ.get("SOCKET_IO_URL", settings.SOCKET_IO_URL)
         self.connector = ServiceConnector("chat", socket_url)
 
