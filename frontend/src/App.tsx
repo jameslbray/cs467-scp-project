@@ -16,7 +16,7 @@ export interface User {
   profilePicture?: string;
 }
 
-export interface UserStatus {
+export interface UserStatusIntf {
   user_id: string;
   status: 'online' | 'away' | 'offline';
   last_changed: string;
