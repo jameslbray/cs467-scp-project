@@ -1,17 +1,14 @@
-"""
-Socket.IO server implementation for the socket-io service.
-Handles real-time messaging and integrates with the presence service.
-"""
-
-import logging
-import socketio  # type: ignore
 import json
-from typing import Dict, Any, Optional, Never
+import logging
 from datetime import datetime
+from typing import Any, Dict, Never, Optional
 
-from .config import get_socket_io_config
+import socketio
+
 from services.rabbitmq.core.client import RabbitMQClient
 from services.shared.utils.retry import CircuitBreaker, with_retry
+
+from .config import get_socket_io_config
 
 # Configure logging
 logger = logging.getLogger(__name__)

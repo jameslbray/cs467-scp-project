@@ -1,33 +1,37 @@
-from fastapi import (
-    FastAPI,
-    Depends,
-    HTTPException,
-    status,
-    Request,
-    BackgroundTasks
-)
-from typing import cast
-from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from datetime import timedelta, datetime
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ExceptionHandler
 import json
 import logging
-import sys
 import os
+import sys
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import cast
 
-from services.db_init.app.models import User as UserModel, BlacklistedToken
-from .db.database import get_db
-from .schemas import User, UserCreate, Token
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
+from starlette.types import ExceptionHandler
+
+from services.db_init.app.models import BlacklistedToken
+from services.db_init.app.models import User as UserModel
+from services.shared.utils.security_headers import SecurityHeadersMiddleware
+
 from .core import security
-from .core.rabbitmq import UserRabbitMQClient
 from .core.config import Settings, get_settings
+from .core.rabbitmq import UserRabbitMQClient
+from .db.database import get_db
+from .schemas import Token, User, UserCreate
 
 # Configure logging
 logging.basicConfig(
@@ -41,7 +45,6 @@ logging.basicConfig(
 # Get logger for this file
 logger = logging.getLogger(__name__)
 
-
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
@@ -49,28 +52,32 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 settings = get_settings()
 logger.info("Application settings loaded")
 
-# Security headers middleware
+# Initialize RabbitMQ client
+rabbitmq_client = UserRabbitMQClient(settings=settings)
 
+# Define the lifespan handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logger.info("Starting up User Service")
+    await rabbitmq_client.connect()
+    logger.info("RabbitMQ connection established")
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
-        response.headers["Content-Security-Policy"] = "default-src 'self'"
-        return response
+    yield  # This is where FastAPI serves requests
 
+    # Shutdown logic
+    logger.info("Shutting down User Service")
+    await rabbitmq_client.close()
+    logger.info("RabbitMQ connection closed")
 
-# Create FastAPI application
+# Create FastAPI application with lifespan handler
 app = FastAPI(
     title="User Service API",
     description="Service for managing user authentication and profiles",
     version="0.1.0",
+    lifespan=lifespan,
 )
+
 app.add_middleware(SlowAPIMiddleware)
 app.state.limiter = limiter
 
@@ -84,7 +91,6 @@ app.add_middleware(
     allow_methods=settings.CORS_METHODS,
     allow_headers=settings.CORS_HEADERS,
 )
-
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
@@ -273,7 +279,7 @@ async def logout(
         exchange="auth",
         routing_key="user.logout",
         message=json.dumps({
-            "user_id": current_user.id,
+            "user_id": str(current_user.id),
             "username": current_user.username
         })
     )
@@ -284,22 +290,10 @@ async def logout(
         routing_key=f"status.{current_user.id}",
         message=json.dumps({
             "type": "status_update",
-            "user_id": current_user.id,
+            "user_id": str(current_user.id),
             "status": "offline",
             "last_changed": datetime.now().timestamp()
         })
     )
 
     return {"message": "Successfully logged out"}
-
-
-@app.on_event("startup")
-async def startup():
-    """Initialize services and connections"""
-    await rabbitmq_client.connect()
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    """Cleanup resources on shutdown"""
-    await rabbitmq_client.close()

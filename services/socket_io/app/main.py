@@ -7,7 +7,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-# import socketio
+import socketio
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -173,14 +173,9 @@ async def health_check():
     return status
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    # Close RabbitMQ connection
-    await rabbitmq.close()
-
 if __name__ == "__main__":
     uvicorn.run(
-        "app.main:socket_app",
+        "app.main:app",
         host=settings.SOCKET_IO_HOST,
         port=settings.SOCKET_IO_PORT,
         reload=True

@@ -1,20 +1,60 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
-from typing import Dict, List, Any
+import os
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, List
 
+from pydantic import Field, PostgresDsn, SecretStr, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def find_env_file() -> str:
+    """Find the .env file in potential locations."""
+    # Check environment variable first
+    env_file = os.getenv("ENV_FILE")
+    if env_file and os.path.exists(env_file):
+        return env_file
+    
+    # Try multiple possible locations
+    possible_locations = [
+        # Original path (for local development)
+        os.path.join(Path(__file__).parent.parent.parent.parent, ".env"),
+        # Docker container root
+        "/app/.env",
+        # Current directory
+        ".env",
+    ]
+    
+    for location in possible_locations:
+        if os.path.exists(location):
+            return location
+    
+    # If we get here, return the default location
+    return possible_locations[0]
+    
+def construct_socket_path() -> str:
+    
+    host = os.getenv('SOCKET_IO_HOST', 'localhost')
+    port = os.getenv('SOCKET_IO_PORT', '8000')
+    path = os.getenv('SOCKET_IO_PATH', '/socket.io/')
+    
+    socket_io_url = f"https://{host}:{port}{path}"
+    
+    return socket_io_url
 
 class Settings(BaseSettings):
-    """Application settings with environment variable support."""
-
-    # Application configuration
-    APP_NAME: str = "Chat Service"
-    API_PREFIX: str = "/api/v1"
-    DEBUG: bool = Field(default=False)
+    # Environment
     ENV: str = Field(
         default="development",
         description="Environment (development, staging, production)"
     )
-    LOG_LEVEL: str = Field(default="info")
+    DEBUG: bool = Field(
+        default=False,
+        description="Debug mode"
+    )
+    LOG_LEVEL: str = Field(
+        default="info",
+        description="Logging level"
+    )
 
     # CORS settings
     CORS_ORIGINS: List[str] = Field(
@@ -34,89 +74,73 @@ class Settings(BaseSettings):
         description="Allowed HTTP headers"
     )
 
-    # MongoDB configuration
-    MONGO_URI: str = Field(
-        default="mongodb://localhost:27017",
-        description="MongoDB connection string"
-    )
-    MONGO_DB: str = Field(
-        default="chat_db",
-        description="MongoDB database name"
-    )
-
-    # PostgreSQL configuration
-    PG_USER: str = Field(
-        default="postgres",
-        description="PostgreSQL username"
-    )
-    PG_PASSWORD: str = Field(
-        default="postgres",
-        description="PostgreSQL password"
-    )
-    PG_HOST: str = Field(
-        default="localhost",
-        description="PostgreSQL host"
-    )
-    PG_DATABASE: str = Field(
-        default="sycolibre",
-        description="PostgreSQL database name"
-    )
-    PG_PORT: int = Field(
-        default=5432,
-        description="PostgreSQL port"
-    )
-
-    # Redis configuration
-    REDIS_HOST: str = Field(
-        default="localhost",
-        description="Redis host"
-    )
-    REDIS_PORT: int = Field(
-        default=6379,
-        description="Redis port"
-    )
-    REDIS_PASSWORD: str = Field(
-        default="",
-        description="Redis password"
-    )
-
-    # RabbitMQ configuration
-    RABBITMQ_URL: str = Field(
-        default="amqp://guest:guest@localhost:5672/",
-        description="RabbitMQ connection URL"
-    )
-
-    # Socket.IO server configuration
-    SOCKET_PORT: int = Field(
-        default=3001,
-        description="Socket.IO server port"
-    )
-    SOCKET_HOST: str = Field(
-        default="0.0.0.0",
-        description="Socket.IO server host"
-    )
-    SOCKET_LOG_LEVEL: str = Field(
-        default="info",
-        description="Socket.IO log level"
-    )
-
-    # Socket.IO service URL
-    SOCKET_IO_URL: str = Field(
-        default="http://localhost:8000",
-        description="URL of the Socket.IO service"
-    )
-
-    # Security settings
-    SECRET_KEY: str = Field(
+    # Database settings
+    DATABASE_URL: PostgresDsn = Field(
         default=...,
-        description="Secret key for token signing",
-        min_length=32
+        description="Database connection URL"
     )
+    POSTGRES_USER: str = Field(default=..., min_length=1)
+    POSTGRES_PASSWORD: SecretStr = Field(default=..., min_length=8)
+    POSTGRES_HOST: str = Field(default=..., min_length=1)
+    POSTGRES_PORT: str = Field(default=..., min_length=1)
+    POSTGRES_DB: str = Field(default=..., min_length=1)
+
+    # JWT settings
+    JWT_SECRET_KEY: SecretStr = Field(default=..., min_length=32)
+    JWT_ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
         default=30,
         ge=1,
         le=1440,
-        description="Access token expiration time in minutes"
+        description="Between 1 minute and 24 hours"
+    )
+
+    # RabbitMQ settings
+    RABBITMQ_URL: str = Field(
+        default=...,
+        description="RabbitMQ connection URL"
+    )
+    RABBITMQ_HOST: str = Field(
+        default="localhost",
+        description="RabbitMQ host"
+    )
+    RABBITMQ_PORT: int = Field(
+        default=5672,
+        description="RabbitMQ port"
+    )
+    RABBITMQ_USER: str = Field(
+        default="guest",
+        description="RabbitMQ username"
+    )
+    RABBITMQ_PASSWORD: str = Field(
+        default="guest",
+        description="RabbitMQ password"
+    )
+    RABBITMQ_VHOST: str = Field(
+        default="/",
+        description="RabbitMQ virtual host"
+    )
+    USERS_QUEUE: str = Field(
+        default="users_tasks",
+        description="Users queue name"
+    )
+    
+    SOCKET_IO_URL: str = construct_socket_path()
+
+    # Security settings
+    SECURITY_HEADERS: bool = Field(
+        default=True,
+        description="Enable security headers"
+    )
+    RATE_LIMIT_REQUESTS: int = Field(
+        default=100,
+        ge=1,
+        description="Rate limit requests per period"
+    )
+    RATE_LIMIT_PERIOD: int = Field(
+        default=60,
+        ge=1,
+        description="Rate limit period in seconds"
     )
 
     @field_validator("ENV")
@@ -145,68 +169,43 @@ class Settings(BaseSettings):
                 raise ValueError("Production CORS origins must use HTTPS")
         return v
 
-    @field_validator("SECRET_KEY")
+    @field_validator("JWT_SECRET_KEY")
     @classmethod
-    def validate_secret_key(cls, v: str) -> str:
-        if len(v) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters long")
+    def validate_jwt_secret(cls, v: SecretStr) -> SecretStr:
+        if len(v.get_secret_value()) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters long")
         return v
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True
-    )
+            env_file=find_env_file(),
+            env_file_encoding="utf-8",
+            extra='ignore'
+        )
 
 
-# Create settings instance
-settings = Settings()
-
-# Create configuration dictionaries for services
-
-
-def get_pg_config() -> Dict[str, str]:
-    """Return PostgreSQL configuration dictionary"""
-    return {
-        "user": settings.PG_USER,
-        "password": settings.PG_PASSWORD,
-        "host": settings.PG_HOST,
-        "database": settings.PG_DATABASE,
-        "port": settings.PG_PORT,
-    }
-
-
-def get_redis_config() -> Dict[str, str]:
-    """Return Redis configuration dictionary"""
-    return {
-        "host": settings.REDIS_HOST,
-        "port": settings.REDIS_PORT,
-        "password": settings.REDIS_PASSWORD,
-    }
-
-
-def get_rabbitmq_config() -> Dict[str, str]:
-    """Return RabbitMQ configuration dictionary"""
-    return {
-        "url": settings.RABBITMQ_URL,
-    }
-
-
-def get_presence_service_config() -> Dict[str, Dict]:
-    """Return full presence service configuration dictionary"""
-    return {
-        "postgres": get_pg_config(),
-        # Redis is commented out as in original
-        # "redis": get_redis_config(),
-        "rabbitmq": get_rabbitmq_config(),
-    }
-
-
-# Export settings and config functions
-__all__ = [
-    "settings",
-    "get_pg_config",
-    "get_redis_config",
-    "get_rabbitmq_config",
-    "get_presence_service_config",
-]
+@lru_cache()
+def get_settings() -> Settings:
+    """Create and return a cached Settings instance."""
+    env_file = find_env_file()
+    
+    # Debug info
+    print("\n================ CONFIG DEBUG ================")
+    print(f"Looking for .env file at: {env_file}")
+    print(f"File exists: {os.path.exists(env_file) if env_file else False}")
+    
+    # Create settings instance
+    settings = Settings()
+    
+    # Print some key settings for debugging
+    try:
+        print(f"POSTGRES_USER: {settings.POSTGRES_USER}")
+        print(f"POSTGRES_HOST: {settings.POSTGRES_HOST}")
+        print(f"POSTGRES_DB: {settings.POSTGRES_DB}")
+        print(f"ENV: {settings.ENV}")
+    except Exception as e:
+        print(f"Error accessing settings: {e}")
+    
+    print("===============================================\n")
+    
+    return settings
