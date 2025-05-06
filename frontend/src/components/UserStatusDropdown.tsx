@@ -44,10 +44,16 @@ const UserStatusDropdown: React.FC = () => {
       return;
     }
 
+    if (!Object.values(StatusType).includes(newStatus)) {
+      console.error('Invalid status value:', newStatus);
+      alert(`Invalid status value: ${newStatus}. Please select a valid status.`);
+      return;
+    }
+
     console.log("User: ", user);
     const requestBody = {
       status: newStatus, 
-      additional_info: user.username,
+      additional_info: null
     };
 
     const response = await fetch(`${API_BASE_URL}/api/status/${user.id}`, {
@@ -60,7 +66,7 @@ const UserStatusDropdown: React.FC = () => {
     });
     console.log('Response:', response);
     if (response.status === 201 || response.status === 200) {
-      alert(`Successfully changed ${status}!`);
+      alert(`Successfully changed status to ${newStatus }!`);
     } else {
       alert(`Problem adding item. Response status = ${response.status}`);
     }
