@@ -1,8 +1,10 @@
+import asyncio
 import logging
 import os
 import time
 
 from config import get_settings
+from init_mongodb import init_mongodb
 from models import Base, User, UserStatus
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
@@ -72,8 +74,8 @@ def create_roles():
     settings = get_settings()
 
     postgres_url = settings.DATABASE_URL
-    
-    # TODO: add this to env file 
+
+    # TODO: add this to env file
     postgres_users = [
         "Michael",
         "Nicholas",
@@ -85,35 +87,35 @@ def create_roles():
             for user in postgres_users:
                 result = conn.execute(text(f"SELECT 1 FROM pg_roles WHERE rolname = '{user}'"))
                 exists = result.scalar() is not None
-                
+
                 if not exists:
                     logger.info(f"Creating database user '{user}'...")
                     # Create user with password - in production, use more secure passwords
                     conn.execute(text(f"CREATE USER {user} WITH PASSWORD 'password'"))
                 else:
                     logger.info(f"Database user '{user}' already exists")
-                
+
                 logger.info(f"Granting permissions to {user}...")
-                
+
                 # Schema permissions
                 conn.execute(text(f"GRANT USAGE ON SCHEMA users TO {user}"))
                 conn.execute(text(f"GRANT USAGE ON SCHEMA presence TO {user}"))
-                
+
                 # Table permissions
                 conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA users TO {user}"))
                 conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA presence TO {user}"))
-                
+
                 # Sequence permissions
                 conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA users TO {user}"))
                 conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA presence TO {user}"))
-                
+
                 # Set search path
                 conn.execute(text(f"ALTER ROLE {user} SET search_path TO users, presence, public"))
-                
+
                 # Allow user to create objects in these schemas
                 conn.execute(text(f"GRANT CREATE ON SCHEMA users TO {user}"))
                 conn.execute(text(f"GRANT CREATE ON SCHEMA presence TO {user}"))
-            
+
             # Grant future permissions for new tables/sequences
             conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA users GRANT ALL ON TABLES TO " + ", ".join(postgres_users)))
             conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON TABLES TO " + ", ".join(postgres_users)))
@@ -121,11 +123,14 @@ def create_roles():
             conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON SEQUENCES TO " + ", ".join(postgres_users)))
     except OperationalError as e:
         logger.warning(f"Database not available yet: {e}")
-    
+
 
 def init_database():
     """Initialize the database with schemas and tables"""
+
+    asyncio.run(init_mongodb())
     settings = get_settings()
+
 
     if not create_database():
         logger.error("Failed to create the database")

@@ -1,4 +1,26 @@
 services:
+  db_init:
+    build:
+      context: .
+      dockerfile: services/db_init/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=5432
+      - APP_USER=${APP_USER:-app_user}
+      - APP_PASSWORD=${APP_PASSWORD:-app_password}
+      - LOG_LEVEL=info
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      mongo_db:
+        condition: service_healthy
+    restart: "no"
+
   postgres_db:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -29,26 +51,43 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  db_init:
-    build:
-      context: .
-      dockerfile: services/db_init/Dockerfile
-    env_file:
-      - .env
+  mongo_db:
+    image: mongo:latest
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=5432
-      - APP_USER=${APP_USER:-app_user}
-      - APP_PASSWORD=${APP_PASSWORD:-app_password}
-      - LOG_LEVEL=info
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ADMIN_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ADMIN_PASSWORD:-password}
+      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME:-chat_db}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--eval",
+          '''db.adminCommand("ping").ok''',
+          "--quiet",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mongo_data:/data/db
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_ADMIN_USER:-admin}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_ADMIN_PASSWORD:-password}
+      - ME_CONFIG_MONGODB_SERVER=mongo_db
     depends_on:
-      postgres_db:
-        condition: service_healthy
-    restart: "no"
-  
+      - mongo_db
+
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     ports:
@@ -71,7 +110,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-  
+
   socket_io:
     build:
       context: .
@@ -86,7 +125,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-  
+
   users:
     build:
       context: .
@@ -111,7 +150,7 @@ services:
         condition: service_completed_successfully
     tty: true
     stdin_open: true
-  
+
   notifications:
     build:
       context: .
@@ -126,7 +165,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-  
+
   presence:
     build:
       context: .
@@ -150,7 +189,7 @@ services:
         condition: service_healthy
       db_init:
         condition: service_completed_successfully
-  
+
   chat:
     build:
       context: .
@@ -162,10 +201,14 @@ services:
     environment:
       - PYTHONPATH=/app
       - RABBITMQ_URL=${RABBITMQ_URL}
+      - MONGO_URI=mongodb://${MONGO_ADMIN_USER:-admin}:${MONGO_ADMIN_PASSWORD:-password}@${MONGO_HOST}:27017/${MONGO_DB_NAME:-chat_db}?authSource=admin
+      - MONGO_PORT=27017
     depends_on:
       rabbitmq:
         condition: service_healthy
-  
+      mongo_db:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
@@ -183,5 +226,6 @@ services:
 
 volumes:
   postgres_data:
+  mongo_data:
   rabbitmq_data:
   rabbitmq_logs:

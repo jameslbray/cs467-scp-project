@@ -4,15 +4,7 @@ Retry utility module with exponential backoff and circuit breaker patterns.
 
 import asyncio
 import logging
-from typing import (
-    Callable,
-    TypeVar,
-    Optional,
-    Any,
-    Awaitable,
-    Union,
-    cast
-)
+from typing import Any, Awaitable, Callable, Optional, TypeVar, Union, cast
 
 logger = logging.getLogger(__name__)
 
