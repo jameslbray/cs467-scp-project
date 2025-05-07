@@ -43,7 +43,7 @@ presence_manager = PresenceManager(
         "postgres": {
             "user": os.getenv("PRESENCE_POSTGRES_USER", "postgres"),
             "password": os.getenv("PRESENCE_POSTGRES_PASSWORD", "postgres"),
-            "host": os.getenv("PRESENCE_POSTGRES_HOST", "host.docker.internal"),
+            "host": os.getenv("PRESENCE_POSTGRES_HOST", "postgres_db"),
             "database": os.getenv("PRESENCE_POSTGRES_DB", "sycolibre"),
             "port": int(os.getenv("PRESENCE_POSTGRES_PORT", "5432")),
         },

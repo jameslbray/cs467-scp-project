@@ -310,7 +310,7 @@ class PresenceManager:
             bool: True if update was successful, False otherwise
         """
         try:
-            status_type = StatusType(status)
+            status_type = status
             current_time = last_changed or datetime.now().timestamp()
         
             # Initialize user in presence_data if not exists
@@ -518,17 +518,16 @@ class PresenceManager:
             return None
 
         try:
-            # Convert string to UUID
-            uuid_user_id = UUID(user_id) if isinstance(
-                user_id, str) else user_id
+            if isinstance(user_id, UUID):
+                user_id = str(user_id)
             async with self.db_pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
                     SELECT user_id, status, last_changed
-                    FROM user_status
+                    FROM presence.user_status
                     WHERE user_id = $1
                 """,
-                    uuid_user_id,
+                    user_id,
                 )
 
                 if row:
@@ -545,12 +544,30 @@ class PresenceManager:
             logger.error(f"Failed to get user status: {e}")
             return None
 
-    def get_user_status(self, user_id: str) -> dict[str, Any]:
+    async def get_user_status(self, user_id: str) -> dict[str, Any]:
         """Get user's current status."""
-        presence_data = self.presence_data.get(user_id, {})
+        # Default values
+        default_status = {
+            "status": StatusType.OFFLINE.value,
+            "last_seen": 0,
+        }
+
+        # Check cache first
+        if user_id in self.presence_data:
+            presence_data = self.presence_data[user_id]
+            return {
+                "status": presence_data.get("status", default_status["status"]),
+                "last_seen": presence_data.get("last_seen", default_status["last_seen"]),
+            }
+
+        # Fetch from database if not in cache
+        user_status = await self._get_user_status(user_id)
+        if user_status is None:
+            return default_status
+
         return {
-            "status": presence_data.get("status", StatusType.OFFLINE.value),
-            "last_seen": presence_data.get("last_seen", 0),
+            "status": user_status.status.value,
+            "last_seen": user_status.last_changed,
         }
 
     async def set_user_status(self, user_id: str, status: str, last_changed: Optional[float] = None) -> bool:

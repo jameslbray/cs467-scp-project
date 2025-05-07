@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import UserStatusDropdown from "../components/UserStatusDropdown";
+import UserStatus from "../components/UserStatus";
 import ChatList from "../components/ChatList";
 import { MoonIcon, SunIcon } from "@heroicons/react/24/outline";
 import { useTheme, useAuth } from "../contexts";
-import { User, UserStatus } from "../App";
+import { User, UserStatusIntf } from "../App";
 import { ServerEvents } from "../types/serverEvents";
 
 // Custom hook for socket connection
 const useSocketConnection = (currentUser: User | null) => {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [friends, setFriends] = useState<Record<string, UserStatus>>({});
+  const [friends, setFriends] = useState<Record<string, UserStatusIntf>>({});
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
@@ -36,14 +36,14 @@ const useSocketConnection = (currentUser: User | null) => {
 
     socketConnection.on(
       ServerEvents.FRIEND_STATUSES,
-      (data: { statuses: Record<string, UserStatus> }) => {
+      (data: { statuses: Record<string, UserStatusIntf> }) => {
         setFriends(data.statuses);
       },
     );
 
     socketConnection.on(
       ServerEvents.FRIEND_STATUS_CHANGED,
-      (data: UserStatus) => {
+      (data: UserStatusIntf) => {
         setFriends((prev) => ({
           ...prev,
           [data.user_id]: data,
@@ -87,9 +87,8 @@ const ChatPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                SycoLibre
-              </h1>
+              <UserStatus />
+
             </div>
             <div className="flex items-center space-x-4">
               {/* Dark mode toggle */}
@@ -139,7 +138,7 @@ const ChatPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Sidebar with status */}
           <div className="lg:col-span-1">
-            <UserStatusDropdown />
+            MessageList Goes Here
           </div>
 
           {/* Chat panel */}
