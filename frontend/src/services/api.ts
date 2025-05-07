@@ -3,7 +3,7 @@
 import { io, Socket } from 'socket.io-client';
 
 const API_BASE_URL = 'http://localhost:8001';
-const SOCKET_URL = 'http://localhost:8000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 
 interface User {
   id: string;

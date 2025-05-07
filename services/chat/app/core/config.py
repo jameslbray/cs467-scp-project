@@ -37,7 +37,7 @@ def construct_socket_path() -> str:
     port = os.getenv('SOCKET_IO_PORT', '8000')
     path = os.getenv('SOCKET_IO_PATH', '/socket.io/')
 
-    socket_io_url = f"https://{host}:{port}{path}"
+    socket_io_url = f"http://{host}:{port}{path}"
 
     return socket_io_url
 
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
 
     # CORS settings
     CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:5173", "http://127.0.0.1:5173"],
+        default=["http://localhost:5173"],
         description="CORS allowed origins"
     )
     CORS_CREDENTIALS: bool = Field(

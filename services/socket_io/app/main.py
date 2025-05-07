@@ -1,26 +1,19 @@
-"""
-Main application module for the socket-io service.
-"""
-
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
 
-import socketio
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from services.presence.app.core.presence_manager import PresenceManager
 from services.rabbitmq.core.client import RabbitMQClient
 from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
+from services.socket_io.app.core.config import get_settings
+from services.socket_io.app.core.events import AuthEvents
 from services.socket_io.app.core.socket_server import SocketServer
-
-from .core.config import get_settings
-from .core.events import AuthEvents
 
 # Load environment variables
 load_dotenv()
@@ -29,154 +22,176 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create socket server
-socket_server = SocketServer()
-
-# Create presence manager with only RabbitMQ configuration
-presence_manager = PresenceManager(
-    {
-        "rabbitmq": {
-            "url": os.getenv(
-                "RABBITMQ_URL",
-                "?"
-            )
-        }
-    },
-    # socket_server=socket_server
-)
-
-# Initialize circuit breaker for presence manager
-presence_circuit_breaker = CircuitBreaker(
-    "presence_manager",
-    failure_threshold=3,
-    reset_timeout=30.0  # Reduced timeout for faster recovery
-)
-
 # Get settings
 settings = get_settings()
 rabbitmq_settings = RabbitMQSettings(RABBITMQ_URL=os.getenv("RABBITMQ_URL"))
 
-# Create RabbitMQ client
-rabbitmq = RabbitMQClient(rabbitmq_settings)
-
-# Create Socket.IO server
-sio = socketio.AsyncServer(
-    async_mode='asgi',
-    cors_allowed_origins=settings.SOCKET_IO_CORS_ALLOWED_ORIGINS
+# Create circuit breaker for resilient operations
+service_circuit_breaker = CircuitBreaker(
+    "socket_io_service",
+    failure_threshold=3,
+    reset_timeout=30.0
 )
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events handler with resilient initialization."""
-    # Startup
-    logger.info("Starting Socket.IO service...")
+    # Create RabbitMQ client first since other components depend on it
+    rabbitmq_client = RabbitMQClient(rabbitmq_settings)
 
-    try:
-        await with_retry(
-            socket_server.initialize,
-            max_attempts=5,
-            initial_delay=5.0,
-            max_delay=60.0
-        )
-    except Exception as e:
-        logger.error(f"Failed to fully initialize socket server: {e}")
-        # Continue anyway - the socket server has its own retry logic
-
-    initialization_complete = False
-    max_init_attempts = 3
-
-    for attempt in range(max_init_attempts):
-        try:
-            if not initialization_complete and not presence_manager._initialized:
-                await with_retry(
-                    presence_manager.initialize,
-                    max_attempts=3,
-                    initial_delay=5.0,
-                    max_delay=30.0,
-                    circuit_breaker=presence_circuit_breaker
-                )
-                initialization_complete = True
-                logger.info("Presence manager initialized successfully")
-                break
-        except Exception as e:
-            logger.error(
-                f"Attempt {attempt + 1}/{max_init_attempts} to initialize "
-                f"presence manager failed: {e}"
-            )
-            await asyncio.sleep(5.0)  # Wait before next attempt
-
-    # Mount socket.io routes
-    app.mount("/socket.io", socket_server.app)
-    logger.info(
-        "Socket.IO service started (some components may initialize later)"
+    # Create PresenceManager with RabbitMQ config
+    presence_manager = PresenceManager(
+        {
+            "rabbitmq": {
+                "url": os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+            }
+        }
     )
 
-    # Connect to RabbitMQ
-    await rabbitmq.connect()
+    # Create SocketServer with dependencies injected
+    socket_server = SocketServer(
+        rabbitmq_client=rabbitmq_client,
+        presence_manager=presence_manager,
+        cors_allowed_origins="http://localhost:5173",  # Single string, not array
+        debug_mode=True,
+        cors_credentials=True,
+        ping_timeout=20,
+        ping_interval=25,
+        max_http_buffer_size=5 * 1024 * 1024
+    )
 
-    # Set up auth exchange
-    await rabbitmq.declare_exchange("auth", exchange_type="topic")
+    # STARTUP
+    logger.info("Starting Socket.IO service...")
 
-    # Initialize auth events
-    global auth_events
-    auth_events = AuthEvents(sio, rabbitmq)
+    # Connect to RabbitMQ first
+    try:
+        await with_retry(
+            rabbitmq_client.connect,
+            max_attempts=5,
+            initial_delay=2.0,
+            max_delay=30.0,
+            circuit_breaker=service_circuit_breaker
+        )
+        await rabbitmq_client.declare_exchange("auth", exchange_type="topic")
+        await rabbitmq_client.declare_exchange("messages", exchange_type="topic")
+        await rabbitmq_client.declare_exchange("presence", exchange_type="fanout")
+        logger.info("RabbitMQ connection established")
+    except Exception as e:
+        logger.error(f"Failed to connect to RabbitMQ: {e}")
+        # Continue anyway - we'll retry during operation
+
+    # Initialize presence manager
+    try:
+        await with_retry(
+            presence_manager.initialize,
+            max_attempts=3,
+            initial_delay=2.0,
+            max_delay=15.0,
+            circuit_breaker=service_circuit_breaker
+        )
+        logger.info("Presence manager initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize presence manager: {e}")
+        # Continue anyway - the manager has internal retry logic
+
+    # Initialize socket server
+    try:
+        await socket_server.initialize()
+        logger.info("Socket server initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize socket server: {e}")
+        # Continue anyway - the server has internal retry logic
+
+    # Initialize auth events - this registers Socket.IO event handlers through its constructor
+    # Variable is named with underscore prefix to indicate it's used only for its side effects
+    _auth_events = AuthEvents(socket_server.sio, rabbitmq_client)
+
+    # Mount the Socket.IO ASGI app with its own CORS handling
+    socketio_app = socket_server.get_asgi_app()
+    app.mount("/socket.io", socketio_app, name="socket.io")
+
+    logger.info("Socket.IO service started")
 
     yield
 
-    # Shutdown
+    # SHUTDOWN
     logger.info("Shutting down Socket.IO service...")
-    await presence_manager.shutdown()
-    await socket_server.shutdown()
-    logger.info("Socket.IO service shut down successfully")
 
-    # Close RabbitMQ connection
-    await rabbitmq.close()
+    # Shutdown in reverse order of initialization
+    await socket_server.shutdown()
+    await presence_manager.shutdown()
+    await rabbitmq_client.close()
+
+    logger.info("Socket.IO service shut down successfully")
 
 # Create FastAPI app
 app = FastAPI(title="Socket.IO Service", lifespan=lifespan)
 
-# Create ASGI app by wrapping Socket.IO
-# socket_app = socketio.ASGIApp(sio, app)
+# Configure CORS only for non-Socket.IO routes
+# Custom CORS middleware that ignores Socket.IO routes
+async def custom_cors_middleware(request: Request, call_next):
+    if request.url.path.startswith("/socket.io/"):
+        # Skip CORS handling for Socket.IO routes
+        return await call_next(request)
+        
+    # Handle CORS for non-Socket.IO routes
+    origin = request.headers.get("origin")
+    if origin == "http://localhost:5173":
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "86400",
+        }
+        
+        if request.method == "OPTIONS":
+            # Handle preflight requests
+            return JSONResponse(content={}, headers=headers)
+            
+        # Handle actual requests
+        response = await call_next(request)
+        for key, value in headers.items():
+            response.headers[key] = value
+        return response
+        
+    return await call_next(request)
 
-# Initialize auth events
-auth_events = None
+# Add custom CORS middleware
+app.middleware("http")(custom_cors_middleware)
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=settings.CORS_METHODS,
-    allow_headers=settings.CORS_HEADERS,
-)
+# Add logging middleware to inspect request headers
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.debug(f"Request path: {request.url.path}")
+    if request.url.path.startswith("/socket.io"):
+        logger.debug(f"Socket.IO request headers: {request.headers}")
+    response = await call_next(request)
+    return response
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with component status."""
-    status = {
-        "service": "healthy",
-        "components": {
-            "socket_server": (
-                "initialized"
-                if socket_server._initialized
-                else "initializing"
-            ),
-            "presence_manager": (
-                "initialized"
-                if presence_manager._initialized
-                else "initializing"
-            ),
-        }
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "socket_io"
     }
-    return status
 
+@app.options("/{rest_of_path:path}")
+async def options_route(rest_of_path: str):
+    """Handle OPTIONS requests for CORS preflight."""
+    return {"status": "ok"}
 
 if __name__ == "__main__":
+    # Run the application
     uvicorn.run(
         "app.main:app",
         host=settings.SOCKET_IO_HOST,
         port=settings.SOCKET_IO_PORT,
-        reload=True
+        reload=True,
+        log_level="info",
+        ws_max_size=16 * 1024 * 1024,  # 16MB max WebSocket message size
+        forwarded_allow_ips="*",  # Allow forwarded requests
+        access_log=True
     )

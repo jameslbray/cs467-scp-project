@@ -1,15 +1,15 @@
 // App.tsx
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import LandingPage from './pages/LandingPage';
-import ChatPage from './pages/ChatPage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import AuthenticatedLayout from './layouts/AuthenticatedLayout';
-import { ThemeProvider, AuthProvider } from './contexts';
-import ErrorBoundary from './components/ErrorBoundary';
+import React from "react";
+import { Route, BrowserRouter as Router, Routes } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { AuthProvider, ThemeProvider } from "./contexts";
+import AuthenticatedLayout from "./layouts/AuthenticatedLayout";
+import ChatPage from "./pages/ChatPage";
+import LandingPage from "./pages/LandingPage";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+//import User from 'frontend/src/components/ChatList.tsx';
 
-// Define types for our context and props
 export interface User {
   id: string;
   username: string;
@@ -18,7 +18,7 @@ export interface User {
 
 export interface UserStatusIntf {
   user_id: string;
-  status: 'online' | 'away' | 'offline';
+  status: "online" | "away" | "offline";
   last_changed: string;
 }
 
