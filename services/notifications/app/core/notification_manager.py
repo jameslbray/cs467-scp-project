@@ -15,7 +15,8 @@ from ..db.models import (
     UserNotification, 
     NotificationType, 
     NotificationResponse, 
-    NotificationRequest
+    NotificationRequest,
+    DeliveryType
     )
 # from services.socket_io.app.core.socket_server import SocketServer as SocketManager
 
@@ -93,7 +94,9 @@ class NotificationManager:
                 sender_id="789",
                 reference_id="101112",
                 content_preview="Hello World!",
-                timestamp="2023-10-01T12:00:00Z"
+                timestamp="2023-10-01T12:00:00Z",
+                status=DeliveryType.UNDELIVERED,
+                notification_type=NotificationType.MESSAGE,
                 )
 
             self._initialized = True

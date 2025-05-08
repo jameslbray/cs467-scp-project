@@ -75,8 +75,8 @@ async def with_retry(
     exponential_base: float = 2.0,
     jitter: float = 0.1,
     circuit_breaker: Optional[CircuitBreaker] = None,
-    *args: Any,
-    **kwargs: Any
+    operation_args: tuple = (),  # Arguments for the operation
+    operation_kwargs: dict = None  # Keyword arguments for the operation
 ) -> Any:
     """
     Execute an operation with exponential backoff retry logic.
@@ -98,6 +98,7 @@ async def with_retry(
     Raises:
         Exception: If all retry attempts fail
     """
+    operation_kwargs = operation_kwargs or {}
     delay = initial_delay
     last_exception = None
 
@@ -114,7 +115,7 @@ async def with_retry(
 
             # Cast the operation to an async callable and await its result
             async_op = cast(AsyncCallable[Any], operation)
-            result = await async_op(*args, **kwargs)
+            result = await async_op(*operation_args, **operation_kwargs)
 
             # Record success in circuit breaker
             if circuit_breaker:

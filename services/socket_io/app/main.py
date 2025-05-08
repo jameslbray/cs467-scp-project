@@ -41,8 +41,7 @@ presence_manager = PresenceManager(
                 "?"
             )
         }
-    },
-    # socket_server=socket_server
+    }
 )
 
 # Initialize circuit breaker for presence manager

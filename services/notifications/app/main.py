@@ -51,6 +51,23 @@ logger.info("Application settings loaded")
 # Initialize RabbitMQ client
 # rabbitmq_client = NotificationRabbitMQClient(settings=settings)
 
+
+# Create presence manager
+notification_manager = NotificationManager(
+    {
+        "rabbitmq": {
+            "url": settings.RABBITMQ_URL or "amqp://guest:guest@rabbitmq:5672/"
+        },
+        "mongodb": {
+            "user": settings.MONGO_USER or "admin",
+            "password": settings.MONGO_PASSWORD or "password",
+            "host": settings.MONGO_HOST or "mongo_db",
+            "database": settings.MONGO_DB or "chat_db",
+            "port": settings.MONGO_PORT or "27017",
+        },
+    }
+)
+
 # Define the lifespan handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -97,33 +114,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create presence manager
-notification_manager = NotificationManager(
-    {
-        "rabbitmq": {
-            "url": settings.RABBITMQ_URL or "amqp://guest:guest@rabbitmq:5672/"
-        },
-        "mongodb": {
-            "user": settings.MONGO_USER or "mongodb",
-            "password": settings.MONGO_PASSWORD or "mongodb",
-            "host": settings.MONGO_HOST or "mongodb",
-            "database": settings.MONGO_DB or "sycolibre",
-            "port": settings.MONGO_PORT or "5432",
-        },
-    }
-)
 
+# if __name__ == "__main__":
+#     import uvicorn
 
-if __name__ == "__main__":
-    import uvicorn
+#     # Load environment variables from .env file
+#     load_dotenv()
 
-    # Load environment variables from .env file
-    load_dotenv()
-
-    # Run the application with Uvicorn
-    uvicorn.run(
-        app,
-        host="localhost",
-        port=8025,
-        log_level=settings.LOG_LEVEL.lower()
-    )
+#     # Run the application with Uvicorn
+#     uvicorn.run(
+#         app,
+#         host="localhost",
+#         port=8025,
+#         log_level=settings.LOG_LEVEL.lower()
+#     )

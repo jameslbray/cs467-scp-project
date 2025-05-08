@@ -45,17 +45,24 @@ class UserNotification(BaseNotification):
     notification_type: NotificationType = Field(NotificationType.MESSAGE, description="Type of notification")
 
 
+class DeliveryType(str, Enum):
+    """Enum for notification delivery types."""
+    DELIVERED = "delivered"
+    UNDELIVERED = "undelivered"
+    ERROR = "error"
+
+
 class NotificationResponse(BaseNotification):
     """API response model."""
     # API-specific fields
-    status: str = Field("undelivered", description="Delivery status")
+    status: DeliveryType = Field(DeliveryType.UNDELIVERED, description="Delivery status")
     error: str | None = Field(None, description="Error message if any")
 
 
 class NotificationRequest(BaseNotification):
     """API response model."""
     # API-specific fields
-    status: str = Field("undelivered", description="Delivery status")
+    status: DeliveryType = Field(DeliveryType.UNDELIVERED, description="Delivery status")
     error: str | None = Field(None, description="Error message if any")
 
 

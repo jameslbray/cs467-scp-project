@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     MONGO_HOST: str = Field(default="mongodb")
     MONGO_PORT: str = Field(default="27017")
     MONGO_DB: str = Field(default="sycolibre")
+    
+    RABBITMQ_URL: str = Field(
+        default="amqp://guest:guest@rabbitmq:5672/")
 
     @field_validator("ENV")
     @classmethod
