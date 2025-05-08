@@ -373,8 +373,8 @@ class NotificationManager:
 
             logger.info(f"Added {notification_type} notification to User {user_id}")
             return True
-        except ValueError:
-            logger.error(f"Invalid status: {status}")
+        except ValueError as e:
+            logger.error(f"Invalid notification type: {user_notification.notification_type}. Exception: {e}")
             return False
     
     # async def _update_user_notification(
