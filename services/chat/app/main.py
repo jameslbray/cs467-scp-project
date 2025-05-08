@@ -49,9 +49,11 @@ async def lifespan(app: FastAPI):
         await with_retry(
             init_mongo,
             max_attempts=5,
-            initial_delay=5,
+            max_delay=1,
             exponential_base=2,
-            circuit_breaker=mongo_circuit_breaker
+            circuit_breaker=mongo_circuit_breaker,
+            operation_args=(),
+            operation_kwargs={}  # Any parameters for init_mongo would go here
         )
         logger.info("MongoDB connection established")
 
@@ -59,7 +61,7 @@ async def lifespan(app: FastAPI):
         await with_retry(
             socket_connector.initialize,
             max_attempts=5,
-            initial_delay=5,
+            max_delay=1,
             exponential_base=2,
             circuit_breaker=socket_circuit_breaker
         )
@@ -69,7 +71,7 @@ async def lifespan(app: FastAPI):
         await with_retry(
             rabbitmq_client.initialize,
             max_attempts=5,
-            initial_delay=5,
+            max_delay=1,
             exponential_base=2,
             circuit_breaker=rabbitmq_circuit_breaker
         )
