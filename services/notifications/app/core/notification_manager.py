@@ -353,7 +353,7 @@ class NotificationManager:
                 logger.info(f"Created new notification entry for user {user_id}")
             
             else:
-                self.presence_data[user_id].update(UserNotification(
+                self.notification_data[user_id].update(UserNotification(
                     notification_id=user_notification.notification_id,
                     recipient_id=user_notification.recipient_id,
                     sender_id=user_notification.sender_id,
