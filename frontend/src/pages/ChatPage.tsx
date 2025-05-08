@@ -16,7 +16,7 @@ const useSocketConnection = (currentUser: User | null) => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const socketConnection = io("http://localhost:3001", {
+    const socketConnection = io("http://localhost:8000", {
       auth: {
         token: localStorage.getItem("auth_token"),
       },

@@ -6,7 +6,9 @@ from typing import Any, Dict, Never, Optional
 import socketio
 
 from services.rabbitmq.core.client import RabbitMQClient
+from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
+from services.presence.app.core.presence_manager import PresenceManager
 
 from .config import get_socket_io_config
 
@@ -17,7 +19,7 @@ logger = logging.getLogger(__name__)
 class SocketServer:
     """Socket.IO server implementation."""
 
-    def __init__(self):
+    def __init__(self, rabbitmq_settings: RabbitMQSettings):
         """Initialize the Socket.IO server."""
         self.sio = socketio.AsyncServer(
             logger=True,
@@ -28,8 +30,8 @@ class SocketServer:
         self.user_to_sid: Dict[str, str] = {}  # user_id -> sid mapping
         self._initialized = False
 
-        # Initialize RabbitMQ client
-        self.rabbitmq = RabbitMQClient()
+        # Initialize RabbitMQ client with provided settings
+        self.rabbitmq = RabbitMQClient(rabbitmq_settings)
 
         # Initialize circuit breakers
         self.rabbitmq_cb = CircuitBreaker(
@@ -37,6 +39,13 @@ class SocketServer:
             failure_threshold=3,
             reset_timeout=30
         )
+
+        # Initialize presence manager
+        self.presence_manager = PresenceManager({
+            "rabbitmq": {
+                "url": rabbitmq_settings.RABBITMQ_URL
+            }
+        })
 
         # Register event handlers
         self.sio.on("connect", self._on_connect)
@@ -46,9 +55,8 @@ class SocketServer:
         self.sio.on("presence_update", self._on_presence_update)
 
     async def initialize(self) -> bool:
-        """Initialize the Socket.IO server."""
+        """Initialize the Socket.IO server and its dependencies."""
         if self._initialized:
-            # Already initialized, return success
             logger.debug("Socket.IO server already initialized")
             return True
 
@@ -62,14 +70,20 @@ class SocketServer:
                 circuit_breaker=self.rabbitmq_cb
             )
 
+            # Initialize presence manager
+            await with_retry(
+                self.presence_manager.initialize,
+                max_attempts=3,
+                initial_delay=5.0,
+                max_delay=30.0
+            )
+
             logger.info("Socket.IO server initialized successfully")
             self._initialized = True
             return True
 
         except Exception as e:
             logger.error(f"Failed to fully initialize Socket.IO server: {e}")
-            # We'll continue running even if some dependencies failed
-            # The circuit breaker will handle retries during operation
             self._initialized = True
             return False
 
@@ -84,16 +98,18 @@ class SocketServer:
         await self.rabbitmq.declare_exchange("chat", "topic")
         await self.rabbitmq.declare_exchange("presence", "topic")
         await self.rabbitmq.declare_exchange("notifications", "topic")
+        await self.rabbitmq.declare_exchange("auth", "topic")
 
         logger.info("RabbitMQ connection and exchanges initialized")
         return True
 
     async def shutdown(self) -> None:
-        """Shutdown the Socket.IO server."""
+        """Shutdown the Socket.IO server and its dependencies."""
         logger.info("Socket.IO server shutting down")
+        await self.presence_manager.shutdown()
         await self.rabbitmq.close()
 
-    async def _on_connect(self, sid: str, environ: Dict[str, Any]) -> None:
+    async def _on_connect(self, sid: str, environ: Dict[str, Any], auth: Any) -> None:
         """Handle new socket connection."""
         logger.info(f"New client connected: {sid}")
 
@@ -159,7 +175,7 @@ class SocketServer:
         message_data = {
             **data,
             "user_id": user_id,
-            "timestamp": "now"  # In real implementation, use proper timestamp
+            "timestamp": "now"
         }
 
         # 1. Send directly to room participants for immediate delivery
