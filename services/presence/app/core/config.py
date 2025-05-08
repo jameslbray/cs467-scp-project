@@ -1,13 +1,11 @@
 """
 Configuration settings for the presence service.
 """
+from typing import List, Dict, Any
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, SecretStr
 import os
 from pathlib import Path
-from typing import Any, Dict, List
-
-from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 def find_env_file() -> str:
     """Find the .env file in potential locations."""

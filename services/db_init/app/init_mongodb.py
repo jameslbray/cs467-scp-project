@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -25,7 +24,7 @@ async def init_mongodb():
     logger.info(f"mongo_uri: {mongo_uri}")
 
     # Connect to MongoDB
-    client: Optional[AsyncIOMotorClient[Dict[str, Any]]] = AsyncIOMotorClient(mongo_uri)
+    client = AsyncIOMotorClient(mongo_uri)
 
     try:
         # Verify connection
@@ -52,7 +51,7 @@ async def init_mongodb():
             room_result = await db.rooms.insert_one({
                 "name": "General",
                 "description": "Public chat room for everyone",
-                "created_at": datetime.now(),
+                "created_at": datetime.utcnow(),
                 "is_private": False,
                 "room_id": 1  # Numeric ID for the room
             })
@@ -64,7 +63,7 @@ async def init_mongodb():
                 room_result = await db.rooms.insert_one({
                     "name": "General",
                     "description": "Public chat room for everyone",
-                    "created_at": datetime.now(),
+                    "created_at": datetime.utcnow(),
                     "is_private": False,
                     "room_id": 1  # Numeric ID for the room
                 })
@@ -79,7 +78,7 @@ async def init_mongodb():
             "room_id": 1,       # ID of the General room
             "sender_id": 1,     # Example user ID
             "content": "Hello, this is a test message from the database initialization!",
-            "timestamp": datetime.now()
+            "timestamp": datetime.utcnow()
         }
 
         # Check if we already have test messages to avoid duplicates
@@ -94,19 +93,19 @@ async def init_mongodb():
                     "room_id": 1,
                     "sender_id": 2,
                     "content": "Welcome to the chat system!",
-                    "timestamp": datetime.now()
+                    "timestamp": datetime.utcnow()
                 },
                 {
                     "room_id": 1,
                     "sender_id": 1,
                     "content": "Thanks! Excited to be here.",
-                    "timestamp": datetime.now()
+                    "timestamp": datetime.utcnow()
                 },
                 {
                     "room_id": 1,
                     "sender_id": 3,
                     "content": "This is a great example of MongoDB integration.",
-                    "timestamp": datetime.now()
+                    "timestamp": datetime.utcnow()
                 }
             ])
             logger.info("Added additional sample messages")

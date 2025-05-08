@@ -1,8 +1,7 @@
 import os
-from typing import Any, Dict, List
-
-from pydantic import Field, field_validator
+from typing import List, Dict, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
@@ -21,7 +20,7 @@ class Settings(BaseSettings):
 
     # CORS settings
     CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:5173"],
+        default=["http://localhost:5173", "http://127.0.0.1:5173"],
         description="CORS allowed origins"
     )
     CORS_METHODS: List[str] = Field(
@@ -39,7 +38,7 @@ class Settings(BaseSettings):
     SOCKET_IO_PATH: str = "/socket.io"
     SOCKET_IO_ASYNC_MODE: str = "asgi"
     SOCKET_IO_CORS_ALLOWED_ORIGINS: List[str] = Field(
-        default=[],  # Empty list to avoid duplicate CORS headers
+        default=["http://localhost:5173", "http://127.0.0.1:5173"],
         description="Socket.IO CORS allowed origins"
     )
     SOCKET_IO_PING_TIMEOUT: int = 5

@@ -1,21 +1,28 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { formatDistanceToNow } from 'date-fns';
-import { ChatMessageProps } from '../types/chatMessage';
 
-// ChatMessage component
+// Define the props interface for message data
+export interface ChatMessageProps {
+  id: string;
+  content: string;
+  author: {
+    id: string;
+    username: string;
+    profilePicture?: string;
+  };
+  timestamp: Date;
+  isCurrentUser?: boolean;
+}
+
 const ChatMessage: React.FC<ChatMessageProps> = ({
   content,
   author,
   timestamp,
   isCurrentUser = false,
 }) => {
-  // Format the timestamp to relative time
-  const timeAgo = formatDistanceToNow(
-    // Ensure timestamp is a Date object
-    timestamp instanceof Date ? timestamp : new Date(timestamp), 
-    { addSuffix: true }
-  );
+  // Format the timestamp to relative time (e.g., "5 minutes ago")
+  const timeAgo = formatDistanceToNow(timestamp, { addSuffix: true });
   
   return (
     <div 
@@ -64,5 +71,5 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   );
 };
 
-// Make sure to export the ChatMessage component as default
 export default ChatMessage;
+
