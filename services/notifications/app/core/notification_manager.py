@@ -6,12 +6,12 @@ import logging
 import json
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
-import asyncpg  # type: ignore
-from pymongo import MongoClient
+# import asyncpg  # type: ignore
+# from pymongo import MongoClient
 
-from services.shared.utils.retry import CircuitBreaker, with_retry
-from services.rabbitmq.core.client import RabbitMQClient
-from ../db.models import (
+# from services.shared.utils.retry import CircuitBreaker, with_retry
+# from services.rabbitmq.core.client import RabbitMQClient
+from ..db.models import (
     UserNotification, 
     NotificationType, 
     NotificationResponse, 
@@ -87,6 +87,14 @@ class NotificationManager:
             #         max_delay=60.0,
             #         circuit_breaker=self.db_cb
             #     )
+            self.notification_data["123"] = UserNotification(
+                notification_id="123",
+                recipient_id="456",
+                sender_id="789",
+                reference_id="101112",
+                content_preview="Hello World!",
+                timestamp="2023-10-01T12:00:00Z"
+                )
 
             self._initialized = True
             logger.info("Notification manager initialized successfully")
@@ -271,63 +279,101 @@ class NotificationManager:
     #     else:
     #         await message.ack()
 
-    async def get_user_notifications(self, user_id: str) -> dict[str, Any]:
+    def get_user_notifications(self, user_id: str) -> dict[str, Any]:
         """Get user's notifications."""
         # Default values
         default_notification = UserNotification()
 
-        # Check cache first
-        if user_id in self.presence_data:
-            presence_data = self.presence_data[user_id]
-            return {
-                "status": presence_data.get("status", default_status["status"]),
-                "last_seen": presence_data.get("last_seen", default_status["last_seen"]),
-            }
+        # # Check cache first
+        if user_id in self.notification_data:
+            notification_data = self.notification_data[user_id]
+            return notification_data
 
         # Fetch from database if not in cache
-        user_status = await self._get_user_status(user_id)
-        if user_status is None:
-            return default_status
+        # user_status = await self._get_user_status(user_id)
+        # if user_status is None:
+        #     return default_status
 
-        return {
-            "status": user_status.status.value,
-            "last_seen": user_status.last_changed,
-        }
+        return default_notification.dict()
         
-    async def _get_user_status(self, user_id: str) -> UserStatus | None:
-        """Get user status from database."""
-        if not self.db_pool:
-            logger.warning("Database pool not available")
-            return None
+    # async def _get_user_status(self, user_id: str) -> UserStatus | None:
+    #     """Get user status from database."""
+    #     if not self.db_pool:
+    #         logger.warning("Database pool not available")
+    #         return None
 
+    #     try:
+    #         if isinstance(user_id, UUID):
+    #             user_id = str(user_id)
+    #         async with self.db_pool.acquire() as conn:
+    #             row = await conn.fetchrow(
+    #                 """
+    #                 SELECT user_id, status, last_changed
+    #                 FROM presence.user_status
+    #                 WHERE user_id = $1
+    #             """,
+    #                 user_id,
+    #             )
+
+    #             if row:
+    #                 return UserStatus(
+    #                     user_id=str(row["user_id"]),  # Convert UUID to string
+    #                     status=StatusType(row["status"]),
+    #                     last_changed=row["last_changed"].timestamp(),
+    #                 )
+    #             return None
+    #     except ValueError as e:
+    #         logger.error(f"Invalid UUID format for user_id: {user_id}")
+    #         return None
+    #     except Exception as e:
+    #         logger.error(f"Failed to get user status: {e}")
+    #         return None
+
+    def set_user_notification(self, user_id: str, user_notification: UserNotification) -> bool:
+        """Set user's notifications."""
         try:
-            if isinstance(user_id, UUID):
-                user_id = str(user_id)
-            async with self.db_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT user_id, status, last_changed
-                    FROM presence.user_status
-                    WHERE user_id = $1
-                """,
-                    user_id,
+            notification_type = NotificationType(user_notification.notification_type)
+            current_time = user_notification.timestamp or datetime.now().timestamp()
+        
+            # Initialize user in presence_data if not exists
+            if user_id not in self.notification_data:
+                self.notification_data[user_id] = UserNotification(
+                    notification_id=user_notification.notification_id,
+                    recipient_id=user_notification.recipient_id,
+                    sender_id=user_notification.sender_id,
+                    reference_id=user_notification.reference_id,
+                    content_preview=user_notification.content_preview,
+                    timestamp=current_time,
+                    notification_type=notification_type.value,
+                    read=user_notification.read
                 )
+                logger.info(f"Created new notification entry for user {user_id}")
+            
+            else:
+                self.presence_data[user_id].update(UserNotification(
+                    notification_id=user_notification.notification_id,
+                    recipient_id=user_notification.recipient_id,
+                    sender_id=user_notification.sender_id,
+                    reference_id=user_notification.reference_id,
+                    content_preview=user_notification.content_preview,
+                    timestamp=current_time,
+                    notification_type=notification_type.value,
+                    read=user_notification.read
+                    ))
 
-                if row:
-                    return UserStatus(
-                        user_id=str(row["user_id"]),  # Convert UUID to string
-                        status=StatusType(row["status"]),
-                        last_changed=row["last_changed"].timestamp(),
-                    )
-                return None
-        except ValueError as e:
-            logger.error(f"Invalid UUID format for user_id: {user_id}")
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get user status: {e}")
-            return None
+            # Update status in database and notify others with circuit breaker
+            # await with_retry(
+            #     lambda: self._update_user_status(user_id, status_type),
+            #     max_attempts=3,
+            #     circuit_breaker=self.db_cb
+            # )
 
-
+            logger.info(f"Added {notification_type} notification to User {user_id}")
+            return True
+        except ValueError:
+            logger.error(f"Invalid status: {status}")
+            return False
+    
     # async def _update_user_notification(
     #     self,
     #     user_id: str,
@@ -540,36 +586,3 @@ class NotificationManager:
     #     except Exception as e:
     #         logger.error(f"Failed to get friends: {e}")
     #         return []
-
-    # async def set_user_status(self, user_id: str, status: str, last_changed: Optional[float] = None) -> bool:
-    #     """Set user's status."""
-    #     try:
-    #         status_type = StatusType(status)
-    #         current_time = last_changed or datetime.now().timestamp()
-        
-    #         # Initialize user in presence_data if not exists
-    #         if user_id not in self.presence_data:
-    #             self.presence_data[user_id] = {
-    #                 "status": status_type.value,
-    #                 "last_seen": current_time
-    #             }
-    #             logger.info(f"Created new presence entry for user {user_id}")
-            
-    #         else:
-    #             self.presence_data[user_id].update({
-    #                 "status": status_type.value,
-    #                 "last_seen": last_changed or datetime.now().timestamp()
-    #             })
-
-    #         # Update status in database and notify others with circuit breaker
-    #         await with_retry(
-    #             lambda: self._update_user_status(user_id, status_type),
-    #             max_attempts=3,
-    #             circuit_breaker=self.db_cb
-    #         )
-
-    #         logger.info(f"User {user_id} status set to {status}")
-    #         return True
-    #     except ValueError:
-    #         logger.error(f"Invalid status: {status}")
-    #         return False

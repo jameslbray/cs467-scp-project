@@ -20,8 +20,15 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
 )
 
-from ..core.config import settings
+from ..core.config import get_settings
 from ..core.notification_manager import NotificationManager
+from ..db.models import (
+    UserNotification, 
+    NotificationType, 
+    NotificationResponse, 
+    NotificationRequest,
+    ErrorResponse,
+    )
 
 # Set up OAuth2 with password flow (token-based authentication)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -30,37 +37,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 router = APIRouter(tags=["notifications"])
 
 logger = logging.getLogger(__name__)
-
-# Define models for requests and responses
-
-class NotificationRequest(BaseModel):
-    """Model for notification requests"""
-
-    notification_id: str = Field(..., description="Notification ID")
-    recipient_id: str = Field(..., description="Recipient User ID")
-    sender_id: str = Field(..., description="Sender User ID")
-    reference_id: str = Field(..., description="Reference ID (message_id or room_id)")
-    content_preview: str = Field(default_factory=str, description="Content preview")
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
-
-
-class NotificationResponse(BaseModel):
-    """Model for notification responses"""
-
-    notification_id: str = Field(..., description="Notification ID")
-    recipient_id: str = Field(..., description="Recipient User ID")
-    sender_id: str = Field(..., description="Sender User ID")
-    reference_id: str = Field(..., description="Reference ID (message_id or room_id)")
-    content_preview: str = Field(default_factory=str, description="Content preview")
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
-
-
-class ErrorResponse(BaseModel):
-    """Model for error responses"""
-
-    detail: str
-    status_code: int
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+settings = get_settings()
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
@@ -99,10 +76,16 @@ def get_notification_manager():
     return notification_manager
 
 
+@router.get("/notify/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
 # Routes
 @router.get(
     "/notify/{user_id}",
-    response_model=StatusResponse,
+    response_model=NotificationResponse,
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         404: {"model": ErrorResponse, "description": "User not found"},
@@ -110,7 +93,7 @@ def get_notification_manager():
 )
 async def get_user_notifications(
     user_id: str,
-    current_user: str = Depends(get_current_user),
+    # current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
@@ -125,70 +108,75 @@ async def get_user_notifications(
     notification_data = await notification_manager.get_user_notifications(user_id)
 
     # Create response with required fields
+    # return NotificationResponse(
+    #     notification_id=notification_data.get("notification_id"),
+    #     recipient_id=user_id,
+    #     sender_id=notification_data.get("sender_id"),
+    #     reference_id=notification_data.get("reference_id"),
+    #     content_preview=notification_data.get("content_preview", ""),
+    #     timestamp=notification_data.get("timestamp"),
+    # )
+    return notification_data
+
+
+@router.put(
+    "/notify/{user_id}",
+    response_model=NotificationResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+        403: {"model": ErrorResponse, "description": "Forbidden"},
+        404: {"model": ErrorResponse, "description": "User not found"},
+    },
+)
+async def update_user_notification(
+    user_id: str,
+    notification_update: UserNotification,
+    # current_user: str = Depends(get_current_user),
+    notification_manager: NotificationManager = Depends(get_notification_manager),
+):
+    """
+    Update a user's notifications (users can only update their own notifications)
+
+    Parameters:
+    - **user_id**: ID of the user whose status is being updated
+    - **notification_update**: New notification information
+
+    Returns:
+    - **NotificationResponse**: Updated notification information
+    """
+    # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+
+    # Update status
+    success = notification_manager.set_user_notification(
+        user_id,
+        notification_update
+    )
+    if not success:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="User not found or notification update failed",
+        )
+
+    # Get updated status
+    notification_data = notification_manager.get_user_notifications(user_id)
+
+    # Create response
     return NotificationResponse(
-        notificaiton_id=notification_data.get("notificaiton_id"),
+        notification_id=notification_data.get("notification_id"),
         recipient_id=user_id,
         sender_id=notification_data.get("sender_id"),
         reference_id=notification_data.get("reference_id"),
         content_preview=notification_data.get("content_preview", ""),
         timestamp=notification_data.get("timestamp"),
+        status=notification_data.get("status", "undelivered"),
+        error=notification_data.get("error"),
     )
-
-
-# @router.put(
-#     "/notify/{user_id}",
-#     response_model=StatusResponse,
-#     responses={
-#         400: {"model": ErrorResponse, "description": "Bad request"},
-#         401: {"model": ErrorResponse, "description": "Unauthorized"},
-#         403: {"model": ErrorResponse, "description": "Forbidden"},
-#         404: {"model": ErrorResponse, "description": "User not found"},
-#     },
-# )
-# async def update_user_status(
-#     user_id: str,
-#     status_update: StatusUpdate,
-#     current_user: str = Depends(get_current_user),
-#     presence_manager: PresenceManager = Depends(get_presence_manager),
-# ):
-#     """
-#     Update a user's status (users can only update their own status)
-
-#     Parameters:
-#     - **user_id**: ID of the user whose status is being updated
-#     - **status_update**: New status information
-
-#     Returns:
-#     - **StatusResponse**: Updated status information
-#     """
-#     # Check if the user is trying to update their own status
-#     if user_id != current_user:
-#         raise HTTPException(
-#             status_code=HTTP_403_FORBIDDEN,
-#             detail="You can only update your own status"
-#         )
-
-#     # Update status
-#     success = await presence_manager.set_user_status(
-#         user_id,
-#         status_update.status
-#     )
-#     if not success:
-#         raise HTTPException(
-#             status_code=HTTP_404_NOT_FOUND,
-#             detail="User not found or status update failed",
-#         )
-
-#     # Get updated status
-#     status_data = await presence_manager.get_user_status(user_id)
-
-#     # Create response
-#     return StatusResponse(
-#         user_id=user_id,
-#         status=status_data.get("status", "offline"),
-#         last_seen=status_data.get("last_seen"),
-#         additional_info=status_update.additional_info,
-#     )
 
 
 # @router.post(

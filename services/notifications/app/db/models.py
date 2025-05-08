@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 from datetime import datetime
 from enum import Enum
@@ -11,8 +11,19 @@ class BaseNotification(BaseModel):
     recipient_id: str = Field(..., description="Recipient User ID", default_factory=lambda: str(UUID(int=0)))
     sender_id: str = Field(..., description="Sender User ID", default_factory=lambda: str(UUID(int=0)))
     reference_id: str = Field(..., description="Reference ID (message_id or room_id)", default_factory=lambda: str(UUID(int=0)))
-    content_preview: str = Field(default_factory=str, description="Content preview", default="Hello World!")
+    content_preview: str = Field(description="Content preview", default="Hello World!")
     timestamp: str = Field( decription="Time the notification was sent", default_factory=lambda: datetime.now().isoformat())
+    
+    def __getitem__(self, key):
+        """Allow dictionary-like access: model['field_name']"""
+        return getattr(self, key)
+    
+    def get(self, key, default=None):
+        """Dictionary-like get method with default value."""
+        try:
+            return self[key]
+        except (KeyError, AttributeError):
+            return default
 
     class Config:
         json_encoders = {
@@ -46,3 +57,30 @@ class NotificationRequest(BaseNotification):
     # API-specific fields
     status: str = Field("undelivered", description="Delivery status")
     error: str | None = Field(None, description="Error message if any")
+
+
+class JWTTokenData(BaseModel):
+    """JWT token payload structure that uses user_id as the subject."""
+    user_id: UUID  # UUID of the user (will be encoded as string in JWT)
+    exp: Optional[datetime] = None  # Expiration time
+    iat: Optional[datetime] = None  # Issued at time
+    jti: Optional[str] = None  # JWT ID for token identification/revocation
+
+    @field_validator("jti", mode="before")
+    @classmethod
+    def default_jti(cls, v: Optional[str]) -> str:
+        """Generate a random UUID for the token ID if not provided"""
+        return v or str(uuid.uuid4())
+    
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def validate_user_id(cls, v: UUID) -> UUID:
+        """Ensure user_id is a UUID - convert from string if needed"""
+        if isinstance(v, str):
+            return uuid.UUID(v)
+        return v
+
+class ErrorResponse(BaseModel):
+    """Error response model."""
+    detail: str = Field(..., description="Error message")
+    status_code: int = Field(..., description="HTTP status code")
