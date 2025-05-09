@@ -24,12 +24,15 @@ class SocketManager:
         await self.connector.initialize()
 
         # Register event handlers
-        self.connector.on_event(EventType.USER_CONNECTED, self._handle_user_connected)
+        self.connector.on_event(EventType.USER_CONNECTED,
+                                self._handle_user_connected)
         self.connector.on_event(
             EventType.USER_DISCONNECTED, self._handle_user_disconnected
         )
-        self.connector.on_event(EventType.CHAT_MESSAGE, self._handle_chat_message)
-        self.connector.on_event(EventType.CHAT_TYPING, self._handle_chat_typing)
+        self.connector.on_event(EventType.CHAT_MESSAGE,
+                                self._handle_chat_message)
+        self.connector.on_event(EventType.CHAT_TYPING,
+                                self._handle_chat_typing)
 
     async def shutdown(self) -> None:
         """Shutdown the connector."""

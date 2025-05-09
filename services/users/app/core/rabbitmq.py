@@ -13,6 +13,7 @@ from ..db.database import get_db
 from ..schemas import User
 from . import security
 from .config import Settings as UserSettings
+from services.shared.utils.to_serializable import to_serializable
 
 # Configure logging
 logger = logging.getLogger("users.rabbitmq")
@@ -77,6 +78,7 @@ class UserRabbitMQClient:
             try:
                 # Parse message
                 body = json.loads(message.body.decode())
+                logger.info(f"[RabbitMQ] Received message: {body}")
                 routing_key = message.routing_key
 
                 # Process the message
@@ -87,13 +89,22 @@ class UserRabbitMQClient:
 
                 # Acknowledge message
                 await message.ack()
+                logger.info(
+                    "[RabbitMQ] Message acknowledged: %s",
+                    message.routing_key
+                )
 
                 # If there's a reply_to, send response back
                 if message.reply_to:
+                    logger.info(
+                        "[RabbitMQ] Sending response back to: %s",
+                        message.reply_to
+                    )
                     await self.rabbitmq_client.publish_message(
                         exchange="",
                         routing_key=message.reply_to,
-                        message=json.dumps(response)
+                        message=json.dumps(to_serializable(response)),
+                        correlation_id=message.correlation_id
                     )
 
             except Exception as e:
@@ -140,7 +151,7 @@ class UserRabbitMQClient:
             )
             logger.debug(
                 "[RabbitMQ] Message body: %s",
-                json.dumps(body, indent=2)
+                json.dumps(str(body), indent=2)
             )
 
             response = None
@@ -218,7 +229,6 @@ class UserRabbitMQClient:
             "user": User.model_validate(db_user).model_dump()
         }
 
-
     async def handle_validate(
         self,
         data: Dict[str, Any],
@@ -236,7 +246,7 @@ class UserRabbitMQClient:
             token_data = security.get_token_data(token, db)
             user = (
                 db.query(UserModel)
-                .filter(UserModel.username == token_data.username)
+                .filter(UserModel.id == token_data.user_id)
                 .first()
             )
 
@@ -246,6 +256,10 @@ class UserRabbitMQClient:
                     "message": "User not found"
                 }
 
+            logger.info(
+                "[RabbitMQ] User validated: %s",
+                User.model_validate(user).model_dump()
+            )
             return {
                 "error": False,
                 "user": User.model_validate(user).model_dump()

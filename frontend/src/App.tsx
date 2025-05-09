@@ -8,6 +8,7 @@ import RegisterPage from './pages/RegisterPage';
 import AuthenticatedLayout from './layouts/AuthenticatedLayout';
 import { ThemeProvider, AuthProvider } from './contexts';
 import ErrorBoundary from './components/ErrorBoundary';
+import { SocketProvider } from './contexts/socket/SocketProvider';
 
 // Define types for our context and props
 export interface User {
@@ -25,22 +26,24 @@ export interface UserStatusIntf {
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <ThemeProvider>
-        <AuthProvider>
-          <Router>
-            <Routes>
-              <Route path="/" element={<LandingPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
+        <ThemeProvider>
+          <AuthProvider>
+            <SocketProvider>
+            <Router>
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
 
-              {/* Protected routes */}
-              <Route element={<AuthenticatedLayout />}>
-                <Route path="/chat" element={<ChatPage />} />
-              </Route>
-            </Routes>
-          </Router>
-        </AuthProvider>
-      </ThemeProvider>
+                {/* Protected routes */}
+                  <Route element={<AuthenticatedLayout />}>
+                  <Route path="/chat" element={<ChatPage />} />
+                </Route>
+              </Routes>
+              </Router>
+            </SocketProvider>
+          </AuthProvider>
+        </ThemeProvider>
     </ErrorBoundary>
   );
 };

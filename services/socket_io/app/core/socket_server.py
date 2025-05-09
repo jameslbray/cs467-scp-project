@@ -9,6 +9,7 @@ from services.rabbitmq.core.client import RabbitMQClient
 from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.presence.app.core.presence_manager import PresenceManager
+from .events import create_event, EventType, AuthEvents
 
 from .config import get_socket_io_config
 
@@ -53,6 +54,8 @@ class SocketServer:
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
         self.sio.on("presence_update", self._on_presence_update)
+        # Register auth event handlers
+        self.auth_events = AuthEvents(self.sio, self.rabbitmq)
 
     async def initialize(self) -> bool:
         """Initialize the Socket.IO server and its dependencies."""
@@ -109,38 +112,45 @@ class SocketServer:
         await self.presence_manager.shutdown()
         await self.rabbitmq.close()
 
-    async def _on_connect(self, sid: str, environ: Dict[str, Any], auth: Any) -> None:
+    async def _on_connect(
+            self, sid: str, environ: Dict[str, Any], auth: Any) -> None:
         """Handle new socket connection."""
         logger.info(f"New client connected: {sid}")
 
-        # Extract user ID from authorization header if present
-        auth_data = environ.get("HTTP_AUTHORIZATION", "")
-        if auth_data:
-            # In a real implementation, you would validate the token
-            # and extract the user ID from it
-            user_id = auth_data  # Simplified for this example
+        # Extract token from auth payload
+        token = None
+        if auth and isinstance(auth, dict):
+            token = auth.get("token")
+        if not token:
+            logger.warning("No token provided on connect, disconnecting.")
+            await self.sio.disconnect(sid)
+            return
+
+        # Validate token via users service (RabbitMQ)
+        try:
+            response = await self.rabbitmq.publish_and_wait(
+                exchange="auth",
+                routing_key="auth.validate",
+                message={"token": token},
+                correlation_id=sid
+            )
+
+            if response.get("error") or not response.get("user"):
+                logger.warning(
+                    f"Token validation failed: {response.get('message')}")
+                await self.sio.disconnect(sid)
+                return
+
+            user_id = response["user"]["id"]
             self.register_user(sid, user_id)
             logger.info(f"User {user_id} connected with sid {sid}")
 
-    async def _on_disconnect(self, sid: str) -> None:
-        """Handle socket disconnection."""
-        logger.info(f"Client disconnected: {sid}")
+            # Join the user to the "general" room by default
+            await self.join_room(sid, "general")
 
-        # Unregister user if associated with this sid
-        user_id = self.unregister_user(sid)
-        if user_id:
-            logger.info(f"User {user_id} disconnected")
-            # Publish presence update via RabbitMQ with retry
-            try:
-                await with_retry(
-                    lambda: self._publish_presence_update(user_id, "offline"),
-                    max_attempts=3,
-                    circuit_breaker=self.rabbitmq_cb
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to publish presence update for {user_id}: {e}"
-                )
+        except Exception as e:
+            logger.error(f"Error during token validation: {e}")
+            await self.sio.disconnect(sid)
 
     async def _publish_presence_update(
         self, user_id: str, status: str
@@ -171,24 +181,30 @@ class SocketServer:
                 f"Message received from unauthenticated socket: {sid}")
             return
 
-        # Add user_id to message data
-        message_data = {
-            **data,
-            "user_id": user_id,
-            "timestamp": "now"
-        }
+        # Create structured chat event
+        message_event = create_event(
+            EventType.CHAT_MESSAGE,
+            "socket_io",
+            sender_id=user_id,
+            recipient_id=data.get("recipient_id", ""),
+            message_id=data.get("message_id", ""),
+            content=data.get("content", ""),
+            metadata=data.get("metadata", {})
+        )
 
-        # 1. Send directly to room participants for immediate delivery
         room = data.get("room", "general")
-        await self.emit_to_room(room, "chat_message", message_data)
+        await self.emit_to_room(
+            room,
+            EventType.CHAT_MESSAGE.value,
+            dict(message_event)
+        )
 
-        # 2. Publish to RabbitMQ for persistence and service notifications
         try:
             await with_retry(
                 lambda: self.rabbitmq.publish_message(
                     exchange="chat",
                     routing_key=room,
-                    message=json.dumps(message_data)
+                    message=json.dumps(message_event)
                 ),
                 max_attempts=3,
                 circuit_breaker=self.rabbitmq_cb
@@ -196,7 +212,7 @@ class SocketServer:
             # 3. Acknowledge message receipt to sender
             await self.sio.emit(
                 "message_received",
-                message_data,
+                message_event,
                 room=sid
             )
         except Exception as e:
@@ -218,13 +234,15 @@ class SocketServer:
                 f"Presence update from unauthenticated socket: {sid}")
             return
 
-        # Add user_id to presence data
-        presence_data = {
-            **data,
-            "type": "status_update",
-            "user_id": user_id,
-            "last_changed": datetime.now().timestamp()
-        }
+        # Create structured presence event
+        presence_event = create_event(
+            EventType.PRESENCE_UPDATE,
+            "socket_io",
+            user_id=user_id,
+            status=data.get("status", "online"),
+            last_seen=datetime.now().timestamp(),
+            metadata=data.get("metadata", {})
+        )
 
         # Publish presence update to RabbitMQ with retry
         try:
@@ -232,7 +250,7 @@ class SocketServer:
                 lambda: self.rabbitmq.publish_message(
                     exchange="user_events",
                     routing_key=f"status.{user_id}",
-                    message=json.dumps(presence_data)
+                    message=json.dumps(presence_event)
                 ),
                 max_attempts=3,
                 circuit_breaker=self.rabbitmq_cb
@@ -289,3 +307,23 @@ class SocketServer:
     ) -> None:
         """Emit an event to all clients in a room."""
         await self.sio.emit(event, data, room=room)
+
+    async def _on_disconnect(self, sid: str) -> None:
+        """Handle socket disconnection."""
+        logger.info(f"Client disconnected: {sid}")
+
+        # Unregister user if associated with this sid
+        user_id = self.unregister_user(sid)
+        if user_id:
+            logger.info(f"User {user_id} disconnected")
+            # Optionally, publish presence update via RabbitMQ
+            try:
+                await with_retry(
+                    lambda: self._publish_presence_update(user_id, "offline"),
+                    max_attempts=3,
+                    circuit_breaker=self.rabbitmq_cb
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to publish presence update for {user_id}: {e}"
+                )

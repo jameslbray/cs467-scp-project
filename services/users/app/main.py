@@ -56,6 +56,8 @@ logger.info("Application settings loaded")
 rabbitmq_client = UserRabbitMQClient(settings=settings)
 
 # Define the lifespan handler
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
@@ -81,7 +83,8 @@ app = FastAPI(
 app.add_middleware(SlowAPIMiddleware)
 app.state.limiter = limiter
 
-app.add_exception_handler(RateLimitExceeded, cast(ExceptionHandler, _rate_limit_exceeded_handler))
+app.add_exception_handler(RateLimitExceeded, cast(
+    ExceptionHandler, _rate_limit_exceeded_handler))
 
 # Add CORS middleware
 app.add_middleware(
