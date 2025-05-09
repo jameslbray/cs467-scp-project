@@ -17,7 +17,7 @@ from .config import Settings
 # Configure logging
 logger = logging.getLogger("notifications.rabbitmq")
 
-# TODO: Figure this out 
+# TODO: Figure this out
 
 class NotificationRabbitMQClient:
     def __init__(self, settings: Settings):
@@ -218,7 +218,6 @@ class NotificationRabbitMQClient:
             "error": False,
             "user": User.model_validate(db_user).model_dump()
         }
-
 
     async def handle_validate(
         self,

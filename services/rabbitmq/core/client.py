@@ -4,6 +4,9 @@ import uuid
 import asyncio
 from typing import Dict, Any, Optional
 from .config import Settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RabbitMQClient:
@@ -13,7 +16,6 @@ class RabbitMQClient:
         self.channel = None
         self.callback_queue = None
         self.futures: Dict[str, asyncio.Future] = {}
-        # Use RABBITMQ_URL if provided, otherwise build from individual settings
         self.connection_url = (
             self.settings.RABBITMQ_URL
             if self.settings.RABBITMQ_URL
@@ -65,7 +67,7 @@ class RabbitMQClient:
         """Publish a message and wait for response"""
         if not self.is_connected():
             await self.connect()
-
+        logger.info(f"[RabbitMQ] Publishing message: {message}")
         # Generate correlation ID if not provided
         correlation_id = correlation_id or str(uuid.uuid4())
 
@@ -82,17 +84,22 @@ class RabbitMQClient:
 
         # Publish message
         if exchange:
+            logger.info(
+                f"[RabbitMQ] Publishing message to exchange: {exchange}")
             exchange_obj = await self.channel.get_exchange(exchange, ensure=False)
             await exchange_obj.publish(message_body, routing_key=routing_key)
         else:
+            logger.info("[RabbitMQ] Publishing message to default exchange")
             await self.channel.default_exchange.publish(
                 message_body, routing_key=routing_key
             )
-
+        logger.info("[RabbitMQ] Message published, waiting for response")
         try:
             # Wait for response with timeout
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
+            logger.info(
+                f"[RabbitMQ] Request timed out after {timeout} seconds")
             del self.futures[correlation_id]
             raise TimeoutError(f"Request timed out after {timeout} seconds")
 
@@ -109,13 +116,18 @@ class RabbitMQClient:
         """Check if connected to RabbitMQ"""
         return self.connection is not None and not self.connection.is_closed
 
-    async def publish_message(self, exchange: str, routing_key: str, message: str):
-        """Publish a message to a specific exchange with routing key"""
+    async def publish_message(self, exchange: str, routing_key: str, message: str, correlation_id: str = None, reply_to: str = None):
+        """Publish a message to a specific exchange with routing key, with optional correlation_id and reply_to"""
         if not self.is_connected():
             raise Exception("Not connected to RabbitMQ")
 
-        # Create a message with the string body
-        message_body = aio_pika.Message(body=message.encode("utf-8"))
+        # Create a message with the string body and optional properties
+        message_kwargs = {"body": message.encode("utf-8")}
+        if correlation_id is not None:
+            message_kwargs["correlation_id"] = correlation_id
+        if reply_to is not None:
+            message_kwargs["reply_to"] = reply_to
+        message_body = aio_pika.Message(**message_kwargs)
 
         # Publish the message
         if exchange:

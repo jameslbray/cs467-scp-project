@@ -114,6 +114,7 @@ services:
       timeout: 5s
       retries: 3
 
+
   socket_io:
     build:
       context: .
@@ -129,6 +130,7 @@ services:
       rabbitmq:
         condition: service_healthy
 
+
   users:
     build:
       context: .
@@ -138,7 +140,7 @@ services:
     env_file:
       - .env
     environment:
-      - PYTHONPATH=/app
+      - PYTHONPATH=/app/services
       - RABBITMQ_URL=${RABBITMQ_URL}
       - POSTGRES_HOST=postgres_db
       - POSTGRES_PORT=5432
@@ -153,6 +155,7 @@ services:
         condition: service_completed_successfully
     tty: true
     stdin_open: true
+
 
   notifications:
     build:
@@ -174,6 +177,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+
       db_init:
         condition: service_completed_successfully
       mongo_db:

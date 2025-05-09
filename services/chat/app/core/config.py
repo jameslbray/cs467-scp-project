@@ -13,7 +13,7 @@ def find_env_file() -> str:
     env_file = os.getenv("ENV_FILE")
     if env_file and os.path.exists(env_file):
         return env_file
-    
+
     # Try multiple possible locations
     possible_locations = [
         # Original path (for local development)
@@ -23,22 +23,22 @@ def find_env_file() -> str:
         # Current directory
         ".env",
     ]
-    
+
     for location in possible_locations:
         if os.path.exists(location):
             return location
-    
+
     # If we get here, return the default location
     return possible_locations[0]
-    
+
 def construct_socket_path() -> str:
-    
+
     host = os.getenv('SOCKET_IO_HOST', 'localhost')
     port = os.getenv('SOCKET_IO_PORT', '8000')
     path = os.getenv('SOCKET_IO_PATH', '/socket.io/')
-    
+
     socket_io_url = f"https://{host}:{port}{path}"
-    
+
     return socket_io_url
 
 class Settings(BaseSettings):
@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = Field(default=..., min_length=1)
     POSTGRES_DB: str = Field(default=..., min_length=1)
 
+    MONGO_USER: str = Field(default="admin")
+    MONGO_PASSWORD: SecretStr = Field(default=SecretStr("password"))
+    MONGO_HOST: str = Field(default="mongo_db")
+    MONGO_PORT: str = Field(default="27017")
+    MONGO_DB_NAME: str = Field(default="chat_db")
+
+    MONGO_URI: str = f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/{MONGO_DB_NAME}?authSource=admin"
+
     # JWT settings
     JWT_SECRET_KEY: SecretStr = Field(default=..., min_length=32)
     JWT_ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
@@ -124,7 +132,7 @@ class Settings(BaseSettings):
         default="users_tasks",
         description="Users queue name"
     )
-    
+
     SOCKET_IO_URL: str = construct_socket_path()
 
     # Security settings
@@ -188,15 +196,15 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Create and return a cached Settings instance."""
     env_file = find_env_file()
-    
+
     # Debug info
     print("\n================ CONFIG DEBUG ================")
     print(f"Looking for .env file at: {env_file}")
     print(f"File exists: {os.path.exists(env_file) if env_file else False}")
-    
+
     # Create settings instance
     settings = Settings()
-    
+
     # Print some key settings for debugging
     try:
         print(f"POSTGRES_USER: {settings.POSTGRES_USER}")
@@ -205,7 +213,7 @@ def get_settings() -> Settings:
         print(f"ENV: {settings.ENV}")
     except Exception as e:
         print(f"Error accessing settings: {e}")
-    
+
     print("===============================================\n")
-    
+
     return settings

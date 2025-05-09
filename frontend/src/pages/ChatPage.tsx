@@ -1,69 +1,35 @@
-import React, { useEffect, useState } from "react";
-import { io, Socket } from "socket.io-client";
+import React, { useState, useEffect } from "react";
 import UserStatus from "../components/UserStatus";
 import ChatList from "../components/ChatList";
 import { MoonIcon, SunIcon } from "@heroicons/react/24/outline";
 import { useTheme, useAuth } from "../contexts";
-import { User, UserStatusIntf } from "../App";
+import { useSocketContext } from "../contexts/socket/socketContext";
+import { useSocketEvent } from "../contexts/socket/useSocket";
 import { ServerEvents } from "../types/serverEvents";
-
-// Custom hook for socket connection
-const useSocketConnection = (currentUser: User | null) => {
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [friends, setFriends] = useState<Record<string, UserStatusIntf>>({});
-  const [isConnected, setIsConnected] = useState(false);
-
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const socketConnection = io("http://localhost:3001", {
-      auth: {
-        token: localStorage.getItem("auth_token"),
-      },
-    });
-    setSocket(socketConnection);
-
-    socketConnection.on("connect", () => {
-      console.log("Connected to SycoLibre socket server");
-      setIsConnected(true);
-      socketConnection.emit(ServerEvents.REQUEST_STATUSES, {});
-    });
-
-    socketConnection.on("disconnect", () => {
-      console.log("Disconnected from SycoLibre socket server");
-      setIsConnected(false);
-    });
-
-    socketConnection.on(
-      ServerEvents.FRIEND_STATUSES,
-      (data: { statuses: Record<string, UserStatusIntf> }) => {
-        setFriends(data.statuses);
-      },
-    );
-
-    socketConnection.on(
-      ServerEvents.FRIEND_STATUS_CHANGED,
-      (data: UserStatusIntf) => {
-        setFriends((prev) => ({
-          ...prev,
-          [data.user_id]: data,
-        }));
-      },
-    );
-
-    return () => {
-      socketConnection.disconnect();
-    };
-  }, [currentUser]);
-
-  return { socket, friends, isConnected };
-};
+import { UserStatusIntf } from "../App";
 
 const ChatPage: React.FC = () => {
   const { darkMode, toggleDarkMode } = useTheme();
   const { user, logout } = useAuth();
-  const { friends, isConnected } = useSocketConnection(user);
+  const { isConnected } = useSocketContext();
+  const [friends, setFriends] = useState<Record<string, UserStatusIntf>>({});
   const [friendCount, setFriendCount] = useState(0);
+
+  // Listen for initial friend statuses
+  useSocketEvent<{ statuses: Record<string, UserStatusIntf> }>(
+    ServerEvents.FRIEND_STATUSES,
+    (data) => {
+      setFriends(data.statuses);
+    }
+  );
+
+  // Listen for individual friend status changes
+  useSocketEvent<UserStatusIntf>(
+    ServerEvents.FRIEND_STATUS_CHANGED,
+    (data) => {
+      setFriends((prev) => ({ ...prev, [data.user_id]: data }));
+    }
+  );
 
   // Update friend count when friends change
   useEffect(() => {
@@ -79,25 +45,20 @@ const ChatPage: React.FC = () => {
   }
 
   return (
-    <div
-      className={`min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200`}
-    >
+    <div className={`min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200`}>
       {/* Header/Navigation */}
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <UserStatus />
-
             </div>
             <div className="flex items-center space-x-4">
               {/* Dark mode toggle */}
               <button
                 onClick={toggleDarkMode}
                 className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none"
-                aria-label={
-                  darkMode ? "Switch to light mode" : "Switch to dark mode"
-                }
+                aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
               >
                 {darkMode ? (
                   <SunIcon className="h-6 w-6" />

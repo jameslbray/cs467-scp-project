@@ -1,8 +1,9 @@
 from typing import List, Optional
+
+from app.db.mongo import get_db
+from app.db.repository import Repository
 from app.models.chat import Chat
 from app.schemas.chat import ChatCreate
-from app.db.repository import Repository
-from app.db.mongo import get_db
 
 
 class ChatRepository(Repository[Chat, ChatCreate, ChatCreate]):

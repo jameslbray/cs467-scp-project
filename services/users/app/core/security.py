@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Optional, Union
@@ -16,6 +17,8 @@ from services.db_init.app.models import User as UserModel
 from ..db.database import get_db
 from ..schemas import JWTTokenData, Token, User
 from .config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -44,7 +47,7 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    user_id: Union[UUID, Column[UUID]], 
+    user_id: Union[UUID, Column[UUID]],
     expires_delta: Optional[timedelta] = None
 ) -> Token:
     """
@@ -67,7 +70,7 @@ def create_access_token(
         "iat": int(now.timestamp()),  # Convert to integer timestamp
         "jti": token_id
     }
-    
+
     secret_key = str(settings.JWT_SECRET_KEY.get_secret_value())
     encoded_jwt = jwt.encode(
         token_data, secret_key, algorithm=settings.JWT_ALGORITHM
@@ -190,7 +193,7 @@ def get_token_data(token: str, db: Session) -> JWTTokenData:
                 detail="Could not validate credentials - missing subject",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         # Convert user_id string to UUID
         try:
             user_id = UUID(user_id_str)
@@ -241,7 +244,6 @@ async def get_current_user(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
 
     return User.model_validate(user, from_attributes=True)
 
