@@ -13,7 +13,8 @@ class User(BaseModel):
     is_active: bool = Field(True, description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    last_login: Optional[datetime] = Field(None, description="Last login timestamp")
+    last_login: Optional[datetime] = Field(
+        None, description="Last login timestamp")
     chat_ids: List[str] = Field(
         default_factory=list, description="IDs of chats the user is in"
     )

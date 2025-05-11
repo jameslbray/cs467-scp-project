@@ -21,7 +21,7 @@ PyObjectId = Annotated[ObjectId, BeforeValidator(validate_object_id)]
 class MessageLog(BaseModel):
     """
     Represents a message in a chat room.
-    
+
     Attributes:
         id: MongoDB ObjectId (automatically generated)
         room_id: ID of the room/conversation the message belongs to
@@ -30,18 +30,17 @@ class MessageLog(BaseModel):
         timestamp: When the message was sent (defaults to current time)
     """
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
-    room_id: int
-    sender_id: int
+    room_id: str
+    sender_id: str
     content: str
     timestamp: datetime = Field(default_factory=datetime.now)
-    
-    # Modern Pydantic config using ConfigDict
+
     model_config = ConfigDict(
         populate_by_name=True,  # Allow both alias and field name
         json_schema_extra={
             "example": {
-                "room_id": 1,
-                "sender_id": 123,
+                "room_id": "123",
+                "sender_id": "123",
                 "content": "Hello, this is a message!",
                 "timestamp": "2023-01-01T12:00:00"
             }
@@ -49,10 +48,12 @@ class MessageLog(BaseModel):
         arbitrary_types_allowed=True,
         json_encoders={ObjectId: str}
     )
-    
+
     # For easier conversion to dict with string ID
     def model_dump_json_friendly(self):
-        """Convert the model to a JSON-friendly dictionary with string ObjectId."""
+        """
+        Convert the model to a JSON-friendly dictionary with string ObjectId.
+        """
         data = self.model_dump(by_alias=True)
         if data.get("_id"):
             data["_id"] = str(data["_id"])

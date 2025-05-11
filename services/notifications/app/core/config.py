@@ -15,19 +15,21 @@ def find_env_file() -> str:
     env_file = os.getenv("ENV_FILE")
     if env_file and os.path.exists(env_file):
         return env_file
-    
+
     # Try multiple possible locations
     possible_locations = [
         os.path.join(os.getcwd(), ".env"),  # Current working directory
         os.path.join(os.path.dirname(os.getcwd()), ".env"),  # Parent directory
-        os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), ".env"),  # Grandparent
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"),  # Project root from config.py
+        os.path.join(os.path.dirname(os.path.dirname(
+            os.getcwd())), ".env"),  # Grandparent
+        os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                     ".env"),  # Project root from config.py
     ]
-    
+
     for location in possible_locations:
         if os.path.exists(location):
             return location
-    
+
     # If we get here, return the default location
     return ""
 
@@ -128,7 +130,7 @@ class Settings(BaseSettings):
     MONGO_HOST: str = Field(default="mongodb")
     MONGO_PORT: str = Field(default="27017")
     MONGO_DB: str = Field(default="sycolibre")
-    
+
     RABBITMQ_URL: str = Field(
         default="amqp://guest:guest@rabbitmq:5672/")
 
@@ -179,7 +181,7 @@ class Settings(BaseSettings):
 
 # def get_db_config() -> Dict[str, str]:
 #     """Return PostgreSQL configuration dictionary"""
-    
+
 #     return {
 #         "user": settings.POSTGRES_USER,
 #         "password": settings.POSTGRES_PASSWORD,

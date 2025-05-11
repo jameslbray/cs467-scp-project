@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { formatDistanceToNow } from 'date-fns';
 
 // Define the props interface for message data
-export interface ChatMessageProps {
+interface ChatMessageProps {
   id: string;
   content: string;
   author: {
@@ -23,15 +23,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 }) => {
   // Format the timestamp to relative time (e.g., "5 minutes ago")
   const timeAgo = formatDistanceToNow(timestamp, { addSuffix: true });
-  
+
   return (
-    <div 
+    <div
       className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}
     >
-      <div 
+      <div
         className={`${
-          isCurrentUser 
-            ? 'bg-primary-100 dark:bg-primary-900' 
+          isCurrentUser
+            ? 'bg-primary-100 dark:bg-primary-900'
             : 'bg-gray-100 dark:bg-gray-800'
         } rounded-lg px-4 py-2 max-w-[80%] shadow`}
       >
@@ -40,9 +40,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
           {!isCurrentUser && (
             <div className="flex items-center">
               {author.profilePicture ? (
-                <img 
-                  src={author.profilePicture} 
-                  alt={author.username} 
+                <img
+                  src={author.profilePicture}
+                  alt={author.username}
                   className="w-8 h-8 rounded-full mr-2"
                 />
               ) : (
@@ -59,7 +59,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             {timeAgo}
           </span>
         </div>
-        
+
         {/* Message content with markdown support */}
         <div className="prose dark:prose-dark prose-sm max-w-none">
           <ReactMarkdown>

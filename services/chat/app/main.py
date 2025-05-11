@@ -1,9 +1,10 @@
 import logging
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI
+from typing import List
+from fastapi import FastAPI, Depends, Query, HTTPException
 
 from services.shared.utils.retry import CircuitBreaker, with_retry
+from services.users.app.core.security import get_current_user
 
 from .core.rabbitmq import ChatRabbitMQClient
 from .core.socket_connector import SocketManager
@@ -35,6 +36,7 @@ socket_circuit_breaker = CircuitBreaker(
     failure_threshold=3,
     reset_timeout=5,
 )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -80,8 +82,6 @@ async def lifespan(app: FastAPI):
         logger.info("Chat service started successfully")
     except Exception as e:
         logger.error(f"Error during startup: {e}")
-        # Still proceed with starting the app, but some services might be unavailable
-        logger.warning("Chat service started with degraded functionality")
 
     yield  # FastAPI serves requests during this period
 
@@ -134,9 +134,12 @@ async def health_check():
     # Check the state of the circuit breakers
     status = "healthy"
     circuit_breakers = {
-        "mongo": "closed" if not mongo_circuit_breaker.is_open else "open",
-        "rabbitmq": "closed" if not rabbitmq_circuit_breaker.is_open else "open",
-        "socket": "closed" if not socket_circuit_breaker.is_open else "open",
+        "mongo": "closed"
+        if not mongo_circuit_breaker.is_open else "open",
+        "rabbitmq": "closed"
+        if not rabbitmq_circuit_breaker.is_open else "open",
+        "socket": "closed"
+        if not socket_circuit_breaker.is_open else "open",
     }
 
     # If any circuit breaker is open, consider the service degraded
@@ -170,11 +173,36 @@ async def test_mongo_connection():
             "message": "Successfully connected to MongoDB",
             "collections": collections,
             "database": get_db().name,
-            "circuit_breaker": "closed" if not mongo_circuit_breaker.is_open else "open",
+            "circuit_breaker": "closed"
+            if not mongo_circuit_breaker.is_open else "open",
         }
     except RuntimeError as e:
         logger.error(f"MongoDB not initialized: {e}")
         return {"status": "error", "message": "MongoDB not initialized"}
     except Exception as e:
         logger.error(f"MongoDB connection error: {e}")
-        return {"status": "error", "message": f"Failed to connect to MongoDB: {str(e)}"}
+        return {"status": "error",
+                "message": f"Failed to connect to MongoDB: {str(e)}"}
+
+
+@app.get("/rooms/{room_id}/messages", response_model=List[dict])
+async def get_room_messages(
+    room_id: str,
+    limit: int = Query(default=50, ge=1, le=100),
+    skip: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user),
+):
+    """Get messages for a specific room."""
+    db = get_db()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    room = await db.rooms.find_one({"_id": room_id})
+    if not room or user_id not in room.get("members", []):
+        raise HTTPException(
+            status_code=404, detail="Room not found or user not a member")
+
+    messages = await db.messages.find(
+        {"room_id": room_id}
+    ).skip(skip).limit(limit).to_list(length=limit)
+
+    return messages

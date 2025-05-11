@@ -1,68 +1,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
-import ChatMessage, { ChatMessageProps } from "./ChatMessage";
-
-interface User {
-  id: string;
-  username: string;
-  profilePicture?: string;
-}
-
-// Sample current user for demonstration
-const currentUser: User = {
-  id: "1",
-  username: "current_user",
-  profilePicture: "https://i.pravatar.cc/150?u=1",
-};
-
-// Sample other users for demonstration
-const otherUsers: Record<string, User> = {
-  "2": {
-    id: "2",
-    username: "jane_doe",
-    profilePicture: "https://i.pravatar.cc/150?u=2",
-  },
-  "3": {
-    id: "3",
-    username: "john_smith",
-    profilePicture: "https://i.pravatar.cc/150?u=3",
-  },
-};
-
-// Sample messages for demonstration
-const initialMessages: Omit<ChatMessageProps, "isCurrentUser">[] = [
-  {
-    id: "1",
-    content: "Hello everyone! Welcome to SycoLibre.",
-    author: otherUsers["2"] as User,
-    timestamp: new Date(Date.now() - 3600000), // 1 hour ago
-  },
-  {
-    id: "2",
-    content:
-      "Thanks for having me! This is a message with **bold** and *italic* formatting.",
-    author: currentUser,
-    timestamp: new Date(Date.now() - 1800000), // 30 minutes ago
-  },
-  {
-    id: "3",
-    content:
-      'Great to see markdown support! Check out this code:\n```python\ndef hello_world():\n    print("Hello, world!")\n```',
-    author: otherUsers["3"] as User,
-    timestamp: new Date(Date.now() - 900000), // 15 minutes ago
-  },
-  {
-    id: "4",
-    content:
-      "You can also include:\n- Bullet points\n- In your messages\n\nAlong with [links](https://example.com)",
-    author: otherUsers["2"] as User,
-    timestamp: new Date(Date.now() - 300000), // 5 minutes ago
-  },
-];
+import ChatMessage from "./ChatMessage";
+import { useFetchMessages } from "../hooks/useFetchMessages";
 
 const ChatList: React.FC = () => {
-  const [messages, setMessages] =
-    useState<Omit<ChatMessageProps, "isCurrentUser">[]>(initialMessages);
+  // Placeholder token and roomId for demonstration; replace with real values from context/auth
+  const token = "YOUR_JWT_TOKEN_HERE"; // TODO: Replace with real token from auth context
+  const roomId = "general";
+
+  const { messages, loading, error } = useFetchMessages(roomId, token);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -78,22 +24,11 @@ const ChatList: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!newMessage.trim()) return;
-
-    // Simulate sending a message
     setIsLoading(true);
-
-    // Simulate network delay
+    // Simulate sending a message (in real app, send via socket or API)
     setTimeout(() => {
-      const message: Omit<ChatMessageProps, "isCurrentUser"> = {
-        id: String(Date.now()),
-        content: newMessage,
-        author: currentUser,
-        timestamp: new Date(),
-      };
-
-      setMessages((prevMessages) => [...prevMessages, message]);
+      // For demo, just clear the input
       setNewMessage("");
       setIsLoading(false);
     }, 500);
@@ -110,7 +45,15 @@ const ChatList: React.FC = () => {
 
       {/* Messages Container */}
       <div className="flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-        {messages.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500 dark:text-gray-400">Loading messages...</p>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-red-500 dark:text-red-400">Error: {error}</p>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500 dark:text-gray-400">No messages yet</p>
           </div>
@@ -118,12 +61,12 @@ const ChatList: React.FC = () => {
           <div className="space-y-4">
             {messages.map((message) => (
               <ChatMessage
-                key={message.id}
-                id={message.id}
+                key={message._id}
+                id={message._id}
                 content={message.content}
-                author={message.author}
-                timestamp={message.timestamp}
-                isCurrentUser={message.author.id === currentUser.id}
+                author={{ id: message.sender_id, username: message.sender_id }} // TODO: Replace with real user lookup
+                timestamp={new Date(message.timestamp)}
+                isCurrentUser={message.sender_id === "1"} // TODO: Replace with real current user id
               />
             ))}
             <div ref={messagesEndRef} />

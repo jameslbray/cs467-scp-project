@@ -54,6 +54,9 @@ class SocketServer:
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
         self.sio.on("presence_update", self._on_presence_update)
+        # TODO: implement chat typing and chat read receipts functionality
+        self.sio.on("chat_typing", self._on_chat_typing)
+        self.sio.on("chat_read", self._on_chat_read)
         # Register auth event handlers
         self.auth_events = AuthEvents(self.sio, self.rabbitmq)
 
@@ -327,3 +330,11 @@ class SocketServer:
                 logger.error(
                     f"Failed to publish presence update for {user_id}: {e}"
                 )
+
+    async def _on_chat_typing(self, sid: str, data: Dict[str, Any]) -> None:
+        """Handle chat typing."""
+        pass
+
+    async def _on_chat_read(self, sid: str, data: Dict[str, Any]) -> None:
+        """Handle chat read."""
+        pass

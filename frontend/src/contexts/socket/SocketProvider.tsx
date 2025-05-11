@@ -9,11 +9,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  // Log when the SocketProvider is rendered
-  console.log("SocketProvider rendered. Token:", token);
 
   useEffect(() => {
-    console.log("SocketProvider useEffect running. Token:", token);
     if (!token) {
       if (socketRef.current) {
         socketRef.current.disconnect();
