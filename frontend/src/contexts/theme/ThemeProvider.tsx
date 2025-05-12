@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ThemeContext } from './useTheme';
 
 const getInitialDarkMode = (): boolean => {
@@ -20,36 +20,23 @@ const getInitialDarkMode = (): boolean => {
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [darkMode, setDarkMode] = useState<boolean>(getInitialDarkMode);
 
-  const toggleDarkMode = () => {
+  const toggleDarkMode = useCallback(() => {
     setDarkMode(prev => {
       const newValue = !prev;
-      // Only access localStorage in browser environment
       if (typeof window !== 'undefined') {
         localStorage.setItem('darkMode', String(newValue));
       }
       return newValue;
     });
-  };
+  }, []);
 
-  useEffect(() => {
-    // Only run in browser environment
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
-
+  // ... rest of the code remains unchanged ...
   const value = React.useMemo(
     () => ({
       darkMode,
       toggleDarkMode,
     }),
-    [darkMode]
+    [darkMode, toggleDarkMode]
   );
 
   return (
@@ -57,4 +44,4 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {children}
     </ThemeContext.Provider>
   );
-}; 
+};

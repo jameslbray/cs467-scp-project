@@ -1,153 +1,197 @@
 from typing import List, Optional
 
-from app.db.mongo import get_db
-from app.db.repository import Repository
-from app.models.chat import Chat
-from app.schemas.chat import ChatCreate
+from ..models.room import Room
+from ..schemas.room import RoomCreate
+from .mongo import get_db
+from .repository import Repository
 
 
-class ChatRepository(Repository[Chat, ChatCreate, ChatCreate]):
-    """Repository for chat operations"""
+class ChatRepository(Repository[Room, RoomCreate, RoomCreate]):
+    """Repository for room operations"""
 
     def __init__(self):
-        """Initialize the chat repository"""
-        super().__init__(Chat, "chats")
+        """Initialize the room repository"""
+        super().__init__(Room, "rooms")
 
-    async def get(self, id: str) -> Optional[Chat]:
+    async def get_room_by_id(self, id: str) -> Optional[Room]:
         """
-        Get a chat by ID
+        Get a room by ID
 
         Args:
-            id: The ID of the chat
+            id: The ID of the room
 
         Returns:
-            The chat if found, None otherwise
+            The room if found, None otherwise
         """
         db = get_db()
-        if not db:
+        if db is None:
             raise RuntimeError("Database not initialized")
 
-        chat_data = await db[self.collection_name].find_one({"_id": id})
-        if not chat_data:
+        room_data = await db[self.collection_name].find_one({"_id": id})
+        if not room_data:
             return None
 
-        return Chat(**chat_data)
+        return Room(**room_data)
 
-    async def get_all(self) -> List[Chat]:
+    async def get_room_id_by_name(self, name: str) -> Optional[str]:
         """
-        Get all chats
-
-        Returns:
-            A list of all chats
-        """
-        db = get_db()
-        if not db:
-            raise RuntimeError("Database not initialized")
-
-        chats = []
-        async for chat_data in db[self.collection_name].find():
-            chats.append(Chat(**chat_data))
-
-        return chats
-
-    async def create(self, obj_in: ChatCreate) -> Chat:
-        """
-        Create a new chat
+        Get a room by name
 
         Args:
-            obj_in: The chat to create
-
-        Returns:
-            The created chat
+            name: The name of the room
         """
         db = get_db()
-        if not db:
+        if db is None:
+            raise RuntimeError("Database not initialized")
+
+        room_data = await db[self.collection_name].find_one({"name": name})
+        if not room_data:
+            return None
+
+        return room_data["_id"]
+
+    async def get_all_rooms(self) -> List[Room]:
+        """
+        Get all rooms
+
+        Returns:
+            A list of all rooms
+        """
+        db = get_db()
+        if db is None:
+            raise RuntimeError("Database not initialized")
+
+        rooms = []
+        async for room_data in db[self.collection_name].find():
+            rooms.append(Room(**room_data))
+
+        return rooms
+
+    async def create(self, obj_in: RoomCreate) -> Room:
+        """
+        Create a new room
+
+        Args:
+            obj_in: The room to create
+
+        Returns:
+            The created room
+        """
+        db = get_db()
+        if db is None:
             raise RuntimeError("Database not initialized")
 
         now = self.get_current_time()
-        chat_id = self.generate_id()
+        room_id = self.generate_id()
 
-        chat_data = {
-            "_id": chat_id,
+        room_data = {
+            "_id": room_id,
             "name": obj_in.name,
             "description": obj_in.description,
             "is_private": obj_in.is_private,
+            "max_participants": obj_in.max_participants,
             "created_at": now,
             "updated_at": now,
-            "created_by": obj_in.created_by,
-            "participant_ids": obj_in.participant_ids,
+            "created_by": getattr(obj_in, "created_by", None),
+            "participant_ids": getattr(obj_in, "participant_ids", []),
         }
 
-        await db[self.collection_name].insert_one(chat_data)
+        await db[self.collection_name].insert_one(room_data)
 
-        return Chat(**chat_data)
+        return Room(**room_data)
 
-    async def update(self, id: str, obj_in: ChatCreate) -> Optional[Chat]:
+    async def update(self, id: str, obj_in: RoomCreate) -> Optional[Room]:
         """
-        Update a chat
+        Update a room
 
         Args:
-            id: The ID of the chat to update
-            obj_in: The chat with updated values
+            id: The ID of the room to update
+            obj_in: The room with updated values
 
         Returns:
-            The updated chat if found, None otherwise
+            The updated room if found, None otherwise
         """
         db = get_db()
-        if not db:
+        if db is None:
             raise RuntimeError("Database not initialized")
 
-        chat = await self.get(id)
-        if not chat:
+        room = await self.get_room_by_id(id)
+        if not room:
             return None
 
         update_data = {
             "name": obj_in.name,
             "description": obj_in.description,
             "is_private": obj_in.is_private,
+            "max_participants": obj_in.max_participants,
             "updated_at": self.get_current_time(),
-            "participant_ids": obj_in.participant_ids,
+            "participant_ids": getattr(obj_in, "participant_ids", []),
         }
 
-        await db[self.collection_name].update_one({"_id": id}, {"$set": update_data})
+        await db[self.collection_name].update_one(
+            {"_id": id}, {"$set": update_data}
+        )
 
-        return await self.get(id)
+        return await self.get_room_by_id(id)
 
     async def delete(self, id: str) -> bool:
         """
-        Delete a chat
+        Delete a room
 
         Args:
-            id: The ID of the chat to delete
+            id: The ID of the room to delete
 
         Returns:
-            True if the chat was deleted, False otherwise
+            True if the room was deleted, False otherwise
         """
         db = get_db()
-        if not db:
+        if db is None:
             raise RuntimeError("Database not initialized")
 
         result = await db[self.collection_name].delete_one({"_id": id})
         return result.deleted_count > 0
 
-    async def get_user_chats(self, user_id: str) -> List[Chat]:
+    async def get_user_rooms(self, user_id: str) -> List[Room]:
         """
-        Get all chats for a user
+        Get all rooms for a user
 
         Args:
             user_id: The ID of the user
 
         Returns:
-            A list of chats the user is in
+            A list of rooms the user is in
         """
         db = get_db()
-        if not db:
+        if db is None:
             raise RuntimeError("Database not initialized")
 
-        chats = []
-        async for chat_data in db[self.collection_name].find(
+        rooms = []
+        async for room_data in db[self.collection_name].find(
             {"participant_ids": user_id}
         ):
-            chats.append(Chat(**chat_data))
+            rooms.append(Room(**room_data))
 
-        return chats
+        return rooms
+
+    async def add_user_to_room(
+        self, room_id: str, user_id: str
+    ) -> Optional[Room]:
+        """
+        Add a user to the participant_ids of a room.
+        """
+        db = get_db()
+        if db is None:
+            raise RuntimeError("Database not initialized")
+
+        # Use $addToSet to avoid duplicates
+        result = await db[self.collection_name].update_one(
+            {"_id": room_id},
+            {
+                "$addToSet": {"participant_ids": user_id},
+                "$set": {"updated_at": self.get_current_time()},
+            },
+        )
+        if result.modified_count == 0:
+            # Room not found or user already present
+            return None
+        return await self.get_room_by_id(room_id)

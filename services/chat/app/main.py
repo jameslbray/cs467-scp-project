@@ -1,15 +1,20 @@
 import logging
 from contextlib import asynccontextmanager
 from typing import List
-from fastapi import FastAPI, Depends, Query, HTTPException
 
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+
+from services.db_init.app.models import User
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.users.app.core.security import get_current_user
 
+from .core.config import get_settings
 from .core.rabbitmq import ChatRabbitMQClient
 from .core.socket_connector import SocketManager
 from .db.mongo import close_mongo_connection, get_db, init_mongo
 
+settings = get_settings()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,15 +25,11 @@ rabbitmq_client = ChatRabbitMQClient()
 
 # Circuit breaker configurations
 mongo_circuit_breaker = CircuitBreaker(
-    name="mongo-connection",
-    failure_threshold=3,
-    reset_timeout=5
+    name="mongo-connection", failure_threshold=3, reset_timeout=5
 )
 
 rabbitmq_circuit_breaker = CircuitBreaker(
-    name="rabbitmq-connection",
-    failure_threshold=3,
-    reset_timeout=5
+    name="rabbitmq-connection", failure_threshold=3, reset_timeout=5
 )
 
 socket_circuit_breaker = CircuitBreaker(
@@ -55,7 +56,7 @@ async def lifespan(app: FastAPI):
             exponential_base=2,
             circuit_breaker=mongo_circuit_breaker,
             operation_args=(),
-            operation_kwargs={}  # Any parameters for init_mongo would go here
+            operation_kwargs={},  # Any parameters for init_mongo would go here
         )
         logger.info("MongoDB connection established")
 
@@ -65,7 +66,7 @@ async def lifespan(app: FastAPI):
             max_attempts=5,
             max_delay=1,
             exponential_base=2,
-            circuit_breaker=socket_circuit_breaker
+            circuit_breaker=socket_circuit_breaker,
         )
         logger.info("Socket connector initialized")
 
@@ -75,9 +76,13 @@ async def lifespan(app: FastAPI):
             max_attempts=5,
             max_delay=1,
             exponential_base=2,
-            circuit_breaker=rabbitmq_circuit_breaker
+            circuit_breaker=rabbitmq_circuit_breaker,
         )
         logger.info("RabbitMQ client initialized")
+
+        # Start consuming all RabbitMQ events (chat messages and user events)
+        await rabbitmq_client.consume_all_events()
+        logger.info("RabbitMQ consumer started")
 
         logger.info("Chat service started successfully")
     except Exception as e:
@@ -109,12 +114,21 @@ async def lifespan(app: FastAPI):
 
     logger.info("Chat service shutdown complete")
 
+
 # Create FastAPI application with lifespan manager
 app = FastAPI(
     title="Chat Service API",
     description="Service for managing chat and messaging",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=settings.CORS_CREDENTIALS,
+    allow_methods=settings.CORS_METHODS,
+    allow_headers=settings.CORS_HEADERS,
 )
 
 
@@ -134,22 +148,18 @@ async def health_check():
     # Check the state of the circuit breakers
     status = "healthy"
     circuit_breakers = {
-        "mongo": "closed"
-        if not mongo_circuit_breaker.is_open else "open",
+        "mongo": "closed" if not mongo_circuit_breaker.is_open else "open",
         "rabbitmq": "closed"
-        if not rabbitmq_circuit_breaker.is_open else "open",
-        "socket": "closed"
-        if not socket_circuit_breaker.is_open else "open",
+        if not rabbitmq_circuit_breaker.is_open
+        else "open",
+        "socket": "closed" if not socket_circuit_breaker.is_open else "open",
     }
 
     # If any circuit breaker is open, consider the service degraded
     if any(state == "open" for state in circuit_breakers.values()):
         status = "degraded"
 
-    return {
-        "status": status,
-        "circuit_breakers": circuit_breakers
-    }
+    return {"status": status, "circuit_breakers": circuit_breakers}
 
 
 @app.get("/test-mongo")
@@ -165,7 +175,7 @@ async def test_mongo_connection():
             get_collections,
             max_retries=2,
             delay=0.5,
-            circuit_breaker=mongo_circuit_breaker
+            circuit_breaker=mongo_circuit_breaker,
         )
 
         return {
@@ -174,15 +184,26 @@ async def test_mongo_connection():
             "collections": collections,
             "database": get_db().name,
             "circuit_breaker": "closed"
-            if not mongo_circuit_breaker.is_open else "open",
+            if not mongo_circuit_breaker.is_open
+            else "open",
         }
     except RuntimeError as e:
         logger.error(f"MongoDB not initialized: {e}")
         return {"status": "error", "message": "MongoDB not initialized"}
     except Exception as e:
         logger.error(f"MongoDB connection error: {e}")
-        return {"status": "error",
-                "message": f"Failed to connect to MongoDB: {str(e)}"}
+        return {
+            "status": "error",
+            "message": f"Failed to connect to MongoDB: {str(e)}",
+        }
+
+
+@app.get("/rooms")
+async def list_rooms(user: User = Depends(get_current_user)):
+    """Get all rooms for a user."""
+    db = get_db()
+    rooms = await db.rooms.find({"members": str(user.id)}).to_list(length=100)
+    return rooms
 
 
 @app.get("/rooms/{room_id}/messages", response_model=List[dict])
@@ -194,15 +215,21 @@ async def get_room_messages(
 ):
     """Get messages for a specific room."""
     db = get_db()
-    if not db:
+    if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
     room = await db.rooms.find_one({"_id": room_id})
-    if not room or user_id not in room.get("members", []):
-        raise HTTPException(
-            status_code=404, detail="Room not found or user not a member")
+    # TODO: Check if user is a member of the room
 
-    messages = await db.messages.find(
-        {"room_id": room_id}
-    ).skip(skip).limit(limit).to_list(length=limit)
+    if not room:
+        raise HTTPException(
+            status_code=404, detail="Room not found or user not a member"
+        )
+
+    messages = (
+        await db.messages.find({"room_id": room_id})
+        .skip(skip)
+        .limit(limit)
+        .to_list(length=limit)
+    )
 
     return messages

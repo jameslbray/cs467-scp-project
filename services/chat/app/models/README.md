@@ -1,0 +1,1 @@
+this folder holds MongoDB document models from Pydantic for DB serialization

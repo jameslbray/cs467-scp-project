@@ -179,6 +179,7 @@ class UserRabbitMQClient:
                     user_id
                 )
                 response = await self.handle_logout(body, db)
+
             elif routing_key == "auth.validate":
                 logger.info("[RabbitMQ] Processing token validation request")
                 response = await self.handle_validate(body, db)
@@ -207,7 +208,7 @@ class UserRabbitMQClient:
             )
             .first()
         )
-        if db_user:
+        if db_user is not None:
             return {
                 "error": True,
                 "message": "Email or Username already registered"
@@ -223,6 +224,9 @@ class UserRabbitMQClient:
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
+
+
+
 
         return {
             "error": False,

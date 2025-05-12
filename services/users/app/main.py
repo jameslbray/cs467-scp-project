@@ -36,10 +36,10 @@ from .schemas import Token, User, UserCreate
 # Configure logging
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stdout,
-    force=True
+    force=True,
 )
 
 # Get logger for this file
@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
     await rabbitmq_client.close()
     logger.info("RabbitMQ connection closed")
 
+
 # Create FastAPI application with lifespan handler
 app = FastAPI(
     title="User Service API",
@@ -83,8 +84,9 @@ app = FastAPI(
 app.add_middleware(SlowAPIMiddleware)
 app.state.limiter = limiter
 
-app.add_exception_handler(RateLimitExceeded, cast(
-    ExceptionHandler, _rate_limit_exceeded_handler))
+app.add_exception_handler(
+    RateLimitExceeded, cast(ExceptionHandler, _rate_limit_exceeded_handler)
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -103,23 +105,19 @@ rabbitmq_client = UserRabbitMQClient(settings=settings)
 
 
 @app.post("/register", response_model=User)
-async def register_user(
-    user: UserCreate,
-    db: Session = Depends(get_db)
-):
+async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     # Check if user already exists
     db_user = (
         db.query(UserModel)
         .filter(
-            (UserModel.email == user.email) |
-            (UserModel.username == user.username)
+            (UserModel.email == user.email)
+            | (UserModel.username == user.username)
         )
         .first()
     )
-    if db_user:
+    if db_user is not None:
         raise HTTPException(
-            status_code=400,
-            detail="Email or Username already registered"
+            status_code=400, detail="Email or Username already registered"
         )
 
     # Validate password strength
@@ -129,7 +127,7 @@ async def register_user(
             detail=(
                 "Password must be at least 8 characters long and contain "
                 "uppercase, lowercase, number, and special character"
-            )
+            ),
         )
 
     # Create new user
@@ -137,7 +135,7 @@ async def register_user(
     db_user = UserModel(
         email=user.email,
         username=user.username,
-        hashed_password=hashed_password
+        hashed_password=hashed_password,
     )
     db.add(db_user)
     db.commit()
@@ -147,11 +145,27 @@ async def register_user(
     await rabbitmq_client.publish_message(
         exchange="auth",
         routing_key="user.registered",
-        message=json.dumps({
-            "user_id": str(db_user.id),
-            "username": db_user.username,
-            "email": db_user.email
-        })
+        message=json.dumps(
+            {
+                "user_id": str(db_user.id),
+                "username": db_user.username,
+                "email": db_user.email,
+            }
+        ),
+    )
+
+    event = {
+        "event": "add_user_to_room",
+        "user_id": str(db_user.id),
+        "room_id": "7dfcec7e-cb14-4b38-8529-f93dc69e9ed2",
+    }
+
+    logger.info(f"Publishing event: {event}")
+
+    await rabbitmq_client.publish_message(
+        exchange="user_events",
+        routing_key="user.add_to_room",
+        message=json.dumps(event),
     )
 
     return db_user
@@ -171,8 +185,7 @@ async def login_for_access_token(
         .first()
     )
     if not user or not security.verify_password(
-        form_data.password,
-        str(user.hashed_password)
+        form_data.password, str(user.hashed_password)
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -183,30 +196,30 @@ async def login_for_access_token(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     access_token = security.create_access_token(
-        user_id=user.id,
-        expires_delta=access_token_expires
+        user_id=user.id, expires_delta=access_token_expires
     )
 
     # Publish user login event
     await rabbitmq_client.publish_message(
         exchange="auth",
         routing_key="user.login",
-        message=json.dumps({
-            "user_id": str(user.id),
-            "username": user.username
-        })
+        message=json.dumps(
+            {"user_id": str(user.id), "username": user.username}
+        ),
     )
 
     # Publish presence update
     await rabbitmq_client.publish_message(
         exchange="user_events",
         routing_key=f"status.{user.id}",
-        message=json.dumps({
-            "type": "status_update",
-            "user_id": str(user.id),
-            "status": "online",
-            "last_changed": datetime.now().timestamp()
-        })
+        message=json.dumps(
+            {
+                "type": "status_update",
+                "user_id": str(user.id),
+                "status": "online",
+                "last_changed": datetime.now().timestamp(),
+            }
+        ),
     )
 
     return access_token
@@ -214,7 +227,7 @@ async def login_for_access_token(
 
 @app.get("/users/me", response_model=User)
 async def read_users_me(
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user),
 ):
     return current_user
 
@@ -232,8 +245,8 @@ async def root():
             "login": "/token",
             "logout": "/logout",
             "me": "/users/me",
-            "health": "/health"
-        }
+            "health": "/health",
+        },
     }
 
 
@@ -271,7 +284,7 @@ async def logout(
         token=token,
         db=db,
         user_id=current_user.id,
-        username=current_user.username
+        username=current_user.username,
     )
 
     # Schedule cleanup of expired tokens
@@ -281,22 +294,26 @@ async def logout(
     await rabbitmq_client.publish_message(
         exchange="auth",
         routing_key="user.logout",
-        message=json.dumps({
-            "user_id": str(current_user.id),
-            "username": current_user.username
-        })
+        message=json.dumps(
+            {
+                "user_id": str(current_user.id),
+                "username": current_user.username,
+            }
+        ),
     )
 
     # Publish presence update
     await rabbitmq_client.publish_message(
         exchange="user_events",
         routing_key=f"status.{current_user.id}",
-        message=json.dumps({
-            "type": "status_update",
-            "user_id": str(current_user.id),
-            "status": "offline",
-            "last_changed": datetime.now().timestamp()
-        })
+        message=json.dumps(
+            {
+                "type": "status_update",
+                "user_id": str(current_user.id),
+                "status": "offline",
+                "last_changed": datetime.now().timestamp(),
+            }
+        ),
     )
 
     return {"message": "Successfully logged out"}

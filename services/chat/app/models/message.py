@@ -7,8 +7,7 @@ class Message(BaseModel):
 
     id: str = Field(..., description="Message ID")
     content: str = Field(..., description="Content of the message")
-    chat_id: str = Field(...,
-                         description="ID of the chat this message belongs to")
+    room_id: str = Field(..., description="ID of the room this message belongs to")
     sender_id: str = Field(...,
                            description="ID of the user who sent the message")
     created_at: datetime = Field(..., description="Creation timestamp")

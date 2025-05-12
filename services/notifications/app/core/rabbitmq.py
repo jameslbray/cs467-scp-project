@@ -197,7 +197,7 @@ class NotificationRabbitMQClient:
             )
             .first()
         )
-        if db_user:
+        if db_user is not None:
             return {
                 "error": True,
                 "message": "Email or Username already registered"

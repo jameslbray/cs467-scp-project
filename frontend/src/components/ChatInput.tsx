@@ -1,51 +1,64 @@
-import React, { useState } from 'react';
-import { Socket } from 'socket.io-client';
+import type React from "react";
+import { useState } from "react";
+import { getSocket } from "../socket/socket";
 
-interface ChatInputProps {
-  roomId: string;
-  senderId: string;
-  recipientIds: string[];
-  socket: Socket;
+export interface ChatMessageData {
+	sender_id: string;
+	room_id: string;
+	content: string;
+	timestamp: string;
+	has_emoji: boolean;
 }
 
-const ChatInput: React.FC<ChatInputProps> = ({ roomId, senderId, recipientIds, socket }) => {
-  const [message, setMessage] = useState('');
+interface ChatInputProps {
+	roomId: string;
+	senderId: string;
+	onSend?: (message: ChatMessageData) => void;
+}
 
-  const handleSend = () => {
-    if (message.trim() === '') return;
+const ChatInput: React.FC<ChatInputProps> = ({ roomId, senderId, onSend }) => {
+	const [message, setMessage] = useState("");
+	const token = localStorage.getItem("auth_token");
+	if (!token) {
+		throw new Error("No auth token found");
+	}
+	const socket = getSocket(token);
 
-    const messageData = {
-      sender_id: senderId,
-      room_id: roomId,
-      recipient_ids: recipientIds,
-      content: message,
-      timestamp: new Date().toISOString(),
-      has_emoji: false 
-    };
+	const handleSend = () => {
+		if (message.trim() === "") return;
 
-    console.log('Emitting send_message:', messageData);
-    socket.emit('send_message', messageData);
-    setMessage('');
-  };
+		const messageData: ChatMessageData = {
+			sender_id: senderId,
+			room_id: roomId,
+			content: message,
+			timestamp: new Date().toISOString(),
+			has_emoji: false,
+		};
 
-  return (
-    <div className="flex gap-2 items-center mt-4">
-      <input
-        type="text"
-        placeholder="Type a message..."
-        className="flex-grow border px-4 py-2 rounded shadow"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-      />
-      <button
-        onClick={handleSend}
-        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-      >
-        Send
-      </button>
-    </div>
-  );
+		socket.emit("chat_message", messageData);
+		if (onSend) onSend(messageData);
+		setMessage("");
+	};
+
+	return (
+		<div className="flex gap-2 items-center mt-4">
+			<input
+				type="text"
+				placeholder="Type a message..."
+				className="flex-grow border px-4 py-2 rounded shadow"
+				value={message}
+				onChange={(e) => setMessage(e.target.value)}
+				onKeyDown={(e) => e.key === "Enter" && handleSend()}
+			/>
+			<button
+				type="button"
+				onClick={handleSend}
+				className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+			>
+				Send
+			</button>
+		</div>
+	);
 };
 
 export default ChatInput;

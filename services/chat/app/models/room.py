@@ -1,26 +1,33 @@
 from datetime import datetime
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
 class Room(BaseModel):
-    """Room domain model"""
-
-    id: str = Field(..., description="Room ID")
-    display_name: str = Field(..., description="Name of the room")
+    id: str = Field(..., alias="_id", description="Room ID")
+    display_name: str = Field(
+        ..., alias="name", description="Name of the room"
+    )
     description: Optional[str] = Field(
-        None, description="Description of the room")
+        None, description="Description of the room"
+    )
     is_private: bool = Field(False, description="Whether the room is private")
     max_participants: Optional[int] = Field(
         None, description="Maximum number of participants"
     )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    created_by: str = Field(...,
-                            description="ID of the user who created the room")
+    created_by: Optional[str] = Field(
+        None, description="ID of the user who created the room"
+    )
     participant_ids: List[str] = Field(
         default_factory=list, description="IDs of participants"
     )
+
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
 
     def add_participant(self, user_id: str) -> bool:
         """Add a participant to the room"""
