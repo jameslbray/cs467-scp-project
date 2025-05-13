@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -17,6 +17,7 @@ async def init_mongodb():
     mongo_host = os.getenv("MONGO_HOST", "mongo_db")
     mongo_port = os.getenv("MONGO_PORT", "27017")
     db_name = os.getenv("MONGO_DB_NAME", "chat_db")
+    now = datetime.now(timezone.utc).isoformat()
 
     # Build connection string with authentication
     mongo_uri = f"mongodb://{mongo_user}:{mongo_password}@{mongo_host}:{mongo_port}/{db_name}?authSource=admin"
@@ -51,7 +52,6 @@ async def init_mongodb():
         # Create a default General room if it doesn't exist
         general_room = await db.rooms.find_one({"name": "General"})
         if not general_room:
-            now = datetime.utcnow()
             room_id = str(uuid.uuid4())
             room_doc = {
                 "_id": room_id,
@@ -71,35 +71,33 @@ async def init_mongodb():
                 f"General room already exists with ID: {general_room.get('_id')}"
             )
 
-        # Add a test message to the messages collection
+        # Add a test message to the messages collection only if it is empty
         general_room = await db.rooms.find_one({"name": "General"})
         if general_room:
             room_id = general_room["_id"]
-            now = datetime.utcnow()
-            test_messages = [
-                {
-                    "_id": str(uuid.uuid4()),
-                    "room_id": room_id,
-                    "sender_id": str(uuid.uuid4()),  # Example user ID
-                    "content": "Hello, this is a test message from the database initialization!",
-                    "created_at": now,
-                    "updated_at": now,
-                    "is_edited": False,
-                },
-                {
-                    "_id": str(uuid.uuid4()),
-                    "room_id": room_id,
-                    "sender_id": str(uuid.uuid4()),
-                    "content": "Welcome to the chat system!",
-                    "created_at": now,
-                    "updated_at": now,
-                    "is_edited": False,
-                },
-            ]
-            message_count = await db.messages.count_documents(
-                {"room_id": room_id}
-            )
-            if message_count < 5:
+            message_count = await db.messages.count_documents({})
+            if message_count == 0:
+                now = datetime.now(timezone.utc).isoformat()
+                test_messages = [
+                    {
+                        "_id": str(uuid.uuid4()),
+                        "room_id": room_id,
+                        "sender_id": str(uuid.uuid4()),  # Example user ID
+                        "content": "Hello, this is a test message from the database initialization!",
+                        "created_at": now,
+                        "updated_at": now,
+                        "is_edited": False,
+                    },
+                    {
+                        "_id": str(uuid.uuid4()),
+                        "room_id": room_id,
+                        "sender_id": str(uuid.uuid4()),
+                        "content": "Welcome to the chat system!",
+                        "created_at": now,
+                        "updated_at": now,
+                        "is_edited": False,
+                    },
+                ]
                 await db.messages.insert_many(test_messages)
                 logger.info("Added sample messages to the General room")
             else:

@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Never, Optional
 
 import socketio
@@ -50,6 +50,7 @@ class SocketServer:
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
         self.sio.on("presence_update", self._on_presence_update)
+
         # TODO: implement chat typing and chat read receipts functionality
         self.sio.on("chat_typing", self._on_chat_typing)
         self.sio.on("chat_read", self._on_chat_read)
@@ -158,7 +159,7 @@ class SocketServer:
     ) -> Never:
         """Publish presence update to RabbitMQ."""
         await self.rabbitmq.publish_message(
-            exchange="user_events",
+            exchange="user",
             routing_key=f"status.{user_id}",
             message=json.dumps(
                 {
@@ -185,20 +186,20 @@ class SocketServer:
             )
             return
 
-        # Create structured chat event
-        message_event = create_event(
-            EventType.CHAT_MESSAGE,
-            "socket_io",
-            sender_id=user_id,
-            recipient_id=data.get("recipient_id", ""),
-            message_id=data.get("message_id", ""),
-            content=data.get("content", ""),
-            metadata=data.get("metadata", {}),
-        )
+        # Create chat message
+        chat_message = {
+            "id": data.get("id", ""),
+            "sender_id": user_id,
+            "room_id": data.get("room_id", ""),
+            "content": data.get("content", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "is_edited": False,
+        }
 
         room = data.get("room", "general")
         await self.emit_to_room(
-            room, EventType.CHAT_MESSAGE.value, dict(message_event)
+            room, EventType.CHAT_MESSAGE.value, dict(chat_message)
         )
 
         try:
@@ -206,13 +207,14 @@ class SocketServer:
                 lambda: self.rabbitmq.publish_message(
                     exchange="chat",
                     routing_key=room,
-                    message=json.dumps(message_event),
+                    message=json.dumps(chat_message),
                 ),
                 max_attempts=3,
                 circuit_breaker=self.rabbitmq_cb,
             )
-            # 3. Acknowledge message receipt to sender
-            await self.sio.emit("message_received", message_event, room=sid)
+
+            await self.sio.emit("message_received", chat_message, room=sid)
+            logger.info(f"Chat message published to {room}")
         except Exception as e:
             logger.error(f"Failed to publish chat message: {e}")
             # Notify sender of the error
@@ -245,7 +247,7 @@ class SocketServer:
         try:
             await with_retry(
                 lambda: self.rabbitmq.publish_message(
-                    exchange="user_events",
+                    exchange="user",
                     routing_key=f"status.{user_id}",
                     message=json.dumps(presence_event),
                 ),

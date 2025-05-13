@@ -144,4 +144,9 @@ async def with_retry(
     if last_exception:
         raise last_exception
 
+    if circuit_breaker and circuit_breaker.is_open():
+        raise RuntimeError(
+            f"Circuit breaker for {circuit_breaker.name} remained open for all retry attempts."
+        )
+
     raise RuntimeError("Unreachable code - this should never happen")

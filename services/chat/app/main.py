@@ -5,6 +5,7 @@ from typing import List
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from services.chat.app.schemas.message import MessageResponse
 from services.db_init.app.models import User
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.users.app.core.security import get_current_user
@@ -12,6 +13,7 @@ from services.users.app.core.security import get_current_user
 from .core.config import get_settings
 from .core.rabbitmq import ChatRabbitMQClient
 from .core.socket_connector import SocketManager
+from .db.chat_repository import ChatRepository
 from .db.mongo import close_mongo_connection, get_db, init_mongo
 
 settings = get_settings()
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Initialize services
 socket_connector = SocketManager()
 rabbitmq_client = ChatRabbitMQClient()
-
+repo = ChatRepository()
 # Circuit breaker configurations
 mongo_circuit_breaker = CircuitBreaker(
     name="mongo-connection", failure_threshold=3, reset_timeout=5
@@ -130,6 +132,7 @@ app.add_middleware(
     allow_methods=settings.CORS_METHODS,
     allow_headers=settings.CORS_HEADERS,
 )
+logger.info(f"CORS settings: {settings.CORS_ORIGINS}")
 
 
 @app.get("/")
@@ -201,12 +204,11 @@ async def test_mongo_connection():
 @app.get("/rooms")
 async def list_rooms(user: User = Depends(get_current_user)):
     """Get all rooms for a user."""
-    db = get_db()
-    rooms = await db.rooms.find({"members": str(user.id)}).to_list(length=100)
+    rooms = await repo.get_user_rooms(str(user.id))
     return rooms
 
 
-@app.get("/rooms/{room_id}/messages", response_model=List[dict])
+@app.get("/rooms/{room_id}/messages", response_model=List[MessageResponse])
 async def get_room_messages(
     room_id: str,
     limit: int = Query(default=50, ge=1, le=100),
@@ -214,10 +216,7 @@ async def get_room_messages(
     user_id: str = Depends(get_current_user),
 ):
     """Get messages for a specific room."""
-    db = get_db()
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not initialized")
-    room = await db.rooms.find_one({"_id": room_id})
+    room = await repo.get_room_by_id(room_id)
     # TODO: Check if user is a member of the room
 
     if not room:
@@ -225,11 +224,6 @@ async def get_room_messages(
             status_code=404, detail="Room not found or user not a member"
         )
 
-    messages = (
-        await db.messages.find({"room_id": room_id})
-        .skip(skip)
-        .limit(limit)
-        .to_list(length=limit)
-    )
+    messages = await repo.get_messages(room_id, skip, limit)
 
     return messages

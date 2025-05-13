@@ -19,6 +19,7 @@ logger = logging.getLogger("notifications.rabbitmq")
 
 # TODO: Figure this out
 
+
 class NotificationRabbitMQClient:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -29,12 +30,11 @@ class NotificationRabbitMQClient:
             RABBITMQ_PORT=settings.RABBITMQ_PORT,
             RABBITMQ_USER=settings.RABBITMQ_USER,
             RABBITMQ_PASSWORD=settings.RABBITMQ_PASSWORD,
-            RABBITMQ_VHOST=settings.RABBITMQ_VHOST
+            RABBITMQ_VHOST=settings.RABBITMQ_VHOST,
         )
         self.rabbitmq_client = RabbitMQClient(rabbitmq_settings)
         logger.info(
-            "[RabbitMQ] Client initialized with URL: %s",
-            settings.RABBITMQ_URL
+            "[RabbitMQ] Client initialized with URL: %s", settings.RABBITMQ_URL
         )
 
     async def connect(self):
@@ -62,7 +62,7 @@ class NotificationRabbitMQClient:
             "auth.register",
             "auth.login",
             "auth.logout",
-            "auth.validate"
+            "auth.validate",
         ]
         for key in routing_keys:
             await self.rabbitmq_client.bind_queue("auth_queue", "auth", key)
@@ -74,6 +74,7 @@ class NotificationRabbitMQClient:
 
     async def consume_messages(self):
         """Start consuming messages from the auth queue"""
+
         async def message_handler(message):
             try:
                 # Parse message
@@ -81,10 +82,9 @@ class NotificationRabbitMQClient:
                 routing_key = message.routing_key
 
                 # Process the message
-                response = await self.process_auth_message({
-                    "routing_key": routing_key,
-                    "body": body
-                })
+                response = await self.process_auth_message(
+                    {"routing_key": routing_key, "body": body}
+                )
 
                 # Acknowledge message
                 await message.ack()
@@ -94,7 +94,7 @@ class NotificationRabbitMQClient:
                     await self.rabbitmq_client.publish_message(
                         exchange="",
                         routing_key=message.reply_to,
-                        message=json.dumps(response)
+                        message=json.dumps(response),
                     )
 
             except Exception as e:
@@ -104,22 +104,16 @@ class NotificationRabbitMQClient:
 
         # Start consuming messages
         await self.rabbitmq_client.consume(
-            queue_name="auth_queue",
-            callback=message_handler
+            queue_name="auth_queue", callback=message_handler
         )
 
     async def publish_message(
-        self,
-        exchange: str,
-        routing_key: str,
-        message: str
+        self, exchange: str, routing_key: str, message: str
     ) -> None:
         """Publish a message to RabbitMQ"""
         try:
             await self.rabbitmq_client.publish_message(
-                exchange,
-                routing_key,
-                message
+                exchange, routing_key, message
             )
             logger.info("[RabbitMQ] Message published successfully")
         except Exception as e:
@@ -127,8 +121,7 @@ class NotificationRabbitMQClient:
             raise
 
     async def process_auth_message(
-        self,
-        message: Dict[str, Any]
+        self, message: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """Process incoming auth messages"""
         try:
@@ -136,12 +129,10 @@ class NotificationRabbitMQClient:
             body = cast(Dict[str, Any], message.get("body", {}))
 
             logger.info(
-                "[RabbitMQ] Received message with routing key: %s",
-                routing_key
+                "[RabbitMQ] Received message with routing key: %s", routing_key
             )
             logger.debug(
-                "[RabbitMQ] Message body: %s",
-                json.dumps(body, indent=2)
+                "[RabbitMQ] Message body: %s", json.dumps(body, indent=2)
             )
 
             response = None
@@ -149,24 +140,24 @@ class NotificationRabbitMQClient:
 
             # Log the type of request being processed
             if routing_key == "auth.register":
-                username = body.get('username', 'unknown')
+                username = body.get("username", "unknown")
                 logger.info(
                     "[RabbitMQ] Processing registration request for user: %s",
-                    username
+                    username,
                 )
                 response = await self.handle_register(body, db)
             elif routing_key == "auth.login":
-                username = body.get('username', 'unknown')
+                username = body.get("username", "unknown")
                 logger.info(
                     "[RabbitMQ] Processing login request for user: %s",
-                    username
+                    username,
                 )
                 response = await self.handle_login(body, db)
             elif routing_key == "auth.logout":
-                user_id = body.get('user_id', 'unknown')
+                user_id = body.get("user_id", "unknown")
                 logger.info(
                     "[RabbitMQ] Processing logout request for user ID: %s",
-                    user_id
+                    user_id,
                 )
                 response = await self.handle_logout(body, db)
             elif routing_key == "auth.validate":
@@ -177,30 +168,25 @@ class NotificationRabbitMQClient:
 
         except Exception as e:
             logger.error("[RabbitMQ] Error processing message: %s", str(e))
-            return {
-                "error": True,
-                "message": str(e)
-            }
+            return {"error": True, "message": str(e)}
 
     async def handle_register(
-        self,
-        data: Dict[str, Any],
-        db: Session
+        self, data: Dict[str, Any], db: Session
     ) -> Dict[str, Any]:
         """Handle user registration"""
         # Check if user exists
         db_user = (
             db.query(UserModel)
             .filter(
-                (UserModel.email == data["email"]) |
-                (UserModel.username == data["username"])
+                (UserModel.email == data["email"])
+                | (UserModel.username == data["username"])
             )
             .first()
         )
         if db_user is not None:
             return {
                 "error": True,
-                "message": "Email or Username already registered"
+                "message": "Email or Username already registered",
             }
 
         # Create user
@@ -208,7 +194,7 @@ class NotificationRabbitMQClient:
         db_user = UserModel(
             email=data["email"],
             username=data["username"],
-            hashed_password=hashed_password
+            hashed_password=hashed_password,
         )
         db.add(db_user)
         db.commit()
@@ -216,21 +202,16 @@ class NotificationRabbitMQClient:
 
         return {
             "error": False,
-            "user": User.model_validate(db_user).model_dump()
+            "user": User.model_validate(db_user).model_dump(),
         }
 
     async def handle_validate(
-        self,
-        data: Dict[str, Any],
-        db: Session
+        self, data: Dict[str, Any], db: Session
     ) -> Dict[str, Any]:
         """Handle token validation"""
         token = data.get("token")
         if not token:
-            return {
-                "error": True,
-                "message": "Token not provided"
-            }
+            return {"error": True, "message": "Token not provided"}
 
         try:
             token_data = security.get_token_data(token, db)
@@ -241,21 +222,15 @@ class NotificationRabbitMQClient:
             )
 
             if not user:
-                return {
-                    "error": True,
-                    "message": "User not found"
-                }
+                return {"error": True, "message": "User not found"}
 
             return {
                 "error": False,
-                "user": User.model_validate(user).model_dump()
+                "user": User.model_validate(user).model_dump(),
             }
 
         except Exception as e:
-            return {
-                "error": True,
-                "message": str(e)
-            }
+            return {"error": True, "message": str(e)}
 
     async def close(self):
         """Close RabbitMQ connection"""

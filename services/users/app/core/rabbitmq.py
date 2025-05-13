@@ -47,10 +47,10 @@ class UserRabbitMQClient:
         await self.rabbitmq_client.declare_exchange("auth", "topic")
         logger.info("[RabbitMQ] Auth exchange declared")
 
-        # Declare user_events exchange for presence updates
-        logger.info("[RabbitMQ] Declaring user_events exchange...")
-        await self.rabbitmq_client.declare_exchange("user_events", "topic")
-        logger.info("[RabbitMQ] User events exchange declared")
+        # Declare user exchange for presence updates
+        logger.info("[RabbitMQ] Declaring user exchange...")
+        await self.rabbitmq_client.declare_exchange("user", "topic")
+        logger.info("[RabbitMQ] User exchange declared")
 
         # Declare auth queue
         logger.info("[RabbitMQ] Declaring auth queue...")

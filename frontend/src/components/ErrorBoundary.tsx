@@ -1,4 +1,5 @@
-import React, { ReactNode, ErrorInfo } from 'react';
+import React from "react";
+import type { ReactNode, ErrorInfo } from "react";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -25,12 +26,16 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render(): ReactNode {
-    if (this.state.hasError) {
-      // Render any custom fallback UI
-      return <h1>Something went wrong. Check the console logs for any errors</h1>;
-    }
-    // Render the children components
-    return this.props.children;
+		if (this.state.hasError) {
+			// Render any custom fallback UI
+			return (
+				<h1>
+					Something went wrong. Check the console logs for any errors
+				</h1>
+			);
+		}
+		// Render the children components
+		return this.props.children;
   }
 }
 

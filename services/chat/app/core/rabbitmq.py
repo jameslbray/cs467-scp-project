@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 class ChatRabbitMQClient:
     def __init__(self):
         self.client = RabbitMQClient()
-        self.exchange_name = "chat_exchange"
+        self.exchange_name = "chat"
         self.message_queue = "chat_messages"
         self.notification_queue = "chat_notifications"
-        self.user_events_exchange = "user_events"
-        self.user_events_queue = "user_events"
+        self.user_events_exchange = "user"
+        self.user_events_queue = "user"
         self.user_add_to_room_routing_key = "user.add_to_room"
 
     async def initialize(self):
@@ -28,7 +28,7 @@ class ChatRabbitMQClient:
             await self.client.connect()
             # Declare the exchanges
             await self.client.declare_exchange(
-                self.exchange_name, exchange_type="direct"
+                self.exchange_name, exchange_type="topic"
             )
             await self.client.declare_exchange(
                 self.user_events_exchange, exchange_type="topic"
@@ -37,6 +37,12 @@ class ChatRabbitMQClient:
             await self.client.declare_queue(self.message_queue)
             await self.client.declare_queue(self.notification_queue)
             await self.client.declare_queue(self.user_events_queue)
+            # Bind the chat_messages queue to the chat exchange with a wildcard routing key
+            await self.client.bind_queue(
+                self.message_queue,
+                self.exchange_name,
+                "#",
+            )
             # Bind the user_events queue to the exchange with the routing key
             await self.client.bind_queue(
                 self.user_events_queue,
@@ -119,6 +125,9 @@ class ChatRabbitMQClient:
                         created_at=timestamp,
                         updated_at=timestamp,
                         is_edited=body.get("is_edited", False),
+                    )
+                    logger.info(
+                        f"Attempting to insert message into DB: {msg.model_dump(by_alias=True)}"
                     )
                     await db.messages.insert_one(msg.model_dump(by_alias=True))
                     logger.info(

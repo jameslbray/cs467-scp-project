@@ -163,7 +163,7 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     logger.info(f"Publishing event: {event}")
 
     await rabbitmq_client.publish_message(
-        exchange="user_events",
+        exchange="user",
         routing_key="user.add_to_room",
         message=json.dumps(event),
     )
@@ -210,7 +210,7 @@ async def login_for_access_token(
 
     # Publish presence update
     await rabbitmq_client.publish_message(
-        exchange="user_events",
+        exchange="user",
         routing_key=f"status.{user.id}",
         message=json.dumps(
             {
@@ -304,7 +304,7 @@ async def logout(
 
     # Publish presence update
     await rabbitmq_client.publish_message(
-        exchange="user_events",
+        exchange="user",
         routing_key=f"status.{current_user.id}",
         message=json.dumps(
             {

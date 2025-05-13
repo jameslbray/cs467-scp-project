@@ -1,15 +1,8 @@
 import { useEffect, useState } from "react";
-
-export interface Message {
-	_id: string;
-	room_id: string;
-	sender_id: string;
-	content: string;
-	timestamp: string;
-}
+import type { ChatMessageType } from "../types/chatMessageType";
 
 export function useFetchMessages(roomId: string, limit = 50) {
-	const [messages, setMessages] = useState<Message[]>([]);
+	const [messages, setMessages] = useState<ChatMessageType[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 

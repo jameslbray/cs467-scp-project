@@ -1,19 +1,13 @@
 import type React from "react";
 import { useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { getSocket } from "../socket/socket";
-
-export interface ChatMessageData {
-	sender_id: string;
-	room_id: string;
-	content: string;
-	timestamp: string;
-	has_emoji: boolean;
-}
+import type { ChatMessageType } from "../types/chatMessageType";
 
 interface ChatInputProps {
 	roomId: string;
 	senderId: string;
-	onSend?: (message: ChatMessageData) => void;
+	onSend?: (message: ChatMessageType) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({ roomId, senderId, onSend }) => {
@@ -27,11 +21,14 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, senderId, onSend }) => {
 	const handleSend = () => {
 		if (message.trim() === "") return;
 
-		const messageData: ChatMessageData = {
+		const messageData: ChatMessageType = {
+			id: uuidv4(),
 			sender_id: senderId,
 			room_id: roomId,
 			content: message,
-			timestamp: new Date().toISOString(),
+			created_at: new Date().toISOString(),
+			is_edited: false,
+			updated_at: new Date().toISOString(),
 			has_emoji: false,
 		};
 

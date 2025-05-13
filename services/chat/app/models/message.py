@@ -1,19 +1,25 @@
 from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
 class Message(BaseModel):
     """Message domain model"""
 
-    id: str = Field(..., description="Message ID")
-    content: str = Field(..., description="Content of the message")
-    room_id: str = Field(..., description="ID of the room this message belongs to")
-    sender_id: str = Field(...,
-                           description="ID of the user who sent the message")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
-    is_edited: bool = Field(
-        False, description="Whether the message has been edited")
+    id: str = Field(..., alias="_id")
+    room_id: str
+    sender_id: str
+    content: str
+    created_at: datetime
+    updated_at: datetime
+    is_edited: bool = False
+
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat(),
+        }
 
     def edit(self, new_content: str) -> None:
         """Edit the message content"""

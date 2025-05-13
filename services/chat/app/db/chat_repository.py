@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+from ..models.message import Message
 from ..models.room import Room
 from ..schemas.room import RoomCreate
 from .mongo import get_db
@@ -195,3 +196,32 @@ class ChatRepository(Repository[Room, RoomCreate, RoomCreate]):
             # Room not found or user already present
             return None
         return await self.get_room_by_id(room_id)
+
+    async def get_messages(
+        self, room_id: str, skip: int, limit: int
+    ) -> List[Message]:
+        """
+        Get messages for a specific room
+
+        Args:
+            room_id: The ID of the room
+            skip: The number of messages to skip
+            limit: The number of messages to return
+
+        Returns:
+            A list of messages
+        """
+        db = get_db()
+        if db is None:
+            raise RuntimeError("Database not initialized")
+
+        messages = []
+        cursor = (
+            db.messages.find({"room_id": room_id})
+            .skip(skip)
+            .limit(limit)
+            .sort("created_at", 1)
+        )
+        async for message_data in cursor:
+            messages.append(Message(**message_data))
+        return messages
