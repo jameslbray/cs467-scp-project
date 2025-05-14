@@ -25,4 +25,4 @@ ENV PORT=$PORT
 EXPOSE $PORT
 
 # Command to run the application
-CMD ["sh", "-c", "gunicorn -c gunicorn_config.py app.main:app --bind 0.0.0.0:${PORT} --worker-class uvicorn.workers.UvicornWorker"]
+CMD ["sh", "-c", "gunicorn -c services/notifications/gunicorn_config.py services.notifications.app.main:app --bind 0.0.0.0:${PORT} --worker-class uvicorn.workers.UvicornWorker"]

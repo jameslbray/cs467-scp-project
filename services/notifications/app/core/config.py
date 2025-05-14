@@ -125,14 +125,19 @@ class Settings(BaseSettings):
     )
 
     # Database settings
-    MONGO_USER: str = Field(default="mongodb")
-    MONGO_PASSWORD: str = Field(default="mongodb")
-    MONGO_HOST: str = Field(default="mongodb")
+    MONGO_USER: str = Field(default="admin")
+    MONGO_PASSWORD: str = Field(default="password")
+    MONGO_HOST: str = Field(default="mongo_db")
     MONGO_PORT: str = Field(default="27017")
-    MONGO_DB: str = Field(default="sycolibre")
+    MONGO_DB: str = Field(default="chat_db")
 
     RABBITMQ_URL: str = Field(
         default="amqp://guest:guest@rabbitmq:5672/")
+
+    @property
+    def mongo_uri(self) -> str:
+        """Generate MongoDB connection string."""
+        return f"mongodb://{self.MONGO_USER}:{self.MONGO_PASSWORD}@{self.MONGO_HOST}:{self.MONGO_PORT}/{self.MONGO_DB}?authSource=admin"
 
     @field_validator("ENV")
     @classmethod
