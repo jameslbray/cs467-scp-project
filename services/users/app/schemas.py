@@ -6,16 +6,16 @@ from uuid import UUID  # Import UUID type
 from pydantic import BaseModel, EmailStr, field_validator
 
 
-class UserBase(BaseModel):
+class User(BaseModel):
     username: str
     email: EmailStr
 
 
-class UserCreate(UserBase):
+class UserCreate(User):
     password: str
 
 
-class User(UserBase):
+class User(User):
     id: UUID
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

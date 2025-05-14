@@ -1,5 +1,10 @@
 // Export theme context
-export { useTheme, ThemeProvider } from './theme';
+export { ThemeProvider, useTheme } from "./theme";
 
 // Export auth context
-export { useAuth, AuthProvider } from './auth';
+export { AuthProvider } from "./auth";
+export { useAuth } from "./auth/authContext";
+
+// Export socket context
+export { SocketProvider } from "./socket";
+export { useSocketContext } from "./socket/socketContext";

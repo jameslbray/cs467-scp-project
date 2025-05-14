@@ -28,6 +28,7 @@ class RoomResponse(RoomBase):
     updated_at: datetime = Field(..., description="Last update timestamp")
     created_by: str = Field(..., description="ID of the user who created the room")
     participant_count: int = Field(..., description="Number of participants")
+    participant_ids: List[str] = Field(..., description="IDs of participants")
 
     class Config:
         orm_mode = True

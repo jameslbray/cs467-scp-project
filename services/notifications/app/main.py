@@ -3,27 +3,11 @@ Main application module for the notification service.
 """
 
 import logging
-import os
 import sys
-from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import (
-    BackgroundTasks,
-    Depends,
-    FastAPI,
-    HTTPException,
-    Request,
-    status,
-)
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordRequestForm
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from slowapi.util import get_remote_address
 
 from .core.notification_manager import NotificationManager
 from .core.config import get_settings
@@ -69,6 +53,8 @@ notification_manager = NotificationManager(
 )
 
 # Define the lifespan handler
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
@@ -79,7 +65,6 @@ async def lifespan(app: FastAPI):
     # await rabbitmq_client.connect()
     # logger.info("RabbitMQ connection established")
     logger.info("Notification service started successfully")
-
 
     yield  # This is where FastAPI serves requests
 
@@ -97,7 +82,7 @@ app = FastAPI(
     description="Service for managing notifications",
     version="0.1.0",
     lifespan=lifespan,
-    )
+)
 
 # app.add_middleware(SlowAPIMiddleware)
 

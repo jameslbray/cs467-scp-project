@@ -55,6 +55,7 @@ class QueueRegistry:
             exchange="users",
             routing_key="events"
         ),
+        
     }
 
     @classmethod

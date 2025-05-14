@@ -1,10 +1,12 @@
-import aio_pika
-import json
-import uuid
 import asyncio
-from typing import Dict, Any, Optional
-from .config import Settings
+import json
 import logging
+import uuid
+from typing import Any, Dict, Optional
+
+import aio_pika
+
+from .config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +28,17 @@ class RabbitMQClient:
         """Establish connection to RabbitMQ"""
         try:
             # Connect using aio_pika's connect method
-            self.connection = await aio_pika.connect_robust(self.connection_url)
+            self.connection = await aio_pika.connect_robust(
+                self.connection_url
+            )
             # Create a channel
             self.channel = await self.connection.channel()
 
             # Set up RPC callback queue
             self.callback_queue = await self.channel.declare_queue(
-                name='',  # Empty name means server will generate a unique name
+                name="",  # Empty name means server will generate a unique name
                 exclusive=True,  # Only this connection can use the queue
-                auto_delete=True  # Queue will be deleted when connection closes
+                auto_delete=True,  # Queue will be deleted when connection closes
             )
 
             # Start consuming responses
@@ -62,7 +66,7 @@ class RabbitMQClient:
         routing_key: str,
         message: Dict[str, Any],
         correlation_id: Optional[str] = None,
-        timeout: float = 30.0
+        timeout: float = 30.0,
     ) -> Dict[str, Any]:
         """Publish a message and wait for response"""
         if not self.is_connected():
@@ -85,8 +89,11 @@ class RabbitMQClient:
         # Publish message
         if exchange:
             logger.info(
-                f"[RabbitMQ] Publishing message to exchange: {exchange}")
-            exchange_obj = await self.channel.get_exchange(exchange, ensure=False)
+                f"[RabbitMQ] Publishing message to exchange: {exchange}"
+            )
+            exchange_obj = await self.channel.get_exchange(
+                exchange, ensure=False
+            )
             await exchange_obj.publish(message_body, routing_key=routing_key)
         else:
             logger.info("[RabbitMQ] Publishing message to default exchange")
@@ -99,7 +106,8 @@ class RabbitMQClient:
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
             logger.info(
-                f"[RabbitMQ] Request timed out after {timeout} seconds")
+                f"[RabbitMQ] Request timed out after {timeout} seconds"
+            )
             del self.futures[correlation_id]
             raise TimeoutError(f"Request timed out after {timeout} seconds")
 
@@ -116,7 +124,14 @@ class RabbitMQClient:
         """Check if connected to RabbitMQ"""
         return self.connection is not None and not self.connection.is_closed
 
-    async def publish_message(self, exchange: str, routing_key: str, message: str, correlation_id: str = None, reply_to: str = None):
+    async def publish_message(
+        self,
+        exchange: str,
+        routing_key: str,
+        message: str,
+        correlation_id: str = None,
+        reply_to: str = None,
+    ):
         """Publish a message to a specific exchange with routing key, with optional correlation_id and reply_to"""
         if not self.is_connected():
             raise Exception("Not connected to RabbitMQ")
@@ -132,7 +147,9 @@ class RabbitMQClient:
         # Publish the message
         if exchange:
             # Get the exchange by name or declare it if it doesn't exist
-            exchange_obj = await self.channel.get_exchange(exchange, ensure=False)
+            exchange_obj = await self.channel.get_exchange(
+                exchange, ensure=False
+            )
             # Publish to the named exchange
             await exchange_obj.publish(message_body, routing_key=routing_key)
         else:
@@ -149,7 +166,9 @@ class RabbitMQClient:
         # Declare the queue using aio_pika
         await self.channel.declare_queue(name=queue_name, durable=durable)
 
-    async def declare_exchange(self, exchange_name: str, exchange_type: str = "direct"):
+    async def declare_exchange(
+        self, exchange_name: str, exchange_type: str = "direct"
+    ):
         """Declare an exchange"""
         if not self.is_connected():
             raise Exception("Not connected to RabbitMQ")
@@ -172,7 +191,9 @@ class RabbitMQClient:
             name=exchange_name, type=exchange_type_enum, durable=True
         )
 
-    async def bind_queue(self, queue_name: str, exchange_name: str, routing_key: str):
+    async def bind_queue(
+        self, queue_name: str, exchange_name: str, routing_key: str
+    ):
         """Bind a queue to an exchange with a routing key"""
         if not self.is_connected():
             raise Exception("Not connected to RabbitMQ")
