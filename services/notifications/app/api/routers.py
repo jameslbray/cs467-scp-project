@@ -105,7 +105,7 @@ async def get_user_notifications(
     Returns:
     - **NotificationResponse**: User's current notification information
     """
-    notification_data = notification_manager.get_user_notifications(user_id)
+    notification_data = await notification_manager.get_user_notifications(user_id)
 
     # Create response with required fields
     # return NotificationResponse(
@@ -153,7 +153,7 @@ async def update_user_notification(
     #     )
 
     # Update status
-    success = notification_manager.set_user_notification(
+    success = await notification_manager.set_user_notification(
         user_id,
         notification_update
     )
@@ -164,7 +164,7 @@ async def update_user_notification(
         )
 
     # Get updated status
-    notification_data = notification_manager.get_user_notifications(user_id)
+    notification_data = await notification_manager.get_user_notifications(user_id)
 
     # Create response
     return NotificationResponse(
