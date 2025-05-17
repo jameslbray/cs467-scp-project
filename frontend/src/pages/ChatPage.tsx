@@ -5,6 +5,7 @@ import type { UserStatusIntf } from "../App";
 import ChatList from "../components/ChatList";
 import RoomList from "../components/RoomList";
 import UserStatus from "../components/UserStatus";
+import ConnectedUsers from "../components/ConnectedUsers";
 import { useAuth, useTheme } from "../contexts";
 import { useSocketContext } from "../contexts/socket/socketContext";
 import { useSocketEvent } from "../contexts/socket/useSocket";
@@ -105,8 +106,8 @@ const ChatPage: React.FC = () => {
 					{/* Sidebar with status */}
 					<div className="lg:col-span-1">
 						<RoomList onSelectRoom={setSelectedRoom} />
+						<ConnectedUsers />
 					</div>
-
 					{/* Chat panel */}
 					<div className="lg:col-span-2">
 						{selectedRoom ? (

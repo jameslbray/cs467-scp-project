@@ -29,6 +29,7 @@ class SocketServer:
         self.app = socketio.ASGIApp(self.sio)
         self.sid_to_user: Dict[str, str] = {}  # sid -> user_id mapping
         self.user_to_sid: Dict[str, str] = {}  # user_id -> sid mapping
+        self.sid_to_username: Dict[str, str] = {}  # sid -> username mapping
         self._initialized = False
 
         # Initialize RabbitMQ client with provided settings
@@ -50,6 +51,7 @@ class SocketServer:
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
         self.sio.on("presence_update", self._on_presence_update)
+        self.sio.on("get_connections", self._on_get_connections)
 
         # TODO: implement chat typing and chat read receipts functionality
         self.sio.on("chat_typing", self._on_chat_typing)
@@ -144,11 +146,14 @@ class SocketServer:
                 return
 
             user_id = response["user"]["id"]
+            username = response["user"].get("username", "Unknown User")
+            self.sid_to_username[sid] = username
             self.register_user(sid, user_id)
             logger.info(f"User {user_id} connected with sid {sid}")
 
             # Join the user to the "general" room by default
             await self.join_room(sid, "general")
+            await self.sio.emit("refresh_connections", {}, room="general")
 
         except Exception as e:
             logger.error(f"Error during token validation: {e}")
@@ -257,10 +262,32 @@ class SocketServer:
         except Exception as e:
             logger.error(f"Failed to publish presence update: {e}")
 
-    def register_user(self, sid: str, user_id: str) -> None:
+    async def _on_get_connections(self, sid: str) -> None:
+        connections = []
+        for conn_sid, user_id in self.sid_to_user.items():
+            rooms = list(self.sio.rooms(conn_sid))
+            rooms = [r for r in rooms if r != conn_sid]  # filter out private room (which is sid itself)
+            username = self.sid_to_username.get(conn_sid)
+
+            connections.append({
+                "sid": conn_sid,
+                "user_id": user_id,
+                "username": username,
+                "room": rooms[0] if rooms else None,
+            })
+
+        logger.info("Emitting connections_list:")
+        for conn in connections:
+            logger.info(conn)
+
+        await self.sio.emit("connections_list", connections, room=sid)
+
+    def register_user(self, sid: str, user_id: str, username: Optional[str] = None) -> None:
         """Register a user with a socket ID."""
         self.sid_to_user[sid] = user_id
         self.user_to_sid[user_id] = sid
+        if username:
+            self.sid_to_username[sid] = username
 
     def unregister_user(self, sid: str) -> Optional[str]:
         """Unregister a user by socket ID."""
@@ -326,6 +353,7 @@ class SocketServer:
                 logger.error(
                     f"Failed to publish presence update for {user_id}: {e}"
                 )
+        await self.sio.emit("refresh_connections", {})
 
     async def _on_chat_typing(self, sid: str, data: Dict[str, Any]) -> None:
         """Handle chat typing."""
