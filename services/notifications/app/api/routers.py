@@ -23,7 +23,6 @@ from starlette.status import (
 from ..core.config import get_settings
 from ..core.notification_manager import NotificationManager
 from ..db.models import (
-    UserNotification, 
     NotificationType, 
     NotificationResponse, 
     NotificationRequest,
@@ -85,7 +84,7 @@ async def health_check():
 # Routes
 @router.get(
     "/notify/{user_id}",
-    response_model=NotificationResponse,
+    response_model=list[NotificationResponse],
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         404: {"model": ErrorResponse, "description": "User not found"},
@@ -105,6 +104,7 @@ async def get_user_notifications(
     Returns:
     - **NotificationResponse**: User's current notification information
     """
+    logger.info(f"Fetching notifications for user: {user_id}")
     notification_data = await notification_manager.get_user_notifications(user_id)
 
     # Create response with required fields
@@ -121,7 +121,7 @@ async def get_user_notifications(
 
 @router.put(
     "/notify/{user_id}",
-    response_model=NotificationResponse,
+    response_model=list[NotificationResponse],
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
         401: {"model": ErrorResponse, "description": "Unauthorized"},
@@ -131,7 +131,7 @@ async def get_user_notifications(
 )
 async def update_user_notification(
     user_id: str,
-    notification_update: UserNotification,
+    notification_update: NotificationRequest,
     # current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
@@ -152,31 +152,21 @@ async def update_user_notification(
     #         detail="You can only update your own status"
     #     )
 
-    # Update status
-    success = await notification_manager.set_user_notification(
-        user_id,
-        notification_update
-    )
-    if not success:
+    try:
+        # If user_id in the URL differs from the one in the request, ensure consistency
+        if notification_update.recipient_id != user_id:
+            notification_update.recipient_id = user_id
+            
+       
+        response = await notification_manager.create_notification(notification_update)
+        return response  
+        
+    except Exception as e:
+        logger.error(f"Failed to update notification: {e}")
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
-            detail="User not found or notification update failed",
+            detail="Failed to update notification",
         )
-
-    # Get updated status
-    notification_data = await notification_manager.get_user_notifications(user_id)
-
-    # Create response
-    return NotificationResponse(
-        notification_id=notification_data.get("notification_id"),
-        recipient_id=user_id,
-        sender_id=notification_data.get("sender_id"),
-        reference_id=notification_data.get("reference_id"),
-        content_preview=notification_data.get("content_preview", ""),
-        timestamp=notification_data.get("timestamp"),
-        status=notification_data.get("status", "undelivered"),
-        error=notification_data.get("error"),
-    )
 
 
 # @router.post(

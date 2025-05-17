@@ -14,13 +14,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.shared.utils.retry import CircuitBreaker, with_retry
 # from services.rabbitmq.core.client import RabbitMQClient
 from ..db.models import (
-    UserNotification,
+    NotificationDB,
     NotificationType,
     NotificationResponse,
     NotificationRequest,
-    NotificationDB,
-    NotificationResponse,
-    NotificationType,
     DeliveryType
 )
 # from services.socket_io.app.core.socket_server import SocketServer as SocketManager
@@ -34,7 +31,7 @@ class NotificationManager:
 
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         # socket_server: Optional[SocketManager] = None
     ):
         """Initialize the notification manager.
@@ -125,15 +122,18 @@ class NotificationManager:
         client = AsyncIOMotorClient(config["uri"])
         try:
             # Verify connection
-            conn_result = await self.check_connection_health()
-            
             self.mongo_client = client
+            
+            conn_result = await self.check_connection_health()
             
             if not conn_result:
                 raise Exception("Failed to connect to MongoDB")
           
             db_name = config.get("database", "notifications")
             db = client[db_name]
+            
+            # Create indexes for the notifications collection
+            await db.notifications.create_index([("recipient_id", 1)])
             
             # List collections in the database (not on the client)
             collections = await db.list_collection_names()
@@ -142,28 +142,38 @@ class NotificationManager:
             if 'notifications' not in collections:
                 logger.info("Creating notifications collection")
                 await db.create_collection('notifications')
+                
+            else:
+                logger.info("Notifications collection already exists")
+        
+            count = await db.notifications.count_documents({})
+            logger.info(f"Found {count} existing notifications in database")
 
+            if count == 0:
+                # Only create test notification if collection is empty
+                logger.info("No notifications found, creating test notification")
                 test_notification = NotificationRequest(
-                    notification_id="123e4567-e89b-12d3-a456-426614174000",
                     recipient_id="550e8400-e29b-41d4-a716-446655440000",
                     sender_id="6ba7b810-9dad-11d1-80b4-00c04fd430c8",
                     reference_id="123e4567-e89b-12d3-a456-426614174111",
                     content_preview="Hello World!",
                     timestamp=datetime.now().isoformat(),
                     status=DeliveryType.UNDELIVERED,
-                    error=null,
-                    )
+                    error=None,
+                )
+                # Convert to database model and save to MongoDB
                 db_notification = test_notification.to_db_model()
                 result = await db.notifications.insert_one(db_notification.to_mongo_dict())
-                logger.info(f"Test notification inserted with ID: {result.inserted_id}")
                 
+                # Verify the document was inserted
+                doc = await db.notifications.find_one({"recipient_id": "550e8400-e29b-41d4-a716-446655440000"})
+                if doc:
+                    logger.info(f"Test notification inserted with ID: {result.inserted_id}")
+                else:
+                    logger.warning("Failed to insert test notification")
             else:
-                logger.info("Notifications collection already exists")
-        
-            # Create indexes for the notifications collection
-            await db.notifications.create_index([("recipient_id", 1)])
+                logger.info(f"Skipping test notification creation, database already contains {count} notifications")
             
-            logger.info("Connected to MongoDB")
 
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
@@ -325,7 +335,7 @@ class NotificationManager:
 
         return empty_notifications
         
-    async def _get_user_notifications(self, user_id: str) -> list[UserNotification] | None:
+    async def _get_user_notifications(self, user_id: str) -> list[NotificationResponse] | None:
         """Get user notifications from database."""
         if not self.mongo_client:
             logger.warning("MongoDB not available")
@@ -335,21 +345,32 @@ class NotificationManager:
             if isinstance(user_id, UUID):
                 user_id = str(user_id)
             
+            logger.debug(f"Searching for notifications with recipient_id: {user_id}")
+            
             # Get the database
             db_name = self.config["mongodb"].get("database", "notifications")
             db = self.mongo_client[db_name]
             
+            stats = await db.command("collStats", "notifications") 
+            logger.debug(f"Collection stats: {stats}")
+            
             # Query for user notifications
             query = {"recipient_id": user_id}
+            logger.debug(f"Query: {query}")
             cursor = db.notifications.find(query)
+            
+            count = await db.notifications.count_documents(query)
+            logger.debug(f"Found {count} notifications for user {user_id}")
             
             notifications = []
             async for doc in cursor:
+                logger.debug(f"Processing document: {doc}")
                 # Convert MongoDB doc to database model
                 db_notification = NotificationDB.from_mongo_doc(doc)
                 
                 # Convert database model to API response
                 api_notification = db_notification.to_api_response()
+                                
                 notifications.append(api_notification)
                 
             return notifications 
@@ -361,7 +382,33 @@ class NotificationManager:
             logger.error(f"Failed to get user notifications: {e}")
             return None
 
-    def set_user_notification(self, user_id: str, user_notification: UserNotification) -> bool:
+    async def create_notification(self, notification: NotificationRequest) -> List[NotificationResponse]:
+        """Create a new notification."""
+        if not self.mongo_client:
+            logger.warning("MongoDB not available")
+            return []
+
+        try:
+            # Convert API request to database model
+            db_notification = notification.to_db_model()
+            
+            # Get database
+            db_name = self.config["mongodb"].get("database", "notifications")
+            db = self.mongo_client[db_name]
+            
+            # Convert to MongoDB document and insert
+            mongo_dict = db_notification.to_mongo_dict()
+            result = await db.notifications.insert_one(mongo_dict)
+            logger.info(f"Notification inserted with ID: {result.inserted_id}")
+            
+            # Return all notifications for the recipient
+            return await self.get_user_notifications(notification.recipient_id)
+            
+        except Exception as e:
+            logger.error(f"Failed to create notification: {e}")
+            return []
+
+    def set_user_notification(self, user_id: str, user_notification: NotificationRequest) -> bool:
         """Set user's notifications."""
         try:
             notification_type = NotificationType(
@@ -370,7 +417,7 @@ class NotificationManager:
 
             # Initialize user in presence_data if not exists
             if user_id not in self.notification_data:
-                self.notification_data[user_id] = UserNotification(
+                self.notification_data[user_id] = NotificationRequest(
                     notification_id=user_notification.notification_id,
                     recipient_id=user_notification.recipient_id,
                     sender_id=user_notification.sender_id,
@@ -384,7 +431,7 @@ class NotificationManager:
                     f"Created new notification entry for user {user_id}")
 
             else:
-                self.notification_data[user_id].update(UserNotification(
+                self.notification_data[user_id].update(NotificationRequest(
                     notification_id=user_notification.notification_id,
                     recipient_id=user_notification.recipient_id,
                     sender_id=user_notification.sender_id,

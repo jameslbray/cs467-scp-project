@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class DeliveryType(str, Enum):
@@ -22,7 +22,6 @@ class NotificationType(str, Enum):
 # 1. API REQUEST MODEL - Accepts string IDs from client
 class NotificationRequest(BaseModel):
     """API request model with string IDs."""
-    notification_id: str = Field(..., description="Notification ID")
     recipient_id: str = Field(..., description="Recipient User ID")
     sender_id: str = Field(..., description="Sender User ID") 
     reference_id: str = Field(..., description="Reference ID (message_id or room_id)")
@@ -35,10 +34,9 @@ class NotificationRequest(BaseModel):
     def to_db_model(self) -> 'NotificationDB':
         """Convert API request to database model with UUID conversion."""
         return NotificationDB(
-            notification_id=uuid.UUID(self.notification_id) if self.is_valid_uuid(self.notification_id) else uuid.uuid4(),
-            recipient_id=uuid.UUID(self.recipient_id) if self.is_valid_uuid(self.recipient_id) else uuid.uuid4(),
-            sender_id=uuid.UUID(self.sender_id) if self.is_valid_uuid(self.sender_id) else uuid.uuid4(),
-            reference_id=uuid.UUID(self.reference_id) if self.is_valid_uuid(self.reference_id) else uuid.uuid4(),
+            recipient_id=uuid.UUID(self.recipient_id),
+            sender_id=uuid.UUID(self.sender_id),
+            reference_id=uuid.UUID(self.reference_id),
             content_preview=self.content_preview,
             timestamp=self.timestamp,
             status=self.status,
@@ -59,7 +57,6 @@ class NotificationRequest(BaseModel):
 # 2. DATABASE MODEL - Uses UUID for internal storage
 class NotificationDB(BaseModel):
     """Database model with UUID fields."""
-    notification_id: uuid.UUID = Field(..., description="Notification ID")
     recipient_id: uuid.UUID = Field(..., description="Recipient User ID")
     sender_id: uuid.UUID = Field(..., description="Sender User ID")
     reference_id: uuid.UUID = Field(..., description="Reference ID (message_id or room_id)")
@@ -71,11 +68,11 @@ class NotificationDB(BaseModel):
     read: bool = Field(default=False, description="Whether notification has been read")
     
     # Convert to MongoDB-compatible dictionary
-    def to_mongo_dict(self) -> Dict[str, Any]:
+    def to_mongo_dict(self) -> dict[str, Any]:
         """Convert to MongoDB document."""
         data = self.model_dump()
         # Convert UUID objects to strings
-        for field in ['notification_id', 'recipient_id', 'sender_id', 'reference_id']:
+        for field in ['recipient_id', 'sender_id', 'reference_id']:
             if isinstance(data[field], uuid.UUID):
                 data[field] = str(data[field])
         return data
@@ -84,7 +81,6 @@ class NotificationDB(BaseModel):
     def to_api_response(self) -> 'NotificationResponse':
         """Convert to API response model."""
         return NotificationResponse(
-            notification_id=str(self.notification_id),
             recipient_id=str(self.recipient_id),
             sender_id=str(self.sender_id),
             reference_id=str(self.reference_id),
@@ -98,10 +94,10 @@ class NotificationDB(BaseModel):
     
     # Create from MongoDB document
     @classmethod
-    def from_mongo_doc(cls, doc: Dict[str, Any]) -> 'NotificationDB':
+    def from_mongo_doc(cls, doc: dict[str, Any]) -> 'NotificationDB':
         """Create from MongoDB document."""
         # Convert string IDs back to UUIDs
-        for field in ['notification_id', 'recipient_id', 'sender_id', 'reference_id']:
+        for field in ['recipient_id', 'sender_id', 'reference_id']:
             if field in doc and isinstance(doc[field], str):
                 try:
                     doc[field] = uuid.UUID(doc[field])
@@ -114,7 +110,6 @@ class NotificationDB(BaseModel):
 # 3. API RESPONSE MODEL - Returns string IDs to client
 class NotificationResponse(BaseModel):
     """API response model with string IDs."""
-    notification_id: str = Field(..., description="Notification ID")
     recipient_id: str = Field(..., description="Recipient User ID")
     sender_id: str = Field(..., description="Sender User ID")
     reference_id: str = Field(..., description="Reference ID")
