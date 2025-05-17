@@ -107,19 +107,10 @@ async def get_user_notifications(
     logger.info(f"Fetching notifications for user: {user_id}")
     notification_data = await notification_manager.get_user_notifications(user_id)
 
-    # Create response with required fields
-    # return NotificationResponse(
-    #     notification_id=notification_data.get("notification_id"),
-    #     recipient_id=user_id,
-    #     sender_id=notification_data.get("sender_id"),
-    #     reference_id=notification_data.get("reference_id"),
-    #     content_preview=notification_data.get("content_preview", ""),
-    #     timestamp=notification_data.get("timestamp"),
-    # )
     return notification_data
 
 
-@router.put(
+@router.post(
     "/notify/{user_id}",
     response_model=list[NotificationResponse],
     responses={
@@ -129,7 +120,7 @@ async def get_user_notifications(
         404: {"model": ErrorResponse, "description": "User not found"},
     },
 )
-async def update_user_notification(
+async def create_user_notification(
     user_id: str,
     notification_update: NotificationRequest,
     # current_user: str = Depends(get_current_user),
@@ -395,10 +386,11 @@ async def api_info():
         "version": settings.VERSION,
         "description": "API for tracking and managing user notifications",
         "endpoints": {
+            "GET /notify/health": "Health check endpoint",
             "GET /api/notify/{user_id}": "Get a user's current notifications",
-            "PUT /api/notify/{user_id}": "Update a user's notifications",
+            "POST /api/notify/{user_id}": "Create a notification for a user",
             # "GET /api/notify/friends/{user_id}": "Get status of all friends",
-            "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
-            "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
+            # "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
+            # "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
         },
     }

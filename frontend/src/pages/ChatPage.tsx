@@ -11,6 +11,9 @@ import { useSocketContext } from "../contexts/socket/socketContext";
 import { useSocketEvent } from "../contexts/socket/useSocket";
 import type { Room } from "../hooks/useFetchRooms";
 import { ServerEvents } from "../types/serverEvents";
+import NotificationBell from "../components/NotificationsList";
+import { fetchNotifications, markNotificationAsRead } from "../services/notificationsAPI";
+import type { NotificationResponseType } from "../types/notificationType";
 
 const ChatPage: React.FC = () => {
 	const { darkMode, toggleDarkMode } = useTheme();
@@ -19,6 +22,8 @@ const ChatPage: React.FC = () => {
 	const [friends, setFriends] = useState<Record<string, UserStatusIntf>>({});
 	const [friendCount, setFriendCount] = useState(0);
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+	const [notifications, setNotifications] = useState<NotificationResponseType[]>([]);
+
 
 	// Listen for initial friend statuses
 	useSocketEvent<{ statuses: Record<string, UserStatusIntf> }>(
@@ -38,6 +43,50 @@ const ChatPage: React.FC = () => {
 		setFriendCount(Object.keys(friends).length);
 	}, [friends]);
 
+
+	// Fetch notifications on page load
+	useEffect(() => {
+		const getNotifications = async () => {
+			if (user) {
+				try {
+					const data = await fetchNotifications(user.id);
+					setNotifications(data);
+				} catch (error) {
+					console.error("Failed to fetch notifications:", error);
+				}
+			}
+		};
+
+		getNotifications();
+
+		// Set up polling for notifications
+		const interval = setInterval(getNotifications, 30000); // Check every 30 seconds
+
+		return () => clearInterval(interval);
+	}, [user]);
+
+	// Handle marking notifications as read
+	const handleMarkAsRead = async (notificationId: string) => {
+		try {
+			await markNotificationAsRead(notificationId);
+			setNotifications(prev =>
+				prev.map(notification =>
+					notification.notification_id === notificationId
+						? { ...notification, read: true }
+						: notification
+				)
+			);
+		} catch (error) {
+			console.error("Failed to mark notification as read:", error);
+		}
+	};
+
+	// Handle view all notifications
+	const handleViewAll = () => {
+		// Navigate to notifications page or open a modal with all notifications
+		console.log("View all notifications");
+	};
+
 	if (!user) {
 		return (
 			<div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -56,6 +105,12 @@ const ChatPage: React.FC = () => {
 							<UserStatus />
 						</div>
 						<div className="flex items-center space-x-4">
+
+							<NotificationBell
+								notifications={notifications}
+								onMarkAsRead={handleMarkAsRead}
+								onViewAll={handleViewAll}
+							/>
 							{/* Dark mode toggle */}
 							<button
 								type="button"

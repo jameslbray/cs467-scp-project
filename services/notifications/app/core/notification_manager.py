@@ -417,7 +417,6 @@ class NotificationManager:
             # Initialize user in presence_data if not exists
             if user_id not in self.notification_data:
                 self.notification_data[user_id] = NotificationRequest(
-                    notification_id=user_notification.notification_id,
                     recipient_id=user_notification.recipient_id,
                     sender_id=user_notification.sender_id,
                     reference_id=user_notification.reference_id,
@@ -431,7 +430,6 @@ class NotificationManager:
 
             else:
                 self.notification_data[user_id].update(NotificationRequest(
-                    notification_id=user_notification.notification_id,
                     recipient_id=user_notification.recipient_id,
                     sender_id=user_notification.sender_id,
                     reference_id=user_notification.reference_id,
