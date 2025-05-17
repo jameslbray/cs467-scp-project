@@ -358,12 +358,11 @@ class NotificationManager:
             query = {"recipient_id": user_id}
             logger.debug(f"Query: {query}")
             cursor = db.notifications.find(query)
-            
-            count = await db.notifications.count_documents(query)
-            logger.debug(f"Found {count} notifications for user {user_id}")
+            documents = await cursor.to_list(length=None)  # Fetch all documents into a list
+            logger.debug(f"Found {len(documents)} notifications for user {user_id}")
             
             notifications = []
-            async for doc in cursor:
+            for doc in documents:
                 logger.debug(f"Processing document: {doc}")
                 # Convert MongoDB doc to database model
                 db_notification = NotificationDB.from_mongo_doc(doc)
