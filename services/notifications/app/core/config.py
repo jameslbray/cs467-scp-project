@@ -120,7 +120,7 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = Field(
-        default="INFO",
+        default="debug",
         description="Logging level"
     )
 

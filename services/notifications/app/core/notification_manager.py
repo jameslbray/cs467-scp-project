@@ -381,7 +381,7 @@ class NotificationManager:
             logger.error(f"Failed to get user notifications: {e}")
             return None
 
-    async def create_notification(self, notification: NotificationRequest) -> List[NotificationResponse]:
+    async def create_notification(self, notification: NotificationRequest) -> list[NotificationResponse]:
         """Create a new notification."""
         if not self.mongo_client:
             logger.warning("MongoDB not available")
