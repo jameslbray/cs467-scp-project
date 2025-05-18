@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 import uuid
+from pydantic import BaseModel, Field, field_validator, model_validator
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Dict, Any
@@ -151,6 +153,7 @@ class SuccessResponse(BaseModel):
 class JWTTokenData(BaseModel):
     """JWT token payload structure that uses user_id as the subject."""
     user_id: uuid.UUID  # UUID of the user (will be encoded as string in JWT)
+    user_id: uuid.UUID  # UUID of the user (will be encoded as string in JWT)
     exp: Optional[datetime] = None  # Expiration time
     iat: Optional[datetime] = None  # Issued at time
     jti: Optional[str] = None  # JWT ID for token identification/revocation
@@ -163,6 +166,7 @@ class JWTTokenData(BaseModel):
     
     @field_validator("user_id", mode="before")
     @classmethod
+    def validate_user_id(cls, v: uuid.UUID) -> uuid.UUID:
     def validate_user_id(cls, v: uuid.UUID) -> uuid.UUID:
         """Ensure user_id is a UUID - convert from string if needed"""
         if isinstance(v, str):

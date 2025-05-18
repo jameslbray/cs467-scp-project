@@ -86,6 +86,7 @@ async def health_check():
 @router.get(
     "/notify/{user_id}",
     response_model=list[NotificationResponse],
+    response_model=list[NotificationResponse],
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         404: {"model": ErrorResponse, "description": "User not found"},
@@ -105,6 +106,9 @@ async def get_user_notifications(
     Returns:
     - **NotificationResponse**: User's current notification information
     """
+    logger.info(f"Fetching notifications for user: {user_id}")
+    notification_data = await notification_manager.get_user_notifications(user_id)
+
     logger.info(f"Fetching notifications for user: {user_id}")
     notification_data = await notification_manager.get_user_notifications(user_id)
 
@@ -178,7 +182,7 @@ async def create_user_notification(
         404: {"model": ErrorResponse, "description": "User not found"},
     },
 )
-async def update_user_notification(
+async def create_user_notification(
     user_id: str,
     notification_id: str = Query(..., description="ID of the notification to mark as read"),
     # current_user: str = Depends(get_current_user),
@@ -546,12 +550,15 @@ async def api_info():
         "description": "API for tracking and managing user notifications",
         "endpoints": {
             "GET /notify/health": "Health check endpoint",
+            "GET /notify/health": "Health check endpoint",
             "GET /api/notify/{user_id}": "Get a user's current notifications",
             "POST /api/notify/{user_id}": "Create a notification for a user",
             "PUT /api/notify/{user_id}": "Mark a notification as read",
             "PUT /api/notify/all/{user_id}": "Mark all notifications as read",
             "DELETE /api/notify/{user_id}": "Delete read notifications",
             # "GET /api/notify/friends/{user_id}": "Get status of all friends",
+            # "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
+            # "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
             # "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
             # "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
         },

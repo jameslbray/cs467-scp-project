@@ -5,6 +5,7 @@ Notification manager for handling user notification state.
 import logging
 import json
 from uuid import UUID
+from uuid import UUID
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,8 +14,10 @@ from bson.objectid import ObjectId
 # from pymongo import MongoClient
 
 from services.shared.utils.retry import CircuitBreaker, with_retry
+from services.shared.utils.retry import CircuitBreaker, with_retry
 # from services.rabbitmq.core.client import RabbitMQClient
 from ..db.models import (
+    NotificationDB,
     NotificationDB,
     NotificationType,
     NotificationResponse,
@@ -33,6 +36,7 @@ class NotificationManager:
     def __init__(
         self,
         config: dict[str, Any],
+        config: dict[str, Any],
         # socket_server: Optional[SocketManager] = None
     ):
         """Initialize the notification manager.
@@ -44,12 +48,14 @@ class NotificationManager:
         self.config = config
         self._initialized = False
         self.mongo_client: Optional[AsyncIOMotorClient] = None
+        self.mongo_client: Optional[AsyncIOMotorClient] = None
         # self.db_pool: Optional[MongooseClient] = None
         # self.socket_server = socket_server
 
         # TODO: Decide if we need to keep this in memory or not
 
         # User notification data
+        # self.notification_data: dict[str, dict[str, Any]] = {}
         # self.notification_data: dict[str, dict[str, Any]] = {}
 
         # Initialize RabbitMQ client
@@ -61,6 +67,11 @@ class NotificationManager:
         #     failure_threshold=3,
         #     reset_timeout=30.0
         # )
+        self.db_cb = CircuitBreaker(
+            "mongodb",
+            failure_threshold=3,
+            reset_timeout=30.0
+        )
         self.db_cb = CircuitBreaker(
             "mongodb",
             failure_threshold=3,
@@ -114,7 +125,88 @@ class NotificationManager:
         finally:
             self.mongo_client = None
             logger.info("Notification manager shut down")
+        try:
+            if self.mongo_client is not None:
+                await self.mongo_client.close()
+                logger.info("MongoDB connection closed")
+        except Exception as e:
+            logger.error(f"Error closing MongoDB connection: {e}")
+        finally:
+            self.mongo_client = None
+            logger.info("Notification manager shut down")
 
+    async def _connect_database(self) -> None:
+        """Connect to MongoDB."""
+        # Connect to PostgreSQL
+        config = self.config["mongodb"].copy()
+
+        client = AsyncIOMotorClient(config["uri"])
+        try:
+            # Verify connection
+            self.mongo_client = client
+            
+            conn_result = await self.check_connection_health()
+            
+            if not conn_result:
+                raise Exception("Failed to connect to MongoDB")
+          
+            db_name = config.get("database", "notifications")
+            db = client[db_name]
+            
+            # Create indexes for the notifications collection
+            await db.notifications.create_index([("recipient_id", 1)])
+            
+            # List collections in the database (not on the client)
+            collections = await db.list_collection_names()
+            
+            # Create notifications collection if it doesn't exist
+            if 'notifications' not in collections:
+                logger.info("Creating notifications collection")
+                await db.create_collection('notifications')
+                
+            else:
+                logger.info("Notifications collection already exists")
+        
+            count = await db.notifications.count_documents({})
+            logger.info(f"Found {count} existing notifications in database")
+
+            if count == 0:
+                # Only create test notification if collection is empty
+                logger.info("No notifications found, creating test notification")
+                test_notification = NotificationRequest(
+                    recipient_id="550e8400-e29b-41d4-a716-446655440000",
+                    sender_id="6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+                    reference_id="123e4567-e89b-12d3-a456-426614174111",
+                    content_preview="Hello World!",
+                    timestamp=datetime.now().isoformat(),
+                    status=DeliveryType.UNDELIVERED,
+                    error=None,
+                )
+                # Convert to database model and save to MongoDB
+                db_notification = test_notification.to_db_model()
+                result = await db.notifications.insert_one(db_notification.to_mongo_dict())
+                
+                # Verify the document was inserted
+                doc = await db.notifications.find_one({"recipient_id": "550e8400-e29b-41d4-a716-446655440000"})
+                if doc:
+                    logger.info(f"Test notification inserted with ID: {result.inserted_id}")
+                else:
+                    logger.warning("Failed to insert test notification")
+            else:
+                logger.info(f"Skipping test notification creation, database already contains {count} notifications")
+            
+
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            raise
+
+    async def check_connection_health(self):
+        try:
+            await self.mongo_client.admin.command('ping')
+            return True
+        except Exception:
+            logger.error("MongoDB connection failed")
+            return False
     async def _connect_database(self) -> None:
         """Connect to MongoDB."""
         # Connect to PostgreSQL
@@ -320,11 +412,16 @@ class NotificationManager:
     #         await message.ack()
 
     async def get_user_notifications(self, user_id: str) -> List[NotificationResponse]:
+    async def get_user_notifications(self, user_id: str) -> List[NotificationResponse]:
         """Get user's notifications."""
         # Default values
         empty_notifications: List[NotificationResponse] = []
+        empty_notifications: List[NotificationResponse] = []
 
         # # Check cache first
+        # if user_id in self.notification_data:
+        #     notification_data = self.notification_data[user_id]
+        #     return notification_data
         # if user_id in self.notification_data:
         #     notification_data = self.notification_data[user_id]
         #     return notification_data
@@ -333,7 +430,17 @@ class NotificationManager:
         user_notifications = await self._get_user_notifications(user_id)
         if user_notifications:
             return user_notifications
+        user_notifications = await self._get_user_notifications(user_id)
+        if user_notifications:
+            return user_notifications
 
+        return empty_notifications
+        
+    async def _get_user_notifications(self, user_id: str) -> list[NotificationResponse] | None:
+        """Get user notifications from database."""
+        if not self.mongo_client:
+            logger.warning("MongoDB not available")
+            return None
         return empty_notifications
         
     async def _get_user_notifications(self, user_id: str) -> list[NotificationResponse] | None:
