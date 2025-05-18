@@ -32,7 +32,7 @@ const ConnectedUsers: React.FC = () => {
       fetchConnections();
     };
 
-    const handleError = (err: any) => {
+    const handleError = (err: unknown) => {
       console.error('Connection error:', err);
       setError('Socket.IO connection failed');
       setLoading(false);

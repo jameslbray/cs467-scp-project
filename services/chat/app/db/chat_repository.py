@@ -225,3 +225,24 @@ class ChatRepository(Repository[Room, RoomCreate, RoomCreate]):
         async for message_data in cursor:
             messages.append(Message(**message_data))
         return messages
+
+    async def get_room_users(self, room_id: str) -> List[str]:
+        """
+        Get all users in a room
+        """
+        db = get_db()
+        if db is None:
+            raise RuntimeError("Database not initialized")
+        room = await db[self.collection_name].find_one(
+            {"_id": room_id}, {"participant_ids": 1}
+        )
+        if not room:
+            return []
+        return room["participant_ids"]
+
+    async def is_user_member(self, room_id: str, user_id: str) -> bool:
+        """
+        Check if a user is a member of a room
+        """
+        users = await self.get_room_users(room_id)
+        return user_id in users
