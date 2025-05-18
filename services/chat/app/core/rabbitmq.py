@@ -19,6 +19,8 @@ class ChatRabbitMQClient:
         self.user_events_exchange = "user"
         self.user_events_queue = "user"
         self.user_add_to_room_routing_key = "user.add_to_room"
+        self.room_rpc_queue = "room_rpc"
+        self.room_get_id_routing_key = "room.get_id"
 
     async def initialize(self):
         """
@@ -37,6 +39,7 @@ class ChatRabbitMQClient:
             await self.client.declare_queue(self.message_queue)
             await self.client.declare_queue(self.notification_queue)
             await self.client.declare_queue(self.user_events_queue)
+            await self.client.declare_queue(self.room_rpc_queue)
             # Bind the chat_messages queue to the chat exchange with a wildcard routing key
             await self.client.bind_queue(
                 self.message_queue,

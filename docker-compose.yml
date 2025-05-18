@@ -242,7 +242,7 @@ services:
       - VITE_API_URL=${API_URL:-http://localhost:8001}
       - VITE_SOCKET_URL=${VITE_SOCKET_URL}
     volumes:
-      - ./frontend:/app
+      - ./frontend:/app:delegated
       - /app/node_modules
 
 volumes:
