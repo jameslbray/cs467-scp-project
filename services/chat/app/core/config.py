@@ -175,25 +175,4 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """Create and return a cached Settings instance."""
-    env_file = find_env_file()
-
-    # Debug info
-    print("\n================ CONFIG DEBUG ================")
-    print(f"Looking for .env file at: {env_file}")
-    print(f"File exists: {os.path.exists(env_file) if env_file else False}")
-
-    # Create settings instance
-    settings = Settings()
-
-    # Print some key settings for debugging
-    try:
-        print(f"POSTGRES_USER: {settings.POSTGRES_USER}")
-        print(f"POSTGRES_HOST: {settings.POSTGRES_HOST}")
-        print(f"POSTGRES_DB: {settings.POSTGRES_DB}")
-        print(f"ENV: {settings.ENV}")
-    except Exception as e:
-        print(f"Error accessing settings: {e}")
-
-    print("===============================================\n")
-
-    return settings
+    return Settings()

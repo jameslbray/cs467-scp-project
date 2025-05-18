@@ -12,6 +12,9 @@ RUN npm install
 # Copy project files
 COPY . .
 
+# Set permissions
+RUN chmod -R 755 /app
+
 # Build the app
 RUN npm run build
 
