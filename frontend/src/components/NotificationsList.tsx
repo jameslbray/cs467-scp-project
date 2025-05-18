@@ -55,11 +55,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
     // If we're already showing all, don't do anything
     if (displayCount >= notifications.length) return;
 
-    // If we're showing 5, bump to 8 (show 3 more)
-    if (displayCount === 5) {
-      setDisplayCount(8);
-    }
-    // If we're showing 8 or more, show all
+    // If we're showing 5 or more, show all
     else {
       setDisplayCount(notifications.length);
     }
