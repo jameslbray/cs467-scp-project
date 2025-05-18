@@ -27,6 +27,7 @@ from ..db.models import (
     NotificationResponse, 
     NotificationRequest,
     ErrorResponse,
+    SuccessResponse
     )
 
 # Set up OAuth2 with password flow (token-based authentication)
@@ -112,7 +113,7 @@ async def get_user_notifications(
 
 @router.post(
     "/notify/{user_id}",
-    response_model=list[NotificationResponse],
+    response_model=SuccessResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
         401: {"model": ErrorResponse, "description": "Unauthorized"},
@@ -150,10 +151,15 @@ async def create_user_notification(
         if notification_update.recipient_id != user_id:
             notification_update.recipient_id = user_id
             
-       
         response = await notification_manager.create_notification(notification_update)
-        return response  
         
+        if not response:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail="Notification creation failed",
+            )
+        return SuccessResponse(message="success")
+            
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
         raise HTTPException(
@@ -163,8 +169,8 @@ async def create_user_notification(
 
 
 @router.put(
-    "/notify/read/{user_id}",
-    response_model=list[NotificationResponse],
+    "/notify/{user_id}",
+    response_model=SuccessResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
         401: {"model": ErrorResponse, "description": "Unauthorized"},
@@ -174,16 +180,16 @@ async def create_user_notification(
 )
 async def update_user_notification(
     user_id: str,
-    notification_update: NotificationRequest,
+    notification_id: str = Query(..., description="ID of the notification to mark as read"),
     # current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
-    Update a user's notifications. Post body should contain the notification_id.
+    Update a user's notification status to read.
 
     Parameters:
     - **user_id**: ID of the user whose notification is being updated
-    - **notification_update**: New notification information
+    - **notification_id**: Notification ID to be updated
 
     Returns:
     - **NotificationResponse**: Updated notification information
@@ -195,16 +201,20 @@ async def update_user_notification(
     #         detail="You can only update your own status"
     #     )
     
-    logger.info(f"Creating notification for user: {user_id}")
+    
+    logger.info(f"Updating notification {notification_id} for user: {user_id}")
 
     try:
-        # If user_id in the URL differs from the one in the request, ensure consistency
-        if notification_update.recipient_id != user_id:
-            notification_update.recipient_id = user_id
+        # Call the manager to mark notification as read
+        success = await notification_manager.mark_notification_as_read(notification_id, user_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail="Notification not found or already read"
+            )
             
-       
-        response = await notification_manager.update_notification(notification_update)
-        return response  
+        return SuccessResponse(message="success")
         
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
@@ -213,6 +223,101 @@ async def update_user_notification(
             detail="Failed to update notification",
         )
 
+
+@router.put(
+    "/notify/all/{user_id}",
+    response_model=SuccessResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+        403: {"model": ErrorResponse, "description": "Forbidden"},
+        404: {"model": ErrorResponse, "description": "User not found"},
+    },
+)
+async def update_all_user_notifications(
+    user_id: str,
+    # current_user: str = Depends(get_current_user),
+    notification_manager: NotificationManager = Depends(get_notification_manager),
+):
+    """
+    Update all of a user's notification status to read.
+
+    Parameters:
+    - **user_id**: ID of the user whose notification is being updated
+
+    Returns:
+    - **SuccessResponse**: Success message
+    """
+    # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+    
+    
+    logger.info(f"Updating all notifications for user: {user_id}")
+
+    try:
+        # Call the manager to mark notification as read
+        success = await notification_manager.mark_all_notifications_as_read(user_id)
+            
+        return SuccessResponse(message="success")
+        
+    except Exception as e:
+        logger.error(f"Failed to update notification: {e}")
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Failed to update notification",
+        )
+
+@router.delete(
+    "/notify/{user_id}",
+    response_model=SuccessResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+        403: {"model": ErrorResponse, "description": "Forbidden"},
+        404: {"model": ErrorResponse, "description": "User not found"},
+    },
+)
+async def delete_read_notifications(
+    user_id: str,
+    # current_user: str = Depends(get_current_user),
+    notification_manager: NotificationManager = Depends(get_notification_manager),
+):
+    """
+    Update a user's notifications. Post body should contain the notification_id.
+
+    Parameters:
+    - **user_id**: ID of the user whose notification is being updated
+    - **notification_id**: Notification ID to be updated
+
+    Returns:
+    - **NotificationResponse**: Updated notification information
+    """
+    # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+
+    
+    logger.info(f"Removing stale notification for user: {user_id}")
+
+    try:
+        # Call the manager to mark notification as read
+        deleted_count = await notification_manager.delete_read_notifications(user_id)
+            
+        return SuccessResponse(message="Successfully deleted {deleted_count} notifications")
+        
+    except Exception as e:
+        logger.error(f"Failed to update notification: {e}")
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Failed to update notification",
+        )
 
 # @router.post(
 #     "/notify/register/{user_id}",
@@ -443,7 +548,9 @@ async def api_info():
             "GET /notify/health": "Health check endpoint",
             "GET /api/notify/{user_id}": "Get a user's current notifications",
             "POST /api/notify/{user_id}": "Create a notification for a user",
-            "PUT /api/notify/read/{user_id}": "Update a user's notification status (ex. from 'sent' to 'read')",
+            "PUT /api/notify/{user_id}": "Mark a notification as read",
+            "PUT /api/notify/all/{user_id}": "Mark all notifications as read",
+            "DELETE /api/notify/{user_id}": "Delete read notifications",
             # "GET /api/notify/friends/{user_id}": "Get status of all friends",
             # "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
             # "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",

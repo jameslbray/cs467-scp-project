@@ -4,38 +4,40 @@
 
 import { BellIcon, BellSlashIcon } from "@heroicons/react/24/outline";
 import { BellIcon as BellIconSolid } from "@heroicons/react/24/solid";
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { useClickAway } from "react-use";
 import type { NotificationResponseType } from "../types/notificationType";
 import { formatRelativeTime } from "../utils/dateUtils";
 import { markNotificationAsRead } from "../services/notificationsAPI";
-// import { useAuth } from "../contexts/auth/authContext";
+import { fetchNotifications, deleteNotification, markAllNotificationsAsRead } from "../services/notificationsAPI";
+import { useAuth } from "../contexts/auth/authContext";
 
 interface NotificationBellProps {
-  notifications: NotificationResponseType[];
   className?: string;
 }
 
 const NotificationBell: React.FC<NotificationBellProps> = ({
-  notifications,
   className = "",
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const [notifications, setNotifications] = useState<NotificationResponseType[]>([]);
+  const [displayCount, setDisplayCount] = useState<number>(5);
+  const { user } = useAuth();
 
   // Close dropdown when clicking outside
   useClickAway(ref, () => {
     setIsOpen(false);
+    setDisplayCount(5);
   });
 
   // Count unread notifications
   const unreadCount = notifications.filter(n => !n.read).length;
 
   // Handle marking notifications as read
-  const handleMarkAsRead = async (notificationId: string) => {
+  const handleMarkAsRead = async (notificationId: string, recipientId: string) => {
     try {
-      await markNotificationAsRead(notificationId);
+      await markNotificationAsRead(notificationId, recipientId);
       setNotifications(prev =>
         prev.map(notification =>
           notification.notification_id === notificationId
@@ -50,9 +52,79 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
 
   // Handle view all notifications
   const handleViewAll = () => {
-    // Navigate to notifications page or open a modal with all notifications
-    console.log("View all notifications");
+    // If we're already showing all, don't do anything
+    if (displayCount >= notifications.length) return;
+
+    // If we're showing 5, bump to 8 (show 3 more)
+    if (displayCount === 5) {
+      setDisplayCount(8);
+    }
+    // If we're showing 8 or more, show all
+    else {
+      setDisplayCount(notifications.length);
+    }
   };
+
+
+  const handleMarkAllRead = async () => {
+    try {
+      // Mark all notifications as read
+      await Promise.all(
+        notifications.map(notification => {
+          if (!notification.read && user) {
+            return markAllNotificationsAsRead(user.id);
+          }
+          return Promise.resolve();
+        })
+      );
+
+      // Update state to reflect that all notifications are read
+      setNotifications(prev =>
+        prev.map(notification => ({ ...notification, read: true }))
+      );
+    }
+    catch (error) {
+      console.error("Failed to mark all notifications as read:", error);
+    }
+  }
+
+  // Fetch notifications on page load
+  useEffect(() => {
+    const getNotifications = async () => {
+      if (user) {
+        try {
+          // First fetch the current notifications
+          const currentData = await fetchNotifications(user.id);
+
+          // Check if there are any read notifications to delete
+          const readNotifications = currentData.filter(notification => notification.read);
+          if (readNotifications.length > 0) {
+            await deleteNotification(user.id);
+          }
+
+          // Re-fetch to get the clean list after deletion
+          const updatedData = await fetchNotifications(user.id);
+
+          // Sort notifications by timestamp (newest first)
+          const sortedData = updatedData.sort((a, b) => {
+            return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+          });
+
+          setNotifications(sortedData);
+        } catch (error) {
+          console.error("Failed to fetch notifications:", error);
+        }
+      }
+    };
+
+    getNotifications();
+
+    // Set up polling for notifications
+    const interval = setInterval(getNotifications, 30000); // Check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [user]);
+
 
   return (
     <div className={`relative ${className}`} ref={ref}>
@@ -89,13 +161,21 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
             <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Notifications</h3>
-            {notifications.length > 0 && (
+            {notifications.length > 0 && (<div>
+              <button
+                onClick={handleMarkAllRead}
+                className="text-xs text-slate-800 dark:text-slate-400 hover:underline px-5"
+              >
+                Mark all as read
+              </button>
+
               <button
                 onClick={handleViewAll}
                 className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
               >
                 View all
               </button>
+              </div>
             )}
           </div>
 
@@ -107,41 +187,44 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
               </div>
             ) : (
               <ul>
-                {notifications.slice(0, 5).map((notification) => (
-                  <li
-                    key={notification.notification_id || Math.random().toString()}
-                    className={`px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 ${!notification.read ? "bg-blue-50 dark:bg-blue-900/20" : ""
-                      }`}
-                  >
-                    <div
-                      className="cursor-pointer"
-                      onClick={() => {
-                        handleMarkAsRead(notification.notification_id || "");
-                        setIsOpen(false);
-                      }}
+                {notifications
+                  .slice(0, displayCount)
+                  .map((notification) => (
+                    <li
+                      key={notification.notification_id || Math.random().toString()}
+                      className={`px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 ${!notification.read ? "bg-blue-50 dark:bg-blue-900/20" : ""
+                        }`}
                     >
-                      <div className="flex justify-between">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {notification.content_preview}
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => {
+                          if (notification.notification_id && user) {
+                            handleMarkAsRead(notification.notification_id, user.id);
+                          }
+                        }}
+                      >
+                        <div className="flex justify-between">
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                            {notification.content_preview}
+                          </p>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatRelativeTime(notification.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                          From {notification.sender_id.substring(0, 8)}...
                         </p>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {formatRelativeTime(notification.timestamp)}
-                        </span>
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                        From {notification.sender_id.substring(0, 8)}...
-                      </p>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  ))}
 
-                {notifications.length > 5 && (
+                {notifications.length > displayCount && (
                   <li className="p-2 text-center">
                     <button
                       onClick={handleViewAll}
                       className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                     >
-                      View {notifications.length - 5} more
+                      View {notifications.length - displayCount} more
                     </button>
                   </li>
                 )}

@@ -8,6 +8,7 @@ from uuid import UUID
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
+from bson.objectid import ObjectId
 # import asyncpg  # type: ignore
 # from pymongo import MongoClient
 
@@ -356,23 +357,25 @@ class NotificationManager:
             
             # Query for user notifications
             query = {"recipient_id": user_id}
-            logger.debug(f"Query: {query}")
             cursor = db.notifications.find(query)
             documents = await cursor.to_list(length=None)  # Fetch all documents into a list
             logger.debug(f"Found {len(documents)} notifications for user {user_id}")
             
+            # Process each document into response objects
             notifications = []
             for doc in documents:
-                logger.debug(f"Processing document: {doc}")
-                # Convert MongoDB doc to database model
-                db_notification = NotificationDB.from_mongo_doc(doc)
+                try:
+                    # Convert MongoDB doc to database model
+                    db_notification = NotificationDB.from_mongo_doc(doc)
+                    
+                    # Convert database model to API response
+                    api_notification = db_notification.to_api_response()
+                    notifications.append(api_notification)
+                except Exception as doc_error:
+                    # Log error but continue processing other documents
+                    logger.error(f"Error processing notification document: {doc_error}")
                 
-                # Convert database model to API response
-                api_notification = db_notification.to_api_response()
-                                
-                notifications.append(api_notification)
-                
-            return notifications 
+            return notifications
 
         except ValueError as e:
             logger.error(f"Invalid UUID format for user_id: {user_id}")
@@ -398,6 +401,8 @@ class NotificationManager:
             # Convert to MongoDB document and insert
             mongo_dict = db_notification.to_mongo_dict()
             result = await db.notifications.insert_one(mongo_dict)
+            
+            # Log with the actual ObjectId from MongoDB
             logger.info(f"Notification inserted with ID: {result.inserted_id}")
             
             # Return all notifications for the recipient
@@ -407,15 +412,15 @@ class NotificationManager:
             logger.error(f"Failed to create notification: {e}")
             return []
 
-    async def delete_notification(self, notification_id: str, user_id: str) -> bool:
-        """Delete a specific notification for a user.
+    async def mark_notification_as_read(self, notification_id: str, user_id: str) -> bool:
+        """Mark a notification as read.
         
         Args:
-            notification_id: The ID of the notification to delete
+            notification_id: The ID of the notification to mark as read
             user_id: The user ID who owns the notification
             
         Returns:
-            bool: True if deletion was successful, False otherwise
+            bool: True if update was successful, False otherwise
         """
         if not self.mongo_client:
             logger.warning("MongoDB not available")
@@ -426,26 +431,115 @@ class NotificationManager:
             db_name = self.config["mongodb"].get("database", "notifications")
             db = self.mongo_client[db_name]
             
+
+            try:
+                object_id = ObjectId(notification_id)
+            except Exception as e:
+                logger.error(f"Invalid ObjectId format: {notification_id}, error: {e}")
+                return False
+            
             # Create query with both notification_id and user_id for security
             query = {
-                "_id": notification_id,
+                "_id": object_id,  # Use ObjectId, not string
                 "recipient_id": user_id
             }
             
-            # Delete the document directly
-            result = await db.notifications.delete_one(query)
+            # Update document to mark as read
+            update = {
+                "$set": {
+                    "read": True,
+                }
+            }
             
-            # Check if deletion was successful
-            if result.deleted_count == 1:
-                logger.info(f"Notification {notification_id} deleted for user {user_id}")
+            # Update the document directly
+            result = await db.notifications.update_one(query, update)
+            
+            # Check if update was successful
+            if result.modified_count == 1:
+                logger.info(f"Notification {notification_id} marked as read for user {user_id}")
                 return True
             else:
+                # Check if document exists but wasn't modified (already read)
+                doc = await db.notifications.find_one({"_id": object_id})
+                if doc:
+                    logger.info(f"Notification {notification_id} exists but is already read")
+                    return True
                 logger.warning(f"Notification {notification_id} not found for user {user_id}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Failed to delete notification: {e}")
+            logger.error(f"Failed to mark notification as read: {e}")
             return False
+
+    async def mark_all_notifications_as_read(self, user_id: str) -> bool:
+            """Mark all of a user's notification as read.
+            
+            Args:
+                user_id: The user ID who owns the notification
+                
+            Returns:
+                bool: True if update was successful, False otherwise
+            """
+            if not self.mongo_client:
+                logger.warning("MongoDB not available")
+                return False
+
+            try:
+                # Get database
+                db_name = self.config["mongodb"].get("database", "notifications")
+                db = self.mongo_client[db_name]
+                
+                # Create query with both notification_id and user_id for security
+                query = {
+                    "recipient_id": user_id
+                }
+                
+                # Update document to mark as read
+                update = {
+                    "$set": {
+                        "read": True,
+                    }
+                }
+                
+                # Update the document directly
+                result = await db.notifications.update_many(query, update)
+                
+                # Check if update was successful
+                if result.modified_count > 0:
+                    logger.info(f"All notifications marked as read for user {user_id}")
+                    return True
+                else:
+                    # Check if document exists but wasn't modified (already read)
+                    doc = await db.notifications.find_one({"recipient_id": user_id})
+                    if doc:
+                        logger.info(f"Notifications exists but are already read")
+                        return True
+                    logger.warning(f"Notification not found for user {user_id}")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"Failed to mark notification as read: {e}")
+                return False
+        
+    async def delete_read_notifications(self, user_id: str) -> int:
+        """Delete all read notifications for a user.
+        
+        Returns:
+            int: Number of notifications deleted
+        """
+        if not self.mongo_client:
+            return 0
+            
+        try:
+            db = self.mongo_client[self.config["mongodb"].get("database", "notifications")]
+            result = await db.notifications.delete_many({
+                "recipient_id": user_id,
+                "read": True
+            })
+            return result.deleted_count
+        except Exception as e:
+            logger.error(f"Failed to delete read notifications: {e}")
+            return 0
 
     # async def _update_user_notification(
     #     self,

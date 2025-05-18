@@ -13,8 +13,7 @@ import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
 import { ServerEvents } from '../types/serverEvents';
 import NotificationBell from "../components/NotificationsList";
-import { fetchNotifications } from "../services/notificationsAPI";
-import type { NotificationResponseType } from "../types/notificationType";
+// import type { NotificationResponseType } from "../types/notificationType";
 import AddNotificationTest from "../components/AddNotificationTest";
 
 const ChatPage: React.FC = () => {
@@ -73,9 +72,7 @@ const ChatPage: React.FC = () => {
 						</div>
 						<div className="flex items-center space-x-4">
 
-							<NotificationBell
-								notifications={notifications}
-							/>
+							<NotificationBell/>
 							{/* Dark mode toggle */}
 							<button
 								type='button'

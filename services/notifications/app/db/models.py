@@ -3,6 +3,19 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Dict, Any
+from bson import ObjectId
+
+
+class PyObjectId(str):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+        
+    @classmethod
+    def validate(cls, v, info=None):
+        if not ObjectId.is_valid(v):
+            raise ValueError("Invalid ObjectId")
+        return str(v)
 
 
 class DeliveryType(str, Enum):
@@ -57,6 +70,7 @@ class NotificationRequest(BaseModel):
 # 2. DATABASE MODEL - Uses UUID for internal storage
 class NotificationDB(BaseModel):
     """Database model with UUID fields."""
+    id: Optional[PyObjectId] = Field(default=None, alias="_id", description="MongoDB Object ID")
     recipient_id: uuid.UUID = Field(..., description="Recipient User ID")
     sender_id: uuid.UUID = Field(..., description="Sender User ID")
     reference_id: uuid.UUID = Field(..., description="Reference ID (message_id or room_id)")
@@ -70,7 +84,7 @@ class NotificationDB(BaseModel):
     # Convert to MongoDB-compatible dictionary
     def to_mongo_dict(self) -> dict[str, Any]:
         """Convert to MongoDB document."""
-        data = self.model_dump()
+        data = self.model_dump(exclude={"id"})  # Exclude id field
         # Convert UUID objects to strings
         for field in ['recipient_id', 'sender_id', 'reference_id']:
             if isinstance(data[field], uuid.UUID):
@@ -81,6 +95,7 @@ class NotificationDB(BaseModel):
     def to_api_response(self) -> 'NotificationResponse':
         """Convert to API response model."""
         return NotificationResponse(
+            notification_id=self.id,  # Use MongoDB _id directly
             recipient_id=str(self.recipient_id),
             sender_id=str(self.sender_id),
             reference_id=str(self.reference_id),
@@ -96,7 +111,11 @@ class NotificationDB(BaseModel):
     @classmethod
     def from_mongo_doc(cls, doc: dict[str, Any]) -> 'NotificationDB':
         """Create from MongoDB document."""
-        # Convert string IDs back to UUIDs
+        # First, handle the _id field to ensure it's properly included
+        if '_id' in doc and doc['_id'] is not None:
+            doc['_id'] = str(doc['_id'])  # Convert ObjectId to string
+        
+        # Convert string IDs to UUIDs
         for field in ['recipient_id', 'sender_id', 'reference_id']:
             if field in doc and isinstance(doc[field], str):
                 try:
@@ -106,11 +125,16 @@ class NotificationDB(BaseModel):
                     doc[field] = uuid.uuid4()
         
         return cls(**doc)
+    
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
 
 # 3. API RESPONSE MODEL - Returns string IDs to client
 class NotificationResponse(BaseModel):
     """API response model with string IDs."""
-    notification_id: Optional[str] = Field(default=None, description="Notification ID")
+    notification_id: str = Field(default=None, description="Notification ID")
     recipient_id: str = Field(..., description="Recipient User ID")
     sender_id: str = Field(..., description="Sender User ID")
     reference_id: str = Field(..., description="Reference ID")
@@ -121,6 +145,8 @@ class NotificationResponse(BaseModel):
     read: bool = Field(default=False, description="Whether notification has been read")
     notification_type: NotificationType = Field(..., description="Type of notification")
 
+class SuccessResponse(BaseModel):
+    success: bool = True
 
 class JWTTokenData(BaseModel):
     """JWT token payload structure that uses user_id as the subject."""

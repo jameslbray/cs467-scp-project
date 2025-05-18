@@ -30,21 +30,18 @@ export const fetchNotifications = async (userId: string): Promise<NotificationRe
 /**
  * Mark a notification as read
  */
-export const markNotificationAsRead = async (notificationId: string): Promise<boolean> => {
+export const markNotificationAsRead = async (notificationId: string, recipientId: string): Promise<boolean> => {
   try {
     const token = localStorage.getItem("auth_token");
     if (!token) throw new Error("Authentication required");
 
     // TODO: Do we need to pass a list of notification IDs or just one?
-    // const notificationIds = [notificationId]; // Example of passing a list
-    // const body = JSON.stringify({ notificationIds });
-    const response = await fetch(`${API_URL}/notify/read/${notificationId}`, {
+    const response = await fetch(`${API_URL}/notify/${recipientId}?notification_id=${notificationId}`, {
       method: "PUT",
       headers: {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json"
       }
-      // body: body
     });
 
     return response.ok;
@@ -53,6 +50,31 @@ export const markNotificationAsRead = async (notificationId: string): Promise<bo
     return false;
   }
 };
+
+/**
+ * Mark all notifications as read
+ */
+export const markAllNotificationsAsRead = async (recipientId: string): Promise<boolean> => {
+  try {
+    const token = localStorage.getItem("auth_token");
+    if (!token) throw new Error("Authentication required");
+
+    // TODO: Finish implementing this
+    const response = await fetch(`${API_URL}/notify/all/${recipientId}`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+
+    return response.ok;
+  } catch (error) {
+    console.error("Error marking notification as read:", error);
+    return false;
+  }
+};
+
 
 /**
  * Create a new notification for a user
@@ -99,3 +121,26 @@ export const createNotification = async (
     return [];
   }
 };
+
+/**
+ * Delete all read notifications
+ */
+export const deleteNotification = async (recipientId: string): Promise<boolean> => {
+  try {
+    const token = localStorage.getItem("auth_token");
+    if (!token) throw new Error("Authentication required");
+
+    const response = await fetch(`${API_URL}/notify/${recipientId}`, {
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+
+    return response.ok || response.status === 404;
+  } catch (error) {
+    console.error("Error deleting notification:", error);
+    return false;
+  }
+}
