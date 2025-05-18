@@ -110,6 +110,7 @@ class NotificationDB(BaseModel):
 # 3. API RESPONSE MODEL - Returns string IDs to client
 class NotificationResponse(BaseModel):
     """API response model with string IDs."""
+    notification_id: Optional[str] = Field(default=None, description="Notification ID")
     recipient_id: str = Field(..., description="Recipient User ID")
     sender_id: str = Field(..., description="Sender User ID")
     reference_id: str = Field(..., description="Reference ID")

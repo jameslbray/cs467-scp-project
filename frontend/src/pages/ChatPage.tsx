@@ -12,6 +12,10 @@ import { useSocketEvent } from '../contexts/socket/useSocket';
 import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
 import { ServerEvents } from '../types/serverEvents';
+import NotificationBell from "../components/NotificationsList";
+import { fetchNotifications } from "../services/notificationsAPI";
+import type { NotificationResponseType } from "../types/notificationType";
+import AddNotificationTest from "../components/AddNotificationTest";
 
 const ChatPage: React.FC = () => {
 	const { darkMode, toggleDarkMode } = useTheme();
@@ -67,7 +71,11 @@ const ChatPage: React.FC = () => {
 						<div className='flex items-center'>
 							<UserStatus />
 						</div>
-						<div className='flex items-center space-x-4'>
+						<div className="flex items-center space-x-4">
+
+							<NotificationBell
+								notifications={notifications}
+							/>
 							{/* Dark mode toggle */}
 							<button
 								type='button'
@@ -115,6 +123,7 @@ const ChatPage: React.FC = () => {
 					<div className='lg:col-span-1'>
 						<RoomList onSelectRoom={setSelectedRoom} />
 						<ConnectedUsers />
+						<AddNotificationTest />
 					</div>
 					{/* Chat panel */}
 					<div className='lg:col-span-2'>

@@ -82,7 +82,7 @@ class NotificationManager:
             #     circuit_breaker=self.rabbitmq_cb
             # )
 
-            # Initialize database if this is the presence service
+            # Initialize database connection with circuit breaker
             if "mongodb" in self.config:
                 await with_retry(
                     self._connect_database,
@@ -407,53 +407,44 @@ class NotificationManager:
             logger.error(f"Failed to create notification: {e}")
             return []
 
-    def set_user_notification(self, user_id: str, user_notification: NotificationRequest) -> bool:
-        """Set user's notifications."""
+    async def delete_notification(self, notification_id: str, user_id: str) -> bool:
+        """Delete a specific notification for a user.
+        
+        Args:
+            notification_id: The ID of the notification to delete
+            user_id: The user ID who owns the notification
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        if not self.mongo_client:
+            logger.warning("MongoDB not available")
+            return False
+
         try:
-            notification_type = NotificationType(
-                user_notification.notification_type)
-            current_time = user_notification.timestamp or datetime.now().timestamp()
-
-            # Initialize user in presence_data if not exists
-            if user_id not in self.notification_data:
-                self.notification_data[user_id] = NotificationRequest(
-                    notification_id=user_notification.notification_id,
-                    recipient_id=user_notification.recipient_id,
-                    sender_id=user_notification.sender_id,
-                    reference_id=user_notification.reference_id,
-                    content_preview=user_notification.content_preview,
-                    timestamp=current_time,
-                    notification_type=notification_type.value,
-                    read=user_notification.read
-                )
-                logger.info(
-                    f"Created new notification entry for user {user_id}")
-
+            # Get database
+            db_name = self.config["mongodb"].get("database", "notifications")
+            db = self.mongo_client[db_name]
+            
+            # Create query with both notification_id and user_id for security
+            query = {
+                "_id": notification_id,
+                "recipient_id": user_id
+            }
+            
+            # Delete the document directly
+            result = await db.notifications.delete_one(query)
+            
+            # Check if deletion was successful
+            if result.deleted_count == 1:
+                logger.info(f"Notification {notification_id} deleted for user {user_id}")
+                return True
             else:
-                self.notification_data[user_id].update(NotificationRequest(
-                    notification_id=user_notification.notification_id,
-                    recipient_id=user_notification.recipient_id,
-                    sender_id=user_notification.sender_id,
-                    reference_id=user_notification.reference_id,
-                    content_preview=user_notification.content_preview,
-                    timestamp=current_time,
-                    notification_type=notification_type.value,
-                    read=user_notification.read
-                ))
-
-            # Update status in database and notify others with circuit breaker
-            # await with_retry(
-            #     lambda: self._update_user_status(user_id, status_type),
-            #     max_attempts=3,
-            #     circuit_breaker=self.db_cb
-            # )
-
-            logger.info(
-                f"Added {notification_type} notification to User {user_id}")
-            return True
-        except ValueError as e:
-            logger.error(
-                f"Invalid notification type: {user_notification.notification_type}. Exception: {e}")
+                logger.warning(f"Notification {notification_id} not found for user {user_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to delete notification: {e}")
             return False
 
     # async def _update_user_notification(

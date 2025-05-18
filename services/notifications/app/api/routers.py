@@ -107,20 +107,63 @@ async def get_user_notifications(
     logger.info(f"Fetching notifications for user: {user_id}")
     notification_data = await notification_manager.get_user_notifications(user_id)
 
-    # Create response with required fields
-    # return NotificationResponse(
-    #     notification_id=notification_data.get("notification_id"),
-    #     recipient_id=user_id,
-    #     sender_id=notification_data.get("sender_id"),
-    #     reference_id=notification_data.get("reference_id"),
-    #     content_preview=notification_data.get("content_preview", ""),
-    #     timestamp=notification_data.get("timestamp"),
-    # )
     return notification_data
 
 
-@router.put(
+@router.post(
     "/notify/{user_id}",
+    response_model=list[NotificationResponse],
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+        403: {"model": ErrorResponse, "description": "Forbidden"},
+        404: {"model": ErrorResponse, "description": "User not found"},
+    },
+)
+async def create_user_notification(
+    user_id: str,
+    notification_update: NotificationRequest,
+    # current_user: str = Depends(get_current_user),
+    notification_manager: NotificationManager = Depends(get_notification_manager),
+):
+    """
+    Create a user notification. 
+    
+    Parameters:
+    - **user_id**: ID of the user whose status is being updated
+    - **notification_update**: New notification information
+
+    Returns:
+    - **NotificationResponse**: Created notification information
+    """
+    # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+    
+    logger.info(f"Creating notification for user: {user_id}")
+
+    try:
+        # If user_id in the URL differs from the one in the request, ensure consistency
+        if notification_update.recipient_id != user_id:
+            notification_update.recipient_id = user_id
+            
+       
+        response = await notification_manager.create_notification(notification_update)
+        return response  
+        
+    except Exception as e:
+        logger.error(f"Failed to update notification: {e}")
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Failed to update notification",
+        )
+
+
+@router.put(
+    "/notify/read/{user_id}",
     response_model=list[NotificationResponse],
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
@@ -136,10 +179,10 @@ async def update_user_notification(
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
-    Update a user's notifications (users can only update their own notifications)
+    Update a user's notifications. Post body should contain the notification_id.
 
     Parameters:
-    - **user_id**: ID of the user whose status is being updated
+    - **user_id**: ID of the user whose notification is being updated
     - **notification_update**: New notification information
 
     Returns:
@@ -151,6 +194,8 @@ async def update_user_notification(
     #         status_code=HTTP_403_FORBIDDEN,
     #         detail="You can only update your own status"
     #     )
+    
+    logger.info(f"Creating notification for user: {user_id}")
 
     try:
         # If user_id in the URL differs from the one in the request, ensure consistency
@@ -158,7 +203,7 @@ async def update_user_notification(
             notification_update.recipient_id = user_id
             
        
-        response = await notification_manager.create_notification(notification_update)
+        response = await notification_manager.update_notification(notification_update)
         return response  
         
     except Exception as e:
@@ -395,10 +440,12 @@ async def api_info():
         "version": settings.VERSION,
         "description": "API for tracking and managing user notifications",
         "endpoints": {
+            "GET /notify/health": "Health check endpoint",
             "GET /api/notify/{user_id}": "Get a user's current notifications",
-            "PUT /api/notify/{user_id}": "Update a user's notifications",
+            "POST /api/notify/{user_id}": "Create a notification for a user",
+            "PUT /api/notify/read/{user_id}": "Update a user's notification status (ex. from 'sent' to 'read')",
             # "GET /api/notify/friends/{user_id}": "Get status of all friends",
-            "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
-            "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
+            # "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
+            # "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
         },
     }
