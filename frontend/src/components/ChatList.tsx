@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useSocketContext } from "../contexts/socket/socketContext";
 import { useFetchMessages } from "../hooks/useFetchMessages";
+import { useAuth } from "../contexts";
 import type { ChatMessageType } from "../types/chatMessageType";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
@@ -12,8 +13,8 @@ interface ChatListProps {
 
 const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 	const { socket } = useSocketContext();
-	// TODO: Replace with userId from context/auth
-	const currentUserId = "765e68a1-92cb-417d-aa17-9da78bb3bbdb";
+	const { user } = useAuth();
+	const currentUserId = user?.id ?? "";
 	const {
 		messages: initialMessages,
 		loading,

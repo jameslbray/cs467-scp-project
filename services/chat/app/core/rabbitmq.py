@@ -19,69 +19,53 @@ class ChatRabbitMQClient:
         self.user_events_exchange = "user"
         self.user_events_queue = "user"
         self.user_add_to_room_routing_key = "user.add_to_room"
-        self.room_rpc_queue = "room_rpc"
-        self.room_get_id_routing_key = "room.get_id"
+        self.room_rpc = "room_rpc"
+        self.room_get_id_routing_key = "room.get_id_by_name"
+        self.room_is_user_member_routing_key = "room.is_user_member"
 
     async def initialize(self):
-        """
-        Initialize RabbitMQ connection and declare necessary queues/exchanges
-        """
-        try:
-            await self.client.connect()
-            # Declare the exchanges
-            await self.client.declare_exchange(
-                self.exchange_name, exchange_type="topic"
-            )
-            await self.client.declare_exchange(
-                self.user_events_exchange, exchange_type="topic"
-            )
-            # Declare queues
-            await self.client.declare_queue(self.message_queue)
-            await self.client.declare_queue(self.notification_queue)
-            await self.client.declare_queue(self.user_events_queue)
-            await self.client.declare_queue(self.room_rpc_queue)
-            # Bind the chat_messages queue to the chat exchange with a wildcard routing key
-            await self.client.bind_queue(
-                self.message_queue,
-                self.exchange_name,
-                "#",
-            )
-            # Bind the user_events queue to the exchange with the routing key
-            await self.client.bind_queue(
-                self.user_events_queue,
-                self.user_events_exchange,
-                self.user_add_to_room_routing_key,
-            )
-            logger.info("RabbitMQ client initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize RabbitMQ client: {str(e)}")
-            raise
+        await self.client.connect()
+        await self.client.declare_exchange(
+            self.exchange_name, exchange_type="topic"
+        )
+        await self.client.declare_exchange(
+            self.user_events_exchange, exchange_type="topic"
+        )
+        await self.client.declare_queue(self.message_queue)
+        await self.client.declare_queue(self.notification_queue)
+        await self.client.declare_queue(self.user_events_queue)
+        await self.client.declare_queue(self.room_rpc)
+        await self.client.bind_queue(
+            self.message_queue, self.exchange_name, "#"
+        )
+        await self.client.bind_queue(
+            self.room_rpc, self.exchange_name, self.room_get_id_routing_key
+        )
+        await self.client.bind_queue(
+            self.room_rpc,
+            self.exchange_name,
+            self.room_is_user_member_routing_key,
+        )
+        await self.client.bind_queue(
+            self.user_events_queue,
+            self.user_events_exchange,
+            self.user_add_to_room_routing_key,
+        )
+        logger.info("RabbitMQ client initialized successfully")
 
     async def publish_message(self, message: str, routing_key: str):
-        """Publish a chat message"""
-        try:
-            await self.client.publish_message(
-                self.exchange_name, routing_key, message
-            )
-            logger.info(f"Message published to {routing_key}")
-        except Exception as e:
-            logger.error(f"Failed to publish message: {str(e)}")
-            raise
+        await self.client.publish_message(
+            self.exchange_name, routing_key, message
+        )
+        logger.info(f"Message published to {routing_key}")
 
     async def publish_notification(self, notification: str):
-        """Publish a chat notification"""
-        try:
-            await self.client.publish_message(
-                self.exchange_name, self.notification_queue, notification
-            )
-            logger.info("Notification published")
-        except Exception as e:
-            logger.error(f"Failed to publish notification: {str(e)}")
-            raise
+        await self.client.publish_message(
+            self.exchange_name, self.notification_queue, notification
+        )
+        logger.info("Notification published")
 
     async def consume_messages(self):
-        """Consume both chat messages and user events from RabbitMQ and process accordingly."""
-
         async def unified_handler(message):
             try:
                 body = json.loads(message.body.decode())
@@ -109,6 +93,47 @@ class ChatRabbitMQClient:
                         logger.warning(
                             f"Failed to add user {user_id} to room {room_id} (room may not exist or user already present)."
                         )
+                    await message.ack()
+                    return
+
+                # Handle room RPC requests: get_room_id_by_name
+                if (
+                    routing_key == self.room_get_id_routing_key
+                    or body.get("action") == "get_room_id_by_name"
+                ):
+                    room_name = body.get("name")
+                    repo = ChatRepository()
+                    room_id = await repo.get_room_id_by_name(room_name)
+                    response = (
+                        {"room_id": room_id}
+                        if room_id
+                        else {"error": "Room not found"}
+                    )
+                    await self.client.publish_message(
+                        exchange="",
+                        routing_key=message.reply_to,
+                        message=json.dumps(response),
+                        correlation_id=message.correlation_id,
+                    )
+                    await message.ack()
+                    return
+
+                # Handle room RPC requests: is_user_member
+                if (
+                    routing_key == self.room_is_user_member_routing_key
+                    or body.get("action") == "is_user_member"
+                ):
+                    room_id = body.get("room_id")
+                    user_id = body.get("user_id")
+                    repo = ChatRepository()
+                    is_member = await repo.is_user_member(room_id, user_id)
+                    response = {"is_member": is_member}
+                    await self.client.publish_message(
+                        exchange="",
+                        routing_key=message.reply_to,
+                        message=json.dumps(response),
+                        correlation_id=message.correlation_id,
+                    )
                     await message.ack()
                     return
 
@@ -145,23 +170,18 @@ class ChatRabbitMQClient:
                 logger.error(f"Failed to process message: {e}")
                 await message.nack(requeue=False)
 
-        # Consume from both queues
         await self.client.consume(
             queue_name=self.message_queue, callback=unified_handler
         )
         await self.client.consume(
             queue_name=self.user_events_queue, callback=unified_handler
         )
+        await self.client.consume(
+            queue_name=self.room_rpc, callback=unified_handler
+        )
 
     async def close(self):
-        """Close RabbitMQ connection"""
-        try:
-            await self.client.close()
-            logger.info("RabbitMQ connection closed")
-        except Exception as e:
-            logger.error(f"Error closing RabbitMQ connection: {str(e)}")
-            raise
+        await self.client.close()
 
     async def consume_all_events(self):
-        """Consume all events from RabbitMQ"""
         await self.consume_messages()

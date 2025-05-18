@@ -154,10 +154,22 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
         ),
     )
 
+    # Get room ID for user
+    room_id = await rabbitmq_client.publish_message(
+        exchange="chat",
+        routing_key="room.get_id_by_name",
+        message=json.dumps({"name": "general"}),
+    )
+
+    if room_id:
+        logger.info(f"Room ID for user {db_user.id}: {room_id}")
+    else:
+        logger.error(f"Failed to get room ID for user {db_user.id}")
+
     event = {
         "event": "add_user_to_room",
         "user_id": str(db_user.id),
-        "room_id": "7dfcec7e-cb14-4b38-8529-f93dc69e9ed2",
+        "room_id": room_id,
     }
 
     logger.info(f"Publishing event: {event}")
@@ -221,6 +233,45 @@ async def login_for_access_token(
             }
         ),
     )
+
+
+    # 1. Get the General room ID via RPC
+    response = await rabbitmq_client.rabbitmq_client.publish_and_wait(
+        exchange="chat",
+        routing_key="room.get_id_by_name",
+        message={"action": "get_room_id_by_name", "name": "General"},
+    )
+    room_id = response.get("room_id")
+    if room_id:
+        # 2. Check if user is already a member
+        is_member_response = await rabbitmq_client.rabbitmq_client.publish_and_wait(
+            exchange="chat",
+            routing_key="room.is_user_member",
+            message={
+                "action": "is_user_member",
+                "room_id": room_id,
+                "user_id": str(user.id),
+            },
+        )
+        if not is_member_response.get("is_member"):
+            # 3. Add user to General room
+            event = {
+                "event": "add_user_to_room",
+                "user_id": str(user.id),
+                "room_id": room_id,
+            }
+            logger.info(
+                f"Adding user {user.id} to General room {room_id} on login."
+            )
+            await rabbitmq_client.publish_message(
+                exchange="user",
+                routing_key="user.add_to_room",
+                message=json.dumps(event),
+            )
+    else:
+        logger.error(
+            f"Could not get General room ID on login for user {user.id}."
+        )
 
     return access_token
 
