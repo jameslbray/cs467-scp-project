@@ -224,7 +224,7 @@ class PresenceManager:
                 raise Exception("Failed to connect to RabbitMQ")
 
             # Declare exchange
-            await self.rabbitmq.declare_exchange("user_events", "topic")
+            await self.rabbitmq.declare_exchange("user", "topic")
 
             # Declare and bind queue
             await self.rabbitmq.declare_queue(
@@ -233,7 +233,7 @@ class PresenceManager:
             )
             await self.rabbitmq.bind_queue(
                 "presence_updates",
-                "user_events",
+                "user",
                 "status.#"
             )
 
@@ -312,7 +312,7 @@ class PresenceManager:
         try:
             status_type = status
             current_time = last_changed or datetime.now().timestamp()
-        
+
             # Initialize user in presence_data if not exists
             if user_id not in self.presence_data:
                 self.presence_data[user_id] = {
@@ -320,7 +320,7 @@ class PresenceManager:
                     "last_seen": current_time
                 }
                 logger.info(f"Created new presence entry for user {user_id}")
-            
+
             else:
                 self.presence_data[user_id].update({
                     "status": status_type.value,
@@ -449,7 +449,7 @@ class PresenceManager:
                 "last_changed": last_changed or datetime.now().timestamp(),
             })
             await self.rabbitmq.publish_message(
-                exchange="user_events",
+                exchange="user",
                 routing_key=f"status.{user_id}",
                 message=message
             )
@@ -575,7 +575,7 @@ class PresenceManager:
         try:
             status_type = StatusType(status)
             current_time = last_changed or datetime.now().timestamp()
-        
+
             # Initialize user in presence_data if not exists
             if user_id not in self.presence_data:
                 self.presence_data[user_id] = {
@@ -583,7 +583,7 @@ class PresenceManager:
                     "last_seen": current_time
                 }
                 logger.info(f"Created new presence entry for user {user_id}")
-            
+
             else:
                 self.presence_data[user_id].update({
                     "status": status_type.value,
@@ -624,4 +624,3 @@ class PresenceManager:
         except ValueError:
             logger.error(f"Invalid status: {status}")
             return False
-        

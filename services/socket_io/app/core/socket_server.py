@@ -1,14 +1,17 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Never, Optional
 
 import socketio
 
+from services.presence.app.core.presence_manager import PresenceManager
 from services.rabbitmq.core.client import RabbitMQClient
+from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 from .config import get_socket_io_config
+from .events import AuthEvents, EventType, create_event
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -17,7 +20,7 @@ logger = logging.getLogger(__name__)
 class SocketServer:
     """Socket.IO server implementation."""
 
-    def __init__(self):
+    def __init__(self, rabbitmq_settings: RabbitMQSettings):
         """Initialize the Socket.IO server."""
         self.sio = socketio.AsyncServer(
             logger=True,
@@ -28,14 +31,17 @@ class SocketServer:
         self.user_to_sid: Dict[str, str] = {}  # user_id -> sid mapping
         self._initialized = False
 
-        # Initialize RabbitMQ client
-        self.rabbitmq = RabbitMQClient()
+        # Initialize RabbitMQ client with provided settings
+        self.rabbitmq = RabbitMQClient(rabbitmq_settings)
 
         # Initialize circuit breakers
         self.rabbitmq_cb = CircuitBreaker(
-            "rabbitmq",
-            failure_threshold=3,
-            reset_timeout=30
+            "rabbitmq", failure_threshold=3, reset_timeout=30
+        )
+
+        # Initialize presence manager
+        self.presence_manager = PresenceManager(
+            {"rabbitmq": {"url": rabbitmq_settings.RABBITMQ_URL}}
         )
 
         # Register event handlers
@@ -45,10 +51,15 @@ class SocketServer:
         self.sio.on("chat_message", self._on_chat_message)
         self.sio.on("presence_update", self._on_presence_update)
 
+        # TODO: implement chat typing and chat read receipts functionality
+        self.sio.on("chat_typing", self._on_chat_typing)
+        self.sio.on("chat_read", self._on_chat_read)
+        # Register auth event handlers
+        self.auth_events = AuthEvents(self.sio, self.rabbitmq)
+
     async def initialize(self) -> bool:
-        """Initialize the Socket.IO server."""
+        """Initialize the Socket.IO server and its dependencies."""
         if self._initialized:
-            # Already initialized, return success
             logger.debug("Socket.IO server already initialized")
             return True
 
@@ -59,7 +70,15 @@ class SocketServer:
                 max_attempts=5,
                 initial_delay=5.0,
                 max_delay=60.0,
-                circuit_breaker=self.rabbitmq_cb
+                circuit_breaker=self.rabbitmq_cb,
+            )
+
+            # Initialize presence manager
+            await with_retry(
+                self.presence_manager.initialize,
+                max_attempts=3,
+                initial_delay=5.0,
+                max_delay=30.0,
             )
 
             logger.info("Socket.IO server initialized successfully")
@@ -68,8 +87,6 @@ class SocketServer:
 
         except Exception as e:
             logger.error(f"Failed to fully initialize Socket.IO server: {e}")
-            # We'll continue running even if some dependencies failed
-            # The circuit breaker will handle retries during operation
             self._initialized = True
             return False
 
@@ -84,61 +101,74 @@ class SocketServer:
         await self.rabbitmq.declare_exchange("chat", "topic")
         await self.rabbitmq.declare_exchange("presence", "topic")
         await self.rabbitmq.declare_exchange("notifications", "topic")
+        await self.rabbitmq.declare_exchange("auth", "topic")
 
         logger.info("RabbitMQ connection and exchanges initialized")
         return True
 
     async def shutdown(self) -> None:
-        """Shutdown the Socket.IO server."""
+        """Shutdown the Socket.IO server and its dependencies."""
         logger.info("Socket.IO server shutting down")
+        await self.presence_manager.shutdown()
         await self.rabbitmq.close()
 
-    async def _on_connect(self, sid: str, environ: Dict[str, Any]) -> None:
+    async def _on_connect(
+        self, sid: str, environ: Dict[str, Any], auth: Any
+    ) -> None:
         """Handle new socket connection."""
         logger.info(f"New client connected: {sid}")
 
-        # Extract user ID from authorization header if present
-        auth_data = environ.get("HTTP_AUTHORIZATION", "")
-        if auth_data:
-            # In a real implementation, you would validate the token
-            # and extract the user ID from it
-            user_id = auth_data  # Simplified for this example
+        # Extract token from auth payload
+        token = None
+        if auth and isinstance(auth, dict):
+            token = auth.get("token")
+        if not token:
+            logger.warning("No token provided on connect, disconnecting.")
+            await self.sio.disconnect(sid)
+            return
+
+        # Validate token via users service (RabbitMQ)
+        try:
+            response = await self.rabbitmq.publish_and_wait(
+                exchange="auth",
+                routing_key="auth.validate",
+                message={"token": token},
+                correlation_id=sid,
+            )
+
+            if response.get("error") or not response.get("user"):
+                logger.warning(
+                    f"Token validation failed: {response.get('message')}"
+                )
+                await self.sio.disconnect(sid)
+                return
+
+            user_id = response["user"]["id"]
             self.register_user(sid, user_id)
             logger.info(f"User {user_id} connected with sid {sid}")
 
-    async def _on_disconnect(self, sid: str) -> None:
-        """Handle socket disconnection."""
-        logger.info(f"Client disconnected: {sid}")
+            # Join the user to the "general" room by default
+            await self.join_room(sid, "general")
 
-        # Unregister user if associated with this sid
-        user_id = self.unregister_user(sid)
-        if user_id:
-            logger.info(f"User {user_id} disconnected")
-            # Publish presence update via RabbitMQ with retry
-            try:
-                await with_retry(
-                    lambda: self._publish_presence_update(user_id, "offline"),
-                    max_attempts=3,
-                    circuit_breaker=self.rabbitmq_cb
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to publish presence update for {user_id}: {e}"
-                )
+        except Exception as e:
+            logger.error(f"Error during token validation: {e}")
+            await self.sio.disconnect(sid)
 
     async def _publish_presence_update(
         self, user_id: str, status: str
     ) -> Never:
         """Publish presence update to RabbitMQ."""
         await self.rabbitmq.publish_message(
-            exchange="user_events",
+            exchange="user",
             routing_key=f"status.{user_id}",
-            message=json.dumps({
-                "type": "status_update",
-                "user_id": user_id,
-                "status": status,
-                "last_changed": datetime.now().timestamp()
-            })
+            message=json.dumps(
+                {
+                    "type": "status_update",
+                    "user_id": user_id,
+                    "status": status,
+                    "last_changed": datetime.now().timestamp(),
+                }
+            ),
         )
         # Ensures Never return type
         raise Exception("Presence update complete")
@@ -152,44 +182,46 @@ class SocketServer:
         user_id = self.get_user_id_from_sid(sid)
         if not user_id:
             logger.error(
-                f"Message received from unauthenticated socket: {sid}")
+                f"Message received from unauthenticated socket: {sid}"
+            )
             return
 
-        # Add user_id to message data
-        message_data = {
-            **data,
-            "user_id": user_id,
-            "timestamp": "now"  # In real implementation, use proper timestamp
+        # Create chat message
+        chat_message = {
+            "id": data.get("id", ""),
+            "sender_id": user_id,
+            "room_id": data.get("room_id", ""),
+            "content": data.get("content", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "is_edited": False,
         }
 
-        # 1. Send directly to room participants for immediate delivery
         room = data.get("room", "general")
-        await self.emit_to_room(room, "chat_message", message_data)
+        await self.emit_to_room(
+            room, EventType.CHAT_MESSAGE.value, dict(chat_message)
+        )
 
-        # 2. Publish to RabbitMQ for persistence and service notifications
         try:
             await with_retry(
                 lambda: self.rabbitmq.publish_message(
                     exchange="chat",
                     routing_key=room,
-                    message=json.dumps(message_data)
+                    message=json.dumps(chat_message),
                 ),
                 max_attempts=3,
-                circuit_breaker=self.rabbitmq_cb
+                circuit_breaker=self.rabbitmq_cb,
             )
-            # 3. Acknowledge message receipt to sender
-            await self.sio.emit(
-                "message_received",
-                message_data,
-                room=sid
-            )
+
+            await self.sio.emit("message_received", chat_message, room=sid)
+            logger.info(f"Chat message published to {room}")
         except Exception as e:
             logger.error(f"Failed to publish chat message: {e}")
             # Notify sender of the error
             await self.sio.emit(
                 "message_error",
                 {"error": "Failed to deliver message"},
-                room=sid
+                room=sid,
             )
 
     async def _on_presence_update(
@@ -198,28 +230,29 @@ class SocketServer:
         """Handle presence update."""
         user_id = self.get_user_id_from_sid(sid)
         if not user_id:
-            logger.error(
-                f"Presence update from unauthenticated socket: {sid}")
+            logger.error(f"Presence update from unauthenticated socket: {sid}")
             return
 
-        # Add user_id to presence data
-        presence_data = {
-            **data,
-            "type": "status_update",
-            "user_id": user_id,
-            "last_changed": datetime.now().timestamp()
-        }
+        # Create structured presence event
+        presence_event = create_event(
+            EventType.PRESENCE_UPDATE,
+            "socket_io",
+            user_id=user_id,
+            status=data.get("status", "online"),
+            last_seen=datetime.now().timestamp(),
+            metadata=data.get("metadata", {}),
+        )
 
         # Publish presence update to RabbitMQ with retry
         try:
             await with_retry(
                 lambda: self.rabbitmq.publish_message(
-                    exchange="user_events",
+                    exchange="user",
                     routing_key=f"status.{user_id}",
-                    message=json.dumps(presence_data)
+                    message=json.dumps(presence_event),
                 ),
                 max_attempts=3,
-                circuit_breaker=self.rabbitmq_cb
+                circuit_breaker=self.rabbitmq_cb,
             )
         except Exception as e:
             logger.error(f"Failed to publish presence update: {e}")
@@ -273,3 +306,31 @@ class SocketServer:
     ) -> None:
         """Emit an event to all clients in a room."""
         await self.sio.emit(event, data, room=room)
+
+    async def _on_disconnect(self, sid: str) -> None:
+        """Handle socket disconnection."""
+        logger.info(f"Client disconnected: {sid}")
+
+        # Unregister user if associated with this sid
+        user_id = self.unregister_user(sid)
+        if user_id:
+            logger.info(f"User {user_id} disconnected")
+            # Optionally, publish presence update via RabbitMQ
+            try:
+                await with_retry(
+                    lambda: self._publish_presence_update(user_id, "offline"),
+                    max_attempts=3,
+                    circuit_breaker=self.rabbitmq_cb,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to publish presence update for {user_id}: {e}"
+                )
+
+    async def _on_chat_typing(self, sid: str, data: Dict[str, Any]) -> None:
+        """Handle chat typing."""
+        pass
+
+    async def _on_chat_read(self, sid: str, data: Dict[str, Any]) -> None:
+        """Handle chat read."""
+        pass

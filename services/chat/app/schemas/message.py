@@ -7,7 +7,7 @@ class MessageBase(BaseModel):
     """Base schema for message"""
 
     content: str = Field(..., description="Content of the message")
-    chat_id: str = Field(..., description="ID of the chat this message belongs to")
+    room_id: str = Field(..., description="ID of the room this message belongs to")
 
 
 class MessageCreate(MessageBase):

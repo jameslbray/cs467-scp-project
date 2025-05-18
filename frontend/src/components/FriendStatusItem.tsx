@@ -1,16 +1,16 @@
-import React from 'react';
-import { FriendStatus } from '../types.tsx';
+import type React from "react";
+import type { UserStatusIntf } from "../App";
 
 interface FriendStatusItemProps {
-    status: FriendStatus;
+	status: UserStatusIntf;
 }
 
 const FriendStatusItem: React.FC<FriendStatusItemProps> = ({ status }) => {
-    return (
-        <div key={status.userId}>
-            {status.userId}: {status.status}
-        </div>
-    );
+	return (
+		<div key={status.user_id}>
+			{status.user_id}: {status.status}
+		</div>
+	);
 };
 
 export default FriendStatusItem;

@@ -10,9 +10,9 @@ aiofiles==0.7.0
 psycopg2-binary==2.9.9
 python-dotenv==1.0.1
 pydantic-settings==2.2.1
-# RabbitMQ dependencies
 aio-pika==9.3.1
 slowapi==0.1.8
 starlette==0.36.3
 gunicorn==21.2.0
 python-socketio==5.13.0
+asyncpg==0.30.0

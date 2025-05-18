@@ -3,24 +3,92 @@ Main application module for the notification service.
 """
 
 import logging
-import os
-from dotenv import load_dotenv
+import sys
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from ..app.core.notification_manager import NotificationManager
-from ..app.core.config import settings
+from .core.notification_manager import NotificationManager
+from .core.config import get_settings
 from .api.routers import router
+# from .core.rabbitmq import NotificationRabbitMQClient
 
-# Load environment variables
-load_dotenv()
+settings = get_settings()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=settings.LOG_LEVEL,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout,
+    force=True
+)
 logger = logging.getLogger(__name__)
 
+# Initialize rate limiter
+# limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
+# Get settings
+logger.info("Application settings loaded")
+
+# Initialize RabbitMQ client
+# rabbitmq_client = NotificationRabbitMQClient(settings=settings)
+
+
+# Create presence manager
+notification_manager = NotificationManager(
+    {
+        "rabbitmq": {
+            "url": settings.RABBITMQ_URL or "amqp://guest:guest@rabbitmq:5672/"
+        },
+        "mongodb": {
+            "user": settings.MONGO_USER or "admin",
+            "password": settings.MONGO_PASSWORD or "password",
+            "host": settings.MONGO_HOST or "mongo_db",
+            "database": settings.MONGO_DB or "chat_db",
+            "port": settings.MONGO_PORT or "27017",
+        },
+    }
+)
+
+# Define the lifespan handler
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logger.info("Starting Notification service...")
+
+    # Initialize notification manager
+    await notification_manager.initialize()
+    # await rabbitmq_client.connect()
+    # logger.info("RabbitMQ connection established")
+    logger.info("Notification service started successfully")
+
+    yield  # This is where FastAPI serves requests
+
+    # Shutdown logic
+    logger.info("Shutting down User Service")
+    await notification_manager.shutdown()
+
+    logger.info("Notification service shut down successfully")
+    # await rabbitmq_client.close()
+    # logger.info("RabbitMQ connection closed")
+
 # Create FastAPI app
-app = FastAPI(title="Notification Service")
+app = FastAPI(
+    title="Notification Service",
+    description="Service for managing notifications",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# app.add_middleware(SlowAPIMiddleware)
+
+# Include routers
+app.include_router(router, prefix=settings.API_PREFIX)
+# app.state.limiter = limiter
 
 # Configure CORS
 app.add_middleware(
@@ -31,49 +99,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(router, prefix=settings.API_PREFIX)
 
-# Create presence manager
-notification_manager = NotificationManager(
-    {
-        "rabbitmq": {
-            "url": os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-        },
-        "postgres": {
-            "user": os.getenv("PRESENCE_POSTGRES_USER", "postgres"),
-            "password": os.getenv("PRESENCE_POSTGRES_PASSWORD", "postgres"),
-            "host": os.getenv("PRESENCE_POSTGRES_HOST", "postgres_db"),
-            "database": os.getenv("PRESENCE_POSTGRES_DB", "sycolibre"),
-            "port": int(os.getenv("PRESENCE_POSTGRES_PORT", "5432")),
-        },
-    }
-)
+# if __name__ == "__main__":
+#     import uvicorn
 
+#     # Load environment variables from .env file
+#     load_dotenv()
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
-    logger.info("Starting Notification service...")
-
-    # Initialize notification manager
-    await notification_manager.initialize()
-
-    logger.info("Notification service started successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Shutting down notification service...")
-
-    # Shutdown presence manager
-    await notification_manager.shutdown()
-
-    logger.info("Notification service shut down successfully")
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+#     # Run the application with Uvicorn
+#     uvicorn.run(
+#         app,
+#         host="localhost",
+#         port=8025,
+#         log_level=settings.LOG_LEVEL.lower()
+#     )

@@ -6,22 +6,24 @@ from uuid import UUID  # Import UUID type
 from pydantic import BaseModel, EmailStr, field_validator
 
 
-class UserBase(BaseModel):
+class User(BaseModel):
     username: str
     email: EmailStr
 
-class UserCreate(UserBase):
+
+class UserCreate(User):
     password: str
 
-class User(UserBase):
-    id: UUID 
+
+class User(User):
+    id: UUID
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     profile_picture_url: Optional[str] = None
     last_login: Optional[datetime] = None
-    
+
     class Config:
-        from_attributes = True 
+        from_attributes = True
 
 
 class Token(BaseModel):
@@ -42,7 +44,7 @@ class JWTTokenData(BaseModel):
     def default_jti(cls, v: Optional[str]) -> str:
         """Generate a random UUID for the token ID if not provided"""
         return v or str(uuid.uuid4())
-    
+
     @field_validator("user_id", mode="before")
     @classmethod
     def validate_user_id(cls, v: UUID) -> UUID:

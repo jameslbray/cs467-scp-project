@@ -6,9 +6,9 @@ export enum StatusType {
 }
 
 export interface FriendStatus {
-  userId: string;
+  user_id: string;
   status: StatusType;
-  lastChanged: string;
+  last_changed: string;
 }
 
 // Client events (events sent from client to server)

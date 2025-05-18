@@ -1,15 +1,13 @@
-# Build stage
-FROM python:3.11-slim as builder
+FROM python:3.12-alpine
 
-# Install Rust and other build dependencies
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     curl \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+    build-base \
+    linux-headers \
+    python3-dev \
+    py3-pip \
+    rust \
+    cargo
 
 # Set working directory
 WORKDIR /app
@@ -21,17 +19,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Final stage
-FROM python:3.11-slim
-
-# Copy only the necessary files from the builder stage
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /app /app
-
-WORKDIR /app
-
 # Expose the port
-EXPOSE 8000
+ARG PORT=8002
+ENV PORT=$PORT
+EXPOSE $PORT
 
 # Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "gunicorn -c gunicorn_config.py app.main:app --bind 0.0.0.0:${PORT} --worker-class uvicorn.workers.UvicornWorker"]

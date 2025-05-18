@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Optional, Union
@@ -17,15 +18,15 @@ from ..db.database import get_db
 from ..schemas import JWTTokenData, Token, User
 from .config import get_settings
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-def verify_password(
-    plain_password: str, hashed_password: str
-) -> bool:
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verify a plain password against a hashed password.
 
@@ -44,8 +45,8 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    user_id: Union[UUID, Column[UUID]], 
-    expires_delta: Optional[timedelta] = None
+    user_id: Union[UUID, Column[UUID]],
+    expires_delta: Optional[timedelta] = None,
 ) -> Token:
     """
     Create a new JWT access token with user_id as the subject.
@@ -65,15 +66,17 @@ def create_access_token(
         "sub": str(user_id),  # Convert UUID to string
         "exp": int(expires_at.timestamp()),  # Convert to integer timestamp
         "iat": int(now.timestamp()),  # Convert to integer timestamp
-        "jti": token_id
+        "jti": token_id,
     }
-    
+
     secret_key = str(settings.JWT_SECRET_KEY.get_secret_value())
     encoded_jwt = jwt.encode(
         token_data, secret_key, algorithm=settings.JWT_ALGORITHM
     )
 
-    return Token(access_token=encoded_jwt, token_type="bearer", expires_at=expires_at)
+    return Token(
+        access_token=encoded_jwt, token_type="bearer", expires_at=expires_at
+    )
 
 
 def blacklist_token(
@@ -126,8 +129,8 @@ def blacklist_token(
             user_id=user_id,
             username=username,
             blacklisted_at=datetime.now(UTC),
-            expires_at=datetime.now(
-                UTC) + timedelta(days=30),  # Default 30 days
+            expires_at=datetime.now(UTC)
+            + timedelta(days=30),  # Default 30 days
         )
 
         db.add(blacklisted_token)
@@ -147,8 +150,9 @@ def is_token_blacklisted(token: str, db: Session) -> bool:
     """
     # Check if token exists in blacklist
     blacklisted = (
-        db.query(BlacklistedToken).filter(
-            BlacklistedToken.token == token).first()
+        db.query(BlacklistedToken)
+        .filter(BlacklistedToken.token == token)
+        .first()
     )
 
     return blacklisted is not None
@@ -190,7 +194,7 @@ def get_token_data(token: str, db: Session) -> JWTTokenData:
                 detail="Could not validate credentials - missing subject",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         # Convert user_id string to UUID
         try:
             user_id = UUID(user_id_str)
@@ -232,8 +236,9 @@ async def get_current_user(
     token_data = get_token_data(token, db)
 
     # Get user from database using UUID
-    user = db.query(UserModel).filter(
-        UserModel.id == token_data.user_id).first()
+    user = (
+        db.query(UserModel).filter(UserModel.id == token_data.user_id).first()
+    )
 
     if user is None:
         raise HTTPException(
@@ -241,7 +246,6 @@ async def get_current_user(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
 
     return User.model_validate(user, from_attributes=True)
 

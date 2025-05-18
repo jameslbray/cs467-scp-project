@@ -1,0 +1,1 @@
+this folder holds the API schemas from Pydantic for request/response validation
