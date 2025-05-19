@@ -86,7 +86,6 @@ async def health_check():
 @router.get(
     "/notify/{user_id}",
     response_model=list[NotificationResponse],
-    response_model=list[NotificationResponse],
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         404: {"model": ErrorResponse, "description": "User not found"},
@@ -106,9 +105,6 @@ async def get_user_notifications(
     Returns:
     - **NotificationResponse**: User's current notification information
     """
-    logger.info(f"Fetching notifications for user: {user_id}")
-    notification_data = await notification_manager.get_user_notifications(user_id)
-
     logger.info(f"Fetching notifications for user: {user_id}")
     notification_data = await notification_manager.get_user_notifications(user_id)
 

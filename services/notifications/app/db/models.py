@@ -167,7 +167,6 @@ class JWTTokenData(BaseModel):
     @field_validator("user_id", mode="before")
     @classmethod
     def validate_user_id(cls, v: uuid.UUID) -> uuid.UUID:
-    def validate_user_id(cls, v: uuid.UUID) -> uuid.UUID:
         """Ensure user_id is a UUID - convert from string if needed"""
         if isinstance(v, str):
             return uuid.UUID(v)
