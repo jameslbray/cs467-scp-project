@@ -40,14 +40,15 @@ logger.info("Application settings loaded")
 notification_manager = NotificationManager(
     {
         "rabbitmq": {
-            "url": settings.RABBITMQ_URL or "amqp://guest:guest@rabbitmq:5672/"
+            "url": settings.RABBITMQ_URL
         },
         "mongodb": {
-            "user": settings.MONGO_USER or "admin",
-            "password": settings.MONGO_PASSWORD or "password",
-            "host": settings.MONGO_HOST or "mongo_db",
-            "database": settings.MONGO_DB or "chat_db",
-            "port": settings.MONGO_PORT or "27017",
+            "user": settings.MONGO_USER,
+            "password": settings.MONGO_PASSWORD,
+            "host": settings.MONGO_HOST,
+            "database": settings.MONGO_DB,
+            "port": settings.MONGO_PORT,
+            "uri": settings.mongo_uri
         },
     }
 )
@@ -69,7 +70,7 @@ async def lifespan(app: FastAPI):
     yield  # This is where FastAPI serves requests
 
     # Shutdown logic
-    logger.info("Shutting down User Service")
+    logger.info("Shutting down notification Service")
     await notification_manager.shutdown()
 
     logger.info("Notification service shut down successfully")

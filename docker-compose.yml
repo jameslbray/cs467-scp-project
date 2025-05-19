@@ -159,8 +159,8 @@ services:
 
   notifications:
     build:
-      context: ./services/notifications  # Only build from notifications directory
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/notifications/Dockerfile
     ports:
       - "${NOTIFICATIONS_PORT}:8002"
     env_file:
