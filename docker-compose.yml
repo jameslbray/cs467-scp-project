@@ -140,7 +140,7 @@ services:
     env_file:
       - .env
     environment:
-      - PYTHONPATH=/app/services
+      - PYTHONPATH=/app
       - RABBITMQ_URL=${RABBITMQ_URL}
       - POSTGRES_HOST=postgres_db
       - POSTGRES_PORT=5432
