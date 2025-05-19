@@ -1,48 +1,23 @@
-from pydantic import BaseModel, Field, field_validator
-from uuid import UUID
+from pydantic import BaseModel, Field, field_validator, model_validator
+import uuid
+from pydantic import BaseModel, Field, field_validator, model_validator
+import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict, Any
+from bson import ObjectId
 
 
-class BaseNotification(BaseModel):
-    """Base notification model with common fields."""
-    notification_id: str = Field(..., description="Notification ID", default_factory=lambda: str(UUID(int=0)))
-    recipient_id: str = Field(..., description="Recipient User ID", default_factory=lambda: str(UUID(int=0)))
-    sender_id: str = Field(..., description="Sender User ID", default_factory=lambda: str(UUID(int=0)))
-    reference_id: str = Field(..., description="Reference ID (message_id or room_id)", default_factory=lambda: str(UUID(int=0)))
-    content_preview: str = Field(description="Content preview", default="Hello World!")
-    timestamp: str = Field( decription="Time the notification was sent", default_factory=lambda: datetime.now().isoformat())
-    
-    def __getitem__(self, key):
-        """Allow dictionary-like access: model['field_name']"""
-        return getattr(self, key)
-    
-    def get(self, key, default=None):
-        """Dictionary-like get method with default value."""
-        try:
-            return self[key]
-        except (KeyError, AttributeError):
-            return default
-
-    class Config:
-        json_encoders = {
-            UUID: lambda v: str(v),
-            datetime: lambda v: v.isoformat()
-        }
-
-
-class NotificationType(str, Enum):
-    """Enum for notification types."""
-    MESSAGE = "message"
-    FRIEND_REQUEST = "friend_request"
-    STATUS_UPDATE = "status_update"
-
-
-class UserNotification(BaseNotification):
-    """Internal notification model with additional fields."""
-    read: bool = Field(False, description="Whether notification has been read")
-    notification_type: NotificationType = Field(NotificationType.MESSAGE, description="Type of notification")
+class PyObjectId(str):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+        
+    @classmethod
+    def validate(cls, v, info=None):
+        if not ObjectId.is_valid(v):
+            raise ValueError("Invalid ObjectId")
+        return str(v)
 
 
 class DeliveryType(str, Enum):
@@ -52,23 +27,133 @@ class DeliveryType(str, Enum):
     ERROR = "error"
 
 
-class NotificationResponse(BaseNotification):
-    """API response model."""
-    # API-specific fields
-    status: DeliveryType = Field(DeliveryType.UNDELIVERED, description="Delivery status")
-    error: str | None = Field(None, description="Error message if any")
+class NotificationType(str, Enum):
+    """Enum for notification types."""
+    MESSAGE = "message"
+    FRIEND_REQUEST = "friend_request"
+    STATUS_UPDATE = "status_update"
 
 
-class NotificationRequest(BaseNotification):
-    """API response model."""
-    # API-specific fields
-    status: DeliveryType = Field(DeliveryType.UNDELIVERED, description="Delivery status")
-    error: str | None = Field(None, description="Error message if any")
+# 1. API REQUEST MODEL - Accepts string IDs from client
+class NotificationRequest(BaseModel):
+    """API request model with string IDs."""
+    recipient_id: str = Field(..., description="Recipient User ID")
+    sender_id: str = Field(..., description="Sender User ID") 
+    reference_id: str = Field(..., description="Reference ID (message_id or room_id)")
+    content_preview: str = Field(default="Hello World!", description="Content preview")
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat(), description="Time the notification was sent")
+    status: DeliveryType = Field(default=DeliveryType.UNDELIVERED, description="Delivery status")
+    error: Optional[str] = Field(default=None, description="Error message if any")
+    
+    # Convert to DB model
+    def to_db_model(self) -> 'NotificationDB':
+        """Convert API request to database model with UUID conversion."""
+        return NotificationDB(
+            recipient_id=uuid.UUID(self.recipient_id),
+            sender_id=uuid.UUID(self.sender_id),
+            reference_id=uuid.UUID(self.reference_id),
+            content_preview=self.content_preview,
+            timestamp=self.timestamp,
+            status=self.status,
+            error=self.error,
+            notification_type=NotificationType.MESSAGE,
+            read=False
+        )
+    
+    @staticmethod
+    def is_valid_uuid(value: str) -> bool:
+        """Check if string is a valid UUID."""
+        try:
+            uuid.UUID(value)
+            return True
+        except (ValueError, AttributeError):
+            return False
 
+# 2. DATABASE MODEL - Uses UUID for internal storage
+class NotificationDB(BaseModel):
+    """Database model with UUID fields."""
+    id: Optional[PyObjectId] = Field(default=None, alias="_id", description="MongoDB Object ID")
+    recipient_id: uuid.UUID = Field(..., description="Recipient User ID")
+    sender_id: uuid.UUID = Field(..., description="Sender User ID")
+    reference_id: uuid.UUID = Field(..., description="Reference ID (message_id or room_id)")
+    content_preview: str = Field(default="Hello World!", description="Content preview")
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat(), description="Time sent")
+    status: DeliveryType = Field(default=DeliveryType.UNDELIVERED, description="Delivery status")
+    error: Optional[str] = Field(default=None, description="Error message if any")
+    notification_type: NotificationType = Field(default=NotificationType.MESSAGE, description="Type")
+    read: bool = Field(default=False, description="Whether notification has been read")
+    
+    # Convert to MongoDB-compatible dictionary
+    def to_mongo_dict(self) -> dict[str, Any]:
+        """Convert to MongoDB document."""
+        data = self.model_dump(exclude={"id"})  # Exclude id field
+        # Convert UUID objects to strings
+        for field in ['recipient_id', 'sender_id', 'reference_id']:
+            if isinstance(data[field], uuid.UUID):
+                data[field] = str(data[field])
+        return data
+    
+    # Convert to API response
+    def to_api_response(self) -> 'NotificationResponse':
+        """Convert to API response model."""
+        return NotificationResponse(
+            notification_id=self.id,  # Use MongoDB _id directly
+            recipient_id=str(self.recipient_id),
+            sender_id=str(self.sender_id),
+            reference_id=str(self.reference_id),
+            content_preview=self.content_preview,
+            timestamp=self.timestamp,
+            status=self.status,
+            error=self.error,
+            read=self.read,
+            notification_type=self.notification_type
+        )
+    
+    # Create from MongoDB document
+    @classmethod
+    def from_mongo_doc(cls, doc: dict[str, Any]) -> 'NotificationDB':
+        """Create from MongoDB document."""
+        # First, handle the _id field to ensure it's properly included
+        if '_id' in doc and doc['_id'] is not None:
+            doc['_id'] = str(doc['_id'])  # Convert ObjectId to string
+        
+        # Convert string IDs to UUIDs
+        for field in ['recipient_id', 'sender_id', 'reference_id']:
+            if field in doc and isinstance(doc[field], str):
+                try:
+                    doc[field] = uuid.UUID(doc[field])
+                except ValueError:
+                    # Handle invalid UUIDs
+                    doc[field] = uuid.uuid4()
+        
+        return cls(**doc)
+    
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+
+# 3. API RESPONSE MODEL - Returns string IDs to client
+class NotificationResponse(BaseModel):
+    """API response model with string IDs."""
+    notification_id: str = Field(default=None, description="Notification ID")
+    recipient_id: str = Field(..., description="Recipient User ID")
+    sender_id: str = Field(..., description="Sender User ID")
+    reference_id: str = Field(..., description="Reference ID")
+    content_preview: str = Field(default="Hello World!", description="Content preview")
+    timestamp: str = Field(..., description="Time sent")
+    status: DeliveryType = Field(..., description="Delivery status")
+    error: Optional[str] = Field(default=None, description="Error message")
+    read: bool = Field(default=False, description="Whether notification has been read")
+    notification_type: NotificationType = Field(..., description="Type of notification")
+
+class SuccessResponse(BaseModel):
+    success: bool = True
 
 class JWTTokenData(BaseModel):
     """JWT token payload structure that uses user_id as the subject."""
-    user_id: UUID  # UUID of the user (will be encoded as string in JWT)
+    user_id: uuid.UUID  # UUID of the user (will be encoded as string in JWT)
+    user_id: uuid.UUID  # UUID of the user (will be encoded as string in JWT)
     exp: Optional[datetime] = None  # Expiration time
     iat: Optional[datetime] = None  # Issued at time
     jti: Optional[str] = None  # JWT ID for token identification/revocation
@@ -81,7 +166,7 @@ class JWTTokenData(BaseModel):
     
     @field_validator("user_id", mode="before")
     @classmethod
-    def validate_user_id(cls, v: UUID) -> UUID:
+    def validate_user_id(cls, v: uuid.UUID) -> uuid.UUID:
         """Ensure user_id is a UUID - convert from string if needed"""
         if isinstance(v, str):
             return uuid.UUID(v)
