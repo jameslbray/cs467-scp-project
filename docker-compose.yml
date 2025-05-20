@@ -245,6 +245,34 @@ services:
       - ./frontend:/app:delegated
       - /app/node_modules
 
+
+  connections:
+    build:
+      context: .
+      dockerfile: services/connections/Dockerfile
+    ports:
+      - "${CONNECTIONS_PORT}:8005"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=postgres_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+      db_init:
+        condition: service_completed_successfully
+      postgres_db:
+        condition: service_healthy
+
+
 volumes:
   postgres_data:
   mongo_data:

@@ -3,9 +3,11 @@ Configuration settings for the presence service.
 """
 from typing import List, Dict, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator, SecretStr
+from pydantic import Field, field_validator, SecretStr, PostgresDsn
 import os
 from pathlib import Path
+from functools import lru_cache
+
 
 def find_env_file() -> str:
     """Find the .env file in potential locations."""
@@ -13,30 +15,30 @@ def find_env_file() -> str:
     env_file = os.getenv("ENV_FILE")
     if env_file and os.path.exists(env_file):
         return env_file
-    
+
     # Try multiple possible locations
     possible_locations = [
-        # Original path (for local development)
-        os.path.join(Path(__file__).parent.parent.parent.parent, ".env"),
-        # Docker container root
-        "/app/.env",
-        # Current directory
-        ".env",
+        os.path.join(os.getcwd(), ".env"),  # Current working directory
+        os.path.join(os.path.dirname(os.getcwd()), ".env"),  # Parent directory
+        os.path.join(os.path.dirname(os.path.dirname(
+            os.getcwd())), ".env"),  # Grandparent
+        os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                     ".env"),  # Project root from config.py
     ]
-    
+
     for location in possible_locations:
         if os.path.exists(location):
             return location
-    
+
     # If we get here, return the default location
-    return possible_locations[0]
+    return ""
 
 
 class Settings(BaseSettings):
-    """Presence Service configuration settings."""
+    """Connection Service configuration settings."""
 
     # Service information
-    PROJECT_NAME: str = "Presence Service"
+    PROJECT_NAME: str = "Connection Service"
     VERSION: str = "0.1.0"
     API_PREFIX: str = "/api"
 
@@ -70,6 +72,8 @@ class Settings(BaseSettings):
         default=["Authorization", "Content-Type"],
         description="Allowed HTTP headers"
     )
+
+# TODO: Do we want to use a Socket.IO server?
 
     # # Socket.IO settings
     # SOCKET_IO_PORT: int = Field(
@@ -117,16 +121,28 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = Field(
-        default="INFO",
+        default="debug",
         description="Logging level"
     )
 
     # Database settings
+    DATABASE_URL: PostgresDsn = Field(
+        default=...,
+        description="Database connection URL"
+    )
     POSTGRES_USER: str = Field(default="postgres")
     POSTGRES_PASSWORD: str = Field(default="postgres")
     POSTGRES_HOST: str = Field(default="postgres_db")
     POSTGRES_PORT: str = Field(default="5432")
     POSTGRES_DB: str = Field(default="sycolibre")
+
+    RABBITMQ_URL: str = Field(
+        default="amqp://guest:guest@rabbitmq:5672/")
+
+    # @property
+    # def mongo_uri(self) -> str:
+    #     """Generate MongoDB connection string."""
+    #     return f"mongodb://{self.MONGO_USER}:{self.MONGO_PASSWORD}@{self.MONGO_HOST}:{self.MONGO_PORT}/{self.MONGO_DB}?authSource=admin"
 
     @field_validator("ENV")
     @classmethod
@@ -149,8 +165,8 @@ class Settings(BaseSettings):
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod
-    def validate_jwt_secret(cls, v: str) -> str:
-        if len(v) < 32:
+    def validate_jwt_secret(cls, v: SecretStr) -> SecretStr:
+        if len(v.get_secret_value()) < 32:
             raise ValueError(
                 "JWT_SECRET_KEY must be at least 32 characters long")
         return v
@@ -161,10 +177,6 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="allow"
     )
-
-
-settings = Settings()
-
 
 # def get_socket_io_config() -> Dict[str, Any]:
 #     """Get Socket.IO server configuration."""
@@ -177,15 +189,19 @@ settings = Settings()
 #     }
 
 
-def get_db_config() -> Dict[str, str]:
-    """Return PostgreSQL configuration dictionary"""
-    
-    
-    
-    return {
-        "user": settings.POSTGRES_USER,
-        "password": settings.POSTGRES_PASSWORD,
-        "host": settings.POSTGRES_HOST,
-        "port": settings.POSTGRES_PORT,
-        "database": settings.POSTGRES_DB,
-    }
+# def get_db_config() -> Dict[str, str]:
+#     """Return PostgreSQL configuration dictionary"""
+
+#     return {
+#         "user": settings.POSTGRES_USER,
+#         "password": settings.POSTGRES_PASSWORD,
+#         "host": settings.POSTGRES_HOST,
+#         "port": settings.POSTGRES_PORT,
+#         "database": settings.POSTGRES_DB,
+#     }
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Create and return a cached Settings instance."""
+    return Settings()

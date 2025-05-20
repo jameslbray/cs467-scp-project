@@ -1,10 +1,11 @@
 # services/db_init/app/models.py
 import uuid
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, String, Text, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
-from sqlalchemy.sql import func
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.sql import func, text
+from sqlalchemy.orm import relationship, DeclarativeBase
+
 
 
 class Base(DeclarativeBase):
@@ -15,7 +16,7 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = {"schema": "users"}
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     username = Column(String(255), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
@@ -31,7 +32,7 @@ class BlacklistedToken(Base):
     __tablename__ = "blacklisted_tokens"
     __table_args__ = {"schema": "users"}
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     token = Column(Text, unique=True, nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey(
         "users.users.id", ondelete="CASCADE"), nullable=True)
@@ -62,20 +63,31 @@ class UserStatus(Base):
 
 class Connection(Base):
     __tablename__ = "connections"
-    __table_args__ = {"schema": "presence"}
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'rejected', 'blocked')",
+            name="ck_connection_status_enum",
+        ),
+        CheckConstraint(
+            "user_id != friend_id",
+            name="ck_user_friend_different",
+        ),
+        UniqueConstraint('user_id', 'friend_id', name='unique_connection'),
+        Index('idx_connection_user', 'user_id'),
+        Index('idx_connection_friend', 'friend_id'),
+        Index('idx_connection_user_friend', 'user_id', 'friend_id', unique=True),
+        {
+            "comment": (
+            "Stores the connection status between two users "
+            "and when it was last updated"
+        ),
+         "schema": "connections"
+         },
+    )
 
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey(
-            "users.users.id", ondelete="CASCADE"),
-        primary_key=True,
-        nullable=False)
-    connected_user_id = Column(
-        UUID(as_uuid=True), ForeignKey(
-            "users.users.id", ondelete="CASCADE"),
-        primary_key=True,
-        nullable=False)
-    connection_status = Column(
-        Text, nullable=False, index=True)
-    created_at = Column(
-        TIMESTAMP(timezone=True),
-        server_default=func.now(), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.users.id", ondelete="CASCADE"), nullable=False)
+    friend_id = Column(UUID(as_uuid=True), ForeignKey("users.users.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(10), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
