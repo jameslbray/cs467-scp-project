@@ -88,6 +88,19 @@ class UserStatus(Base):
         index=True,
     )
 
+class PasswordResetToken(Base):
+    __tablename__ = "password_resets"
+    __table_args__ = {"schema": "users"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.users.id", ondelete="CASCADE"),
+        nullable=False,
+    token = Column(String(128), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    user = relationship("User", back_populates="password_reset_tokens")
+
 
 class Connection(Base):
     __tablename__ = "connections"
