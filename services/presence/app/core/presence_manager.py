@@ -183,18 +183,6 @@ class PresenceManager:
                     """
                 )
 
-                # Create connections table
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS connections (
-                        user_id TEXT NOT NULL,
-                        connected_user_id TEXT NOT NULL,
-                        connection_status TEXT NOT NULL,
-                        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                        PRIMARY KEY (user_id, connected_user_id)
-                    )
-                    """
-                )
 
                 # Create indexes
                 await conn.execute(
@@ -203,12 +191,7 @@ class PresenceManager:
                     ON user_status (last_changed)
                     """
                 )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_connections_status
-                    ON connections (connection_status)
-                    """
-                )
+
 
             logger.info("Database tables initialized")
         except Exception as e:
