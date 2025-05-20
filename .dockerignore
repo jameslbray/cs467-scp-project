@@ -1,0 +1,50 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Environment and IDE files
+.env*
+.cursor
+.flake8
+.mypy_cache
+.ropeproject
+.DS_Store
+
+# Logs and temporary files
+logs/
+*.log
+*.pyc
+__pycache__/
+.pytest_cache/
+
+# Development and test files
+tests/
+*.test.js
+*.spec.js
+*.test.py
+*.spec.py
+
+# Build artifacts and dependencies
+**/node_modules/
+**/dist/
+**/build/
+*.egg-info/
+*.egg
+
+# Documentation
+README.md
+LICENSE
+MANIFEST.in
+
+# Scripts and backup files
+run_service_w.sh
+run_service.sh
+run_windows.bat
+*.bak
+
+# Exclude other services when building specific ones
+services/*/node_modules/
+services/*/dist/
+services/*/build/
+
