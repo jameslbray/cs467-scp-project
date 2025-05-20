@@ -34,6 +34,7 @@ class Token(BaseModel):
 
 class JWTTokenData(BaseModel):
     """JWT token payload structure that uses user_id as the subject."""
+
     user_id: UUID  # UUID of the user (will be encoded as string in JWT)
     exp: Optional[datetime] = None  # Expiration time
     iat: Optional[datetime] = None  # Issued at time
@@ -52,3 +53,12 @@ class JWTTokenData(BaseModel):
         if isinstance(v, str):
             return uuid.UUID(v)
         return v
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str

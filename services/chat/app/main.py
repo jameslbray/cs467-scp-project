@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.chat.app.schemas.message import MessageResponse
-from services.db_init.app.models import User
+from services.users.app.schemas import User
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.users.app.core.security import get_current_user
 

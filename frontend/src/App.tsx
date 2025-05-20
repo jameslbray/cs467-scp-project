@@ -1,14 +1,16 @@
 // App.tsx
-import type React from "react";
-import { Route, BrowserRouter as Router, Routes } from "react-router-dom";
-import ErrorBoundary from "./components/ErrorBoundary";
-import { AuthProvider, ThemeProvider } from "./contexts";
-import { SocketProvider } from "./contexts/socket";
-import AuthenticatedLayout from "./layouts/AuthenticatedLayout";
-import ChatPage from "./pages/ChatPage";
-import LandingPage from "./pages/LandingPage";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
+import type React from 'react';
+import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import ErrorBoundary from './components/ErrorBoundary';
+import { AuthProvider, ThemeProvider } from './contexts';
+import { SocketProvider } from './contexts/socket';
+import AuthenticatedLayout from './layouts/AuthenticatedLayout';
+import ChatPage from './pages/ChatPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 // Define types for our context and props
 export interface User {
@@ -19,7 +21,7 @@ export interface User {
 
 export interface UserStatusIntf {
 	user_id: string;
-	status: "online" | "away" | "offline";
+	status: 'online' | 'away' | 'offline';
 	last_changed: string;
 }
 
@@ -31,12 +33,14 @@ const App: React.FC = () => {
 					<SocketProvider>
 						<Router>
 							<Routes>
-								<Route path="/" element={<LandingPage />} />
-								<Route path="/login" element={<LoginPage />} />
-								<Route path="/register" element={<RegisterPage />} />
+								<Route path='/' element={<LandingPage />} />
+								<Route path='/login' element={<LoginPage />} />
+								<Route path='/register' element={<RegisterPage />} />
+								<Route path='/forgot-password' element={<ForgotPasswordPage />} />
+								<Route path='/reset-password' element={<ResetPasswordPage />} />
 								{/* Protected routes */}
 								<Route element={<AuthenticatedLayout />}>
-									<Route path="/chat" element={<ChatPage />} />
+									<Route path='/chat' element={<ChatPage />} />
 								</Route>
 							</Routes>
 						</Router>
