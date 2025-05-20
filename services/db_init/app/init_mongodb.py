@@ -110,7 +110,6 @@ async def init_mongodb():
         await db.messages.create_index("room_id")
         await db.messages.create_index("created_at")
         await db.rooms.create_index("name", unique=True)
-        await db.rooms.create_index("_id")
 
         logger.info("MongoDB initialization completed successfully")
         return True

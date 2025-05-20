@@ -2,10 +2,10 @@ import asyncio
 import logging
 import os
 import time
-
+from datetime import datetime, timedelta, UTC
 from config import get_settings
 from init_mongodb import init_mongodb
-from models import Base, User, UserStatus, Connection
+from models import Base, User, UserStatus, Connection, PasswordResetToken
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
@@ -15,6 +15,7 @@ logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
 logger = logging.getLogger(__name__)
 
 def create_database():
@@ -275,6 +276,25 @@ def init_database():
                     db.commit()
 
             logger.info("Database initialization completed successfully")
+
+            test_token = "test-reset-token-123"  # You can use secrets.token_urlsafe(32) for a real token
+            expiry = datetime.now(UTC) + timedelta(hours=1)
+
+            # Check if a test reset token already exists for this user
+            existing_reset = db.query(PasswordResetToken).filter_by(user_id=test_user.id).first()
+            if not existing_reset:
+                logger.info("Creating test password reset token...")
+                reset_entry = PasswordResetToken(
+                    user_id=test_user.id,
+                    token=test_token,
+                    expires_at=expiry,
+                )
+                db.add(reset_entry)
+                db.commit()
+                db.refresh(reset_entry)
+                logger.info(f"Test password reset token created: {test_token}")
+            else:
+                logger.info("Test password reset token already exists for test user")
             return True
 
         except Exception as e:

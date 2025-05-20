@@ -1,7 +1,17 @@
 # services/db_init/app/models.py
 import uuid
 
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, String, Text, UniqueConstraint, Index
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Index
+)
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.sql import func, text
 from sqlalchemy.orm import relationship, DeclarativeBase
@@ -22,10 +32,19 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     profile_picture_url = Column(String(255), nullable=True)
     last_login = Column(TIMESTAMP(timezone=True), nullable=True)
-    created_at = Column(TIMESTAMP(timezone=True),
-                        server_default=func.now(), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(
-    ), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    password_reset_tokens = relationship(
+        "PasswordResetToken", back_populates="user"
+    )
 
 
 class BlacklistedToken(Base):
@@ -34,31 +53,40 @@ class BlacklistedToken(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     token = Column(Text, unique=True, nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey(
-        "users.users.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.users.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     username = Column(String(255), nullable=True)
-    blacklisted_at = Column(TIMESTAMP(timezone=True),
-                            server_default=func.now(), nullable=False)
-    expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    blacklisted_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class UserStatus(Base):
     __tablename__ = "presence"
     __table_args__ = (
-        CheckConstraint("status IN ('online', 'away', 'offline')",
-                        name="valid_status_check"),
-        {"schema": "presence"}
+        CheckConstraint(
+            "status IN ('online', 'away', 'offline')",
+            name="valid_status_check",
+        ),
+        {"schema": "presence"},
     )
 
-    user_id = Column(UUID(as_uuid=True),
-                     ForeignKey(
-            "users.users.id", ondelete="CASCADE"), primary_key=True)
-    status = Column(
-        String(10), nullable=False, default="offline")
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    status = Column(String(10), nullable=False, default="offline")
     last_changed = Column(
         TIMESTAMP(timezone=True),
         server_default=func.now(),
-        nullable=False, index=True)
+        nullable=False,
+        index=True,
+    )
 
 
 class Connection(Base):
