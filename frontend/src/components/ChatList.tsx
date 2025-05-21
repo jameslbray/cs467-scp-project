@@ -1,11 +1,11 @@
-import type React from "react";
-import { useEffect, useRef, useState } from "react";
-import { useSocketContext } from "../contexts/socket/socketContext";
-import { useFetchMessages } from "../hooks/useFetchMessages";
-import { useAuth } from "../contexts";
-import type { ChatMessageType } from "../types/chatMessageType";
-import ChatInput from "./ChatInput";
-import ChatMessage from "./ChatMessage";
+import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '../contexts';
+import { useSocketContext } from '../contexts/socket/socketContext';
+import { useFetchMessages } from '../hooks/useFetchMessages';
+import type { ChatMessageType } from '../types/chatMessageType';
+import ChatMessage from './ChatMessage';
+import ChatInput from './LexicalChatInput';
 
 interface ChatListProps {
 	roomId: string;
@@ -14,12 +14,8 @@ interface ChatListProps {
 const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 	const { socket } = useSocketContext();
 	const { user } = useAuth();
-	const currentUserId = user?.id ?? "";
-	const {
-		messages: initialMessages,
-		loading,
-		error,
-	} = useFetchMessages(roomId, 50);
+	const currentUserId = user?.id ?? '';
+	const { messages: initialMessages, loading, error } = useFetchMessages(roomId, 50);
 	const [messages, setMessages] = useState<ChatMessageType[]>([]);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -35,61 +31,57 @@ const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 				updated_at: msg.updated_at,
 				is_edited: msg.is_edited,
 				has_emoji: false,
-			}),
+			})
 		);
 		setMessages(mapped);
 	}, [initialMessages]);
 
 	// Scroll to bottom whenever messages change
 	useEffect(() => {
-		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+		messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 	});
 
 	// Join/leave room and listen for incoming messages
 	useEffect(() => {
 		if (!socket) return;
-		socket.emit("join", { room: roomId });
+		socket.emit('join', { room: roomId });
 		const handleIncomingMessage = (data: ChatMessageType) => {
-			console.log("Received message:chat", data);
+			console.log('Received message:chat', data);
 			setMessages((prev) => {
 				if (prev.some((msg) => msg.id === data.id)) return prev;
 				return [...prev, data];
 			});
 		};
-		socket.on("chat:message", handleIncomingMessage);
+		socket.on('chat:message', handleIncomingMessage);
 		return () => {
 			if (!socket) return;
-			socket.off("chat:message", handleIncomingMessage);
+			socket.off('chat:message', handleIncomingMessage);
 		};
 	}, [socket, roomId]);
 
 	return (
-		<div className="flex flex-col h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+		<div className='flex flex-col h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-visible'>
 			{/* Chat Header */}
-			<div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
-				<h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-					Chat Room
-				</h2>
+			<div className='p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm'>
+				<h2 className='text-lg font-semibold text-gray-800 dark:text-gray-100'>Chat Room</h2>
 			</div>
 
 			{/* Messages Container */}
-			<div className="flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900">
+			<div className='flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900'>
 				{loading ? (
-					<div className="flex items-center justify-center h-full">
-						<p className="text-gray-500 dark:text-gray-400">
-							Loading messages...
-						</p>
+					<div className='flex items-center justify-center h-full'>
+						<p className='text-gray-500 dark:text-gray-400'>Loading messages...</p>
 					</div>
 				) : error ? (
-					<div className="flex items-center justify-center h-full">
-						<p className="text-red-500 dark:text-red-400">Error: {error}</p>
+					<div className='flex items-center justify-center h-full'>
+						<p className='text-red-500 dark:text-red-400'>Error: {error}</p>
 					</div>
 				) : messages.length === 0 ? (
-					<div className="flex items-center justify-center h-full">
-						<p className="text-gray-500 dark:text-gray-400">No messages yet</p>
+					<div className='flex items-center justify-center h-full'>
+						<p className='text-gray-500 dark:text-gray-400'>No messages yet</p>
 					</div>
 				) : (
-					<div className="space-y-4">
+					<div className='space-y-4'>
 						{messages.map((message) => (
 							<ChatMessage
 								key={message.id}
@@ -104,7 +96,7 @@ const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 			</div>
 
 			{/* Message Input */}
-			<div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+			<div className='p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700'>
 				<ChatInput roomId={roomId} senderId={currentUserId} />
 			</div>
 		</div>

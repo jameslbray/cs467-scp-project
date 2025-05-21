@@ -17,21 +17,21 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  
+
   /* Custom scrollbar for webkit browsers */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
-  
+
   ::-webkit-scrollbar-track {
     @apply bg-gray-100 dark:bg-gray-800;
   }
-  
+
   ::-webkit-scrollbar-thumb {
     @apply bg-gray-300 dark:bg-gray-600 rounded-full;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-gray-400 dark:bg-gray-500;
   }
@@ -43,28 +43,28 @@
   .message-bubble {
     @apply px-4 py-2 rounded-lg max-w-[80%] shadow;
   }
-  
+
   .message-bubble-current-user {
     @apply bg-primary-100 dark:bg-primary-900 rounded-tr-none;
   }
-  
+
   .message-bubble-other-user {
     @apply bg-gray-100 dark:bg-gray-800 rounded-tl-none;
   }
-  
+
   /* Status indicators */
   .status-indicator {
     @apply w-2.5 h-2.5 rounded-full;
   }
-  
+
   .status-online {
     @apply bg-green-500;
   }
-  
+
   .status-away {
     @apply bg-yellow-500;
   }
-  
+
   .status-offline {
     @apply bg-gray-500;
   }
@@ -76,27 +76,27 @@
   .prose-chat {
     @apply prose dark:prose-invert prose-sm max-w-none;
   }
-  
+
   .prose-chat pre {
     @apply bg-gray-800 dark:bg-gray-900 text-gray-100 rounded-md p-3 my-2 overflow-x-auto;
   }
-  
+
   .prose-chat code {
     @apply bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm;
   }
-  
+
   .prose-chat pre code {
     @apply bg-transparent p-0;
   }
-  
+
   .prose-chat a {
     @apply text-primary-600 dark:text-primary-400 no-underline hover:underline;
   }
-  
+
   .prose-chat blockquote {
     @apply border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic;
   }
-  
+
   /* Dark mode typography overrides */
   .dark .prose {
     @apply prose-invert;
