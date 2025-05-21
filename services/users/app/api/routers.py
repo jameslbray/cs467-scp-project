@@ -256,6 +256,27 @@ async def read_users_me(
 ):
     return current_user
 
+@router.get("/users/search", response_model=list[User])
+async def search_users(
+    username: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(security.get_current_user),
+):
+    """Search for users by username."""
+    logger.info(f"Searching for username: '{username}'")
+    if not username or len(username) < 2:
+        return []
+
+    # Search for users in the database
+    users = (
+        db.query(UserModel)
+        .filter(UserModel.username.ilike(f"%{username}%"))
+        .limit(10)  # Add limit for performance
+        .all()
+    )
+
+    # Return empty list if no users found
+    return users
 
 @router.post("/logout")
 async def logout(

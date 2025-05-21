@@ -166,11 +166,12 @@ def init_database():
             conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
             conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pgcrypto"'))
             
-            logger.info("Dropping and recreating users table...")
-            conn.execute(text("DROP TABLE IF EXISTS users.users CASCADE"))
+            # These two lines are only needed if you update the models and want to reset the tables
+            # logger.info("Dropping and recreating users table...")
+            # conn.execute(text("DROP TABLE IF EXISTS users.users CASCADE"))
             
-            logger.info("Dropping and recreating connections table...")
-            conn.execute(text("DROP TABLE IF EXISTS connections.connections CASCADE"))
+            # logger.info("Dropping and recreating connections table...")
+            # conn.execute(text("DROP TABLE IF EXISTS connections.connections CASCADE"))
             
         
             with engine.begin() as conn:

@@ -92,8 +92,6 @@ class ErrorResponse(BaseModel):
 
 
 # Dependency to get the current user from JWT token
-
-
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
     """Extract and validate user ID from JWT token"""
     try:
@@ -136,7 +134,12 @@ def get_presence_manager():
 
 
 # Routes
-
+@router.get("/presence/health")
+async def health_check(
+        presence_manager: PresenceManager = Depends(get_presence_manager),
+):
+    """Health check endpoint."""
+    return {"status": "healthy"} if await presence_manager.check_connection_health() else {"status": "unhealthy"}
 
 @router.get(
     "/status/{user_id}",

@@ -24,7 +24,10 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {"schema": "users"}
+    __table_args__ = (
+        Index("idx_username", "username"),
+        {"schema": "users"}
+        )
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     username = Column(String(255), unique=True, nullable=False, index=True)
@@ -96,7 +99,8 @@ class PasswordResetToken(Base):
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=False
+    )
     token = Column(String(128), unique=True, nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     user = relationship("User", back_populates="password_reset_tokens")

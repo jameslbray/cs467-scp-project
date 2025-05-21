@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from ..app.core.presence_manager import PresenceManager
 from ..app.core.config import settings
@@ -18,21 +19,6 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Create FastAPI app
-app = FastAPI(title="Presence Service")
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Include routers
-app.include_router(router, prefix=settings.API_PREFIX)
 
 # Create presence manager
 presence_manager = PresenceManager(
@@ -50,30 +36,42 @@ presence_manager = PresenceManager(
     }
 )
 
+    
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logger.info("Starting Notification service...")
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
-    logger.info("Starting Presence service...")
-
-    # Initialize presence manager
+    # Initialize notification manager
     await presence_manager.initialize()
-
     logger.info("Presence service started successfully")
 
+    yield  # This is where FastAPI serves requests
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Shutting down Presence service...")
-
-    # Shutdown presence manager
+    # Shutdown logic
+    logger.info("Shutting down Presence Service")
     await presence_manager.shutdown()
 
     logger.info("Presence service shut down successfully")
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+# Create FastAPI app
+app = FastAPI(
+    title="Presence Service",
+    description="Service for managing user presence",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(router, prefix=settings.API_PREFIX)
+
