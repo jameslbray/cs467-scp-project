@@ -2,10 +2,11 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
+
 from config import get_settings
 from init_mongodb import init_mongodb
-from models import Base, User, UserStatus, Connection, PasswordResetToken
+from models import Base, Connection, PasswordResetToken, User, UserStatus
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
@@ -13,23 +14,26 @@ from sqlalchemy.orm import sessionmaker
 # Configure logging
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
 logger = logging.getLogger(__name__)
+
 
 def create_database():
     """Create the database schema"""
     settings = get_settings()
     postgres_url_parts = settings.DATABASE_URL.split("/")
-    postgres_url = '/'.join(postgres_url_parts[:-1] + ['postgres'])
+    postgres_url = "/".join(postgres_url_parts[:-1] + ["postgres"])
 
     logger.info("Checking if sycolibre database exists...")
     try:
         engine = create_engine(postgres_url)
 
         with engine.connect() as conn:
-            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = 'sycolibre'"))
+            result = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = 'sycolibre'")
+            )
             exists = result.scalar() is not None
 
             if not exists:
@@ -45,7 +49,8 @@ def create_database():
         logger.error(f"Error creating database: {e}")
         return False
 
-def wait_for_db(max_retries: int=30, retry_interval: int=2):
+
+def wait_for_db(max_retries: int = 30, retry_interval: int = 2):
     """Wait for the database to be available"""
     logger.info("Waiting for database to be available...")
 
@@ -69,6 +74,7 @@ def wait_for_db(max_retries: int=30, retry_interval: int=2):
     logger.error(f"Could not connect to database after {max_retries} attempts")
     return False
 
+
 def create_roles():
     """Create roles for the database"""
     logger.info("Creating roles...")
@@ -77,23 +83,25 @@ def create_roles():
     postgres_url = settings.DATABASE_URL
 
     # TODO: add this to env file
-    postgres_users = [
-        "Michael",
-        "Nicholas",
-        "James"
-    ]
+    postgres_users = ["Michael", "Nicholas", "James"]
     try:
         engine = create_engine(postgres_url)
         with engine.connect() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS connections.connections CASCADE"))
+            conn.execute(
+                text("DROP TABLE IF EXISTS connections.connections CASCADE")
+            )
             for user in postgres_users:
-                result = conn.execute(text(f"SELECT 1 FROM pg_roles WHERE rolname = '{user}'"))
+                result = conn.execute(
+                    text(f"SELECT 1 FROM pg_roles WHERE rolname = '{user}'")
+                )
                 exists = result.scalar() is not None
 
                 if not exists:
                     logger.info(f"Creating database user '{user}'...")
                     # Create user with password - in production, use more secure passwords
-                    conn.execute(text(f"CREATE USER {user} WITH PASSWORD 'password'"))
+                    conn.execute(
+                        text(f"CREATE USER {user} WITH PASSWORD 'password'")
+                    )
                 else:
                     logger.info(f"Database user '{user}' already exists")
 
@@ -102,35 +110,115 @@ def create_roles():
                 # Schema permissions
                 conn.execute(text(f"GRANT USAGE ON SCHEMA users TO {user}"))
                 conn.execute(text(f"GRANT USAGE ON SCHEMA presence TO {user}"))
-                conn.execute(text(f"GRANT USAGE ON SCHEMA connections TO {user}"))
+                conn.execute(
+                    text(f"GRANT USAGE ON SCHEMA connections TO {user}")
+                )
 
                 # Table permissions
-                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA users TO {user}"))
-                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA presence TO {user}"))
-                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA connections TO {user}"))
+                conn.execute(
+                    text(
+                        f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA users TO {user}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA presence TO {user}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA connections TO {user}"
+                    )
+                )
 
                 # Sequence permissions
-                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA users TO {user}"))
-                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA presence TO {user}"))
-                conn.execute(text(f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA connections TO {user}"))
+                conn.execute(
+                    text(
+                        f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA users TO {user}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA presence TO {user}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA connections TO {user}"
+                    )
+                )
 
                 # Set search path
-                conn.execute(text(f"ALTER ROLE {user} SET search_path TO users, presence, connections, public"))
+                conn.execute(
+                    text(
+                        f"ALTER ROLE {user} SET search_path TO users, presence, connections, public"
+                    )
+                )
 
                 # Allow user to create objects in these schemas
                 conn.execute(text(f"GRANT CREATE ON SCHEMA users TO {user}"))
-                conn.execute(text(f"GRANT CREATE ON SCHEMA presence TO {user}"))
-                conn.execute(text(f"GRANT CREATE ON SCHEMA connections TO {user}"))
+                conn.execute(
+                    text(f"GRANT CREATE ON SCHEMA presence TO {user}")
+                )
+                conn.execute(
+                    text(f"GRANT CREATE ON SCHEMA connections TO {user}")
+                )
 
             # Grant future permissions for new tables/sequences
-            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA users GRANT ALL ON TABLES TO " + ", ".join(postgres_users)))
-            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON TABLES TO " + ", ".join(postgres_users)))
-            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA connections GRANT ALL ON TABLES TO " + ", ".join(postgres_users)))
-            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA users GRANT ALL ON SEQUENCES TO " + ", ".join(postgres_users)))
-            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON SEQUENCES TO " + ", ".join(postgres_users)))
-            conn.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA connections GRANT ALL ON SEQUENCES TO " + ", ".join(postgres_users)))
+            conn.execute(
+                text(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA users GRANT ALL ON TABLES TO "
+                    + ", ".join(postgres_users)
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON TABLES TO "
+                    + ", ".join(postgres_users)
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA connections GRANT ALL ON TABLES TO "
+                    + ", ".join(postgres_users)
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA users GRANT ALL ON SEQUENCES TO "
+                    + ", ".join(postgres_users)
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA presence GRANT ALL ON SEQUENCES TO "
+                    + ", ".join(postgres_users)
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA connections GRANT ALL ON SEQUENCES TO "
+                    + ", ".join(postgres_users)
+                )
+            )
     except OperationalError as e:
         logger.error(f"Error seeding data: {e}", exc_info=True)
+
+
+def ensure_uuid_extension(engine) -> bool:
+    """Ensure the uuid-ossp extension exists in the current database."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+            # Check if uuid_generate_v4 is available
+            conn.execute(text("SELECT uuid_generate_v4()"))
+        logger.info(
+            "uuid-ossp extension is enabled and uuid_generate_v4() is available."
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to create or verify uuid-ossp extension: {e}")
+        return False
 
 
 def init_database():
@@ -139,20 +227,28 @@ def init_database():
     asyncio.run(init_mongodb())
     settings = get_settings()
 
-
     if not create_database():
         logger.error("Failed to create the database")
         return False
 
     # Wait for database to be available
     if not wait_for_db():
-        logger.error("Database initialization failed: could not connect to database")
+        logger.error(
+            "Database initialization failed: could not connect to database"
+        )
         return False
 
     logger.info("Starting database initialization")
 
     # Create engine
     engine = create_engine(settings.DATABASE_URL)
+
+    # Ensure uuid-ossp extension exists before any table creation
+    if not ensure_uuid_extension(engine):
+        logger.error(
+            "Database initialization failed: could not enable uuid-ossp extension"
+        )
+        return False
 
     try:
         # Create schemas
@@ -163,16 +259,16 @@ def init_database():
             conn.execute(text("CREATE SCHEMA IF NOT EXISTS connections"))
 
             logger.info("Creating extensions...")
-            conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
             conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pgcrypto"'))
-            
+
             logger.info("Dropping and recreating users table...")
             conn.execute(text("DROP TABLE IF EXISTS users.users CASCADE"))
-            
+
             logger.info("Dropping and recreating connections table...")
-            conn.execute(text("DROP TABLE IF EXISTS connections.connections CASCADE"))
-            
-        
+            conn.execute(
+                text("DROP TABLE IF EXISTS connections.connections CASCADE")
+            )
+
             with engine.begin() as conn:
                 # Check if uuid-ossp extension is correctly loaded
                 conn.execute(text("SELECT uuid_generate_v4()"))
@@ -189,8 +285,12 @@ def init_database():
 
         try:
             # Check if test users exist
-            test_user = db.query(User).filter(User.username == "test_user").first()
-            test_user2 = db.query(User).filter(User.username == "test_user2").first()
+            test_user = (
+                db.query(User).filter(User.username == "test_user").first()
+            )
+            test_user2 = (
+                db.query(User).filter(User.username == "test_user2").first()
+            )
 
             # Create first test user if needed
             if not test_user:
@@ -199,23 +299,20 @@ def init_database():
                     username="test_user",
                     email="test@example.com",
                     hashed_password="$argon2id$v=19$m=65536,t=3,p=4$GUMIQSjF+L+XslaqVSql1A$YRxMqFsROQsIl0cZjA0zZp7oUZbE7UCqqnGqRgb6c7M",
-                    profile_picture_url="https://example.com/test.jpg"
+                    profile_picture_url="https://example.com/test.jpg",
                 )
                 db.add(test_user)
                 db.commit()
                 db.refresh(test_user)
 
                 logger.info("Creating test user 1 status...")
-                test_status = UserStatus(
-                    user_id=test_user.id,
-                    status="away"
-                )
+                test_status = UserStatus(user_id=test_user.id, status="away")
                 db.add(test_status)
                 db.commit()
                 logger.info(f"Test user 1 added (id: {test_user.id})")
             else:
                 logger.info(f"Test user 1 already exists (id: {test_user.id})")
-            
+
             # Create second test user for connections
             if not test_user2:
                 logger.info("Creating test user 2...")
@@ -223,7 +320,7 @@ def init_database():
                     username="test_user2",
                     email="test2@example.com",
                     hashed_password="$argon2id$v=19$m=65536,t=3,p=4$GUMIQSjF+L+XslaqVSql1A$YRxMqFsROQsIl0cZjA0zZp7oUZbE7UCqqnGqRgb6c7M",
-                    profile_picture_url="https://example.com/test2.jpg"
+                    profile_picture_url="https://example.com/test2.jpg",
                 )
                 db.add(test_user2)
                 db.commit()
@@ -231,46 +328,55 @@ def init_database():
 
                 logger.info("Creating test user 2 status...")
                 test_status2 = UserStatus(
-                    user_id=test_user2.id,
-                    status="online"
+                    user_id=test_user2.id, status="online"
                 )
                 db.add(test_status2)
                 db.commit()
                 logger.info(f"Test user 2 added (id: {test_user2.id})")
             else:
-                logger.info(f"Test user 2 already exists (id: {test_user2.id})")
-            
+                logger.info(
+                    f"Test user 2 already exists (id: {test_user2.id})"
+                )
+
             # Create connections between users (in both directions for bidirectional friendship)
             if test_user and test_user2:
                 # Check if connections exist
-                existing_connection1 = db.query(Connection).filter(
-                    Connection.user_id == test_user.id,
-                    Connection.friend_id == test_user2.id
-                ).first()
-                
-                existing_connection2 = db.query(Connection).filter(
-                    Connection.user_id == test_user2.id,
-                    Connection.friend_id == test_user.id
-                ).first()
-                
+                existing_connection1 = (
+                    db.query(Connection)
+                    .filter(
+                        Connection.user_id == test_user.id,
+                        Connection.friend_id == test_user2.id,
+                    )
+                    .first()
+                )
+
+                existing_connection2 = (
+                    db.query(Connection)
+                    .filter(
+                        Connection.user_id == test_user2.id,
+                        Connection.friend_id == test_user.id,
+                    )
+                    .first()
+                )
+
                 # Create first direction connection
                 if not existing_connection1:
                     logger.info("Creating test connection (user1 -> user2)...")
                     test_connection1 = Connection(
                         user_id=test_user.id,
                         friend_id=test_user2.id,
-                        status="accepted"
+                        status="accepted",
                     )
                     db.add(test_connection1)
                     db.commit()
-                
+
                 # Create second direction connection
                 if not existing_connection2:
                     logger.info("Creating test connection (user2 -> user1)...")
                     test_connection2 = Connection(
                         user_id=test_user2.id,
                         friend_id=test_user.id,
-                        status="accepted"
+                        status="accepted",
                     )
                     db.add(test_connection2)
                     db.commit()
@@ -281,7 +387,11 @@ def init_database():
             expiry = datetime.now(UTC) + timedelta(hours=1)
 
             # Check if a test reset token already exists for this user
-            existing_reset = db.query(PasswordResetToken).filter_by(user_id=test_user.id).first()
+            existing_reset = (
+                db.query(PasswordResetToken)
+                .filter_by(user_id=test_user.id)
+                .first()
+            )
             if not existing_reset:
                 logger.info("Creating test password reset token...")
                 reset_entry = PasswordResetToken(
@@ -294,7 +404,9 @@ def init_database():
                 db.refresh(reset_entry)
                 logger.info(f"Test password reset token created: {test_token}")
             else:
-                logger.info("Test password reset token already exists for test user")
+                logger.info(
+                    "Test password reset token already exists for test user"
+                )
             return True
 
         except Exception as e:
@@ -307,6 +419,7 @@ def init_database():
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
         return False
+
 
 if __name__ == "__main__":
     if init_database():
