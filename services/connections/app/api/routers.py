@@ -247,8 +247,6 @@ async def update_connection(
 
 
 # @router.put(
-=======
->>>>>>> origin/main
 #     "/notify/all/{user_id}",
 #     response_model=SuccessResponse,
 #     responses={

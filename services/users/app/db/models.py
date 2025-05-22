@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -11,7 +12,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
-from sqlalchemy.orm import Index, relationship
+from sqlalchemy.orm import relationship
 
 from services.connections.app.db.models import (
     Connection,  # noqa: F401, SQL alchemy just needs to know about the model
@@ -22,8 +23,8 @@ from services.shared.base import Base
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
-        {"schema": "users"},
         Index("idx_username", "username"),
+        {"schema": "users"},
     )
 
     id = Column(

@@ -1,23 +1,26 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
-import type { UserStatusType } from '../types/userStatusType';
 import ChatList from '../components/ChatList';
 import ConnectedUsers from '../components/ConnectedUsers';
 import NotificationBell from '../components/NotificationsList';
 import RoomList from '../components/RoomList';
 import UserStatus from '../components/UserStatus';
 import { useAuth } from '../contexts';
-import { useSocketEvent } from '../contexts/socket/useSocket';
+import { useSocketContext } from '../contexts/socket/socketContext';
 import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
 import { ServerEvents } from '../types/serverEvents';
+import type { UserStatusType } from '../types/userStatusType';
 // import type { NotificationResponseType } from "../types/notificationType";
-import AddNotificationTest from "../components/AddNotificationTest";
+import AddNotificationTest from '../components/AddNotificationTest';
 import FriendsList from '../components/FriendsList';
+import LoadingSpinner from '../components/LoadingSpinner';
 import SearchUsers from '../components/SearchUsers';
+import { useSocketEvent } from '../contexts/socket/useSocket';
 
 const ChatPage: React.FC = () => {
-	const { user } = useAuth();
+	const { user, isLoading: authLoading } = useAuth();
+	const { isConnected } = useSocketContext();
 	const [friends, setFriends] = useState<Record<string, UserStatusType>>({});
 	const [friendCount, setFriendCount] = useState(0);
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -72,21 +75,20 @@ const ChatPage: React.FC = () => {
 						<div className='flex items-center'>
 							<UserStatus />
 						</div>
-						<div className="flex items-center space-x-4">
-
+						<div className='flex items-center space-x-4'>
 							{/* Notifications */}
 							<NotificationBell />
 
 							{/* Search */}
-							<SearchUsers onConnectionChange={() => {
-								// Refresh friend list when connections change
-								// This could trigger a refetch if needed
-							}} />
+							<SearchUsers
+								onConnectionChange={() => {
+									// Refresh friend list when connections change
+									// This could trigger a refetch if needed
+								}}
+							/>
 
 							{/* Friend count */}
 							<FriendsList friends={friends} friendCount={friendCount} />
-
-
 						</div>
 					</div>
 				</div>
