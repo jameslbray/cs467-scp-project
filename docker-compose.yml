@@ -6,6 +6,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONPATH=/app
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -19,7 +20,9 @@ services:
         condition: service_healthy
       mongo_db:
         condition: service_healthy
-    restart: "no"
+    restart: 'no'
+    volumes:
+      - .:/app
 
   postgres_db:
     image: postgres:17-alpine
@@ -42,9 +45,9 @@ services:
       -c log_destination='stderr'
       -c logging_collector=off
     ports:
-      - "5432:5432"
+      - '5432:5432'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,20 +58,13 @@ services:
     image: mongo:latest
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - '27017:27017'
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_ADMIN_USER:-admin}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ADMIN_PASSWORD:-password}
       - MONGO_INITDB_DATABASE=${MONGO_DB_NAME:-chat_db}
     healthcheck:
-      test:
-        [
-          "CMD",
-          "mongosh",
-          "--eval",
-          '''db.adminCommand("ping").ok''',
-          "--quiet",
-        ]
+      test: ['CMD', 'mongosh', '--eval', '''db.adminCommand("ping").ok''', '--quiet']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -81,7 +77,7 @@ services:
     container_name: mongo-express
     restart: always
     ports:
-      - "8081:8081"
+      - '8081:8081'
     environment:
       - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_ADMIN_USER:-admin}
       - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_ADMIN_PASSWORD:-password}
@@ -94,8 +90,8 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - '5672:5672'
+      - '15672:15672'
     env_file:
       - .env
     environment:
@@ -109,18 +105,17 @@ services:
       - rabbitmq_logs:/var/log/rabbitmq
       - ./services/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ['CMD', 'rabbitmq-diagnostics', 'check_port_connectivity']
       interval: 10s
       timeout: 5s
       retries: 3
-
 
   socket_io:
     build:
       context: .
       dockerfile: services/socket_io/Dockerfile
     ports:
-      - "${SOCKET_IO_PORT}:8000"
+      - '${SOCKET_IO_PORT}:8000'
     env_file:
       - .env
     environment:
@@ -130,13 +125,12 @@ services:
       rabbitmq:
         condition: service_healthy
 
-
   users:
     build:
       context: .
       dockerfile: services/users/Dockerfile
     ports:
-      - "${USERS_PORT}:8001"
+      - '${USERS_PORT}:8001'
     env_file:
       - .env
     environment:
@@ -156,13 +150,12 @@ services:
     tty: true
     stdin_open: true
 
-
   notifications:
     build:
       context: .
       dockerfile: services/notifications/Dockerfile
     ports:
-      - "${NOTIFICATIONS_PORT}:8002"
+      - '${NOTIFICATIONS_PORT}:8002'
     env_file:
       - .env
     environment:
@@ -188,7 +181,7 @@ services:
       context: .
       dockerfile: services/presence/Dockerfile
     ports:
-      - "${PRESENCE_PORT}:8003"
+      - '${PRESENCE_PORT}:8003'
     env_file:
       - .env
     environment:
@@ -212,7 +205,7 @@ services:
       context: .
       dockerfile: services/chat/Dockerfile
     ports:
-      - "${CHAT_PORT}:8004"
+      - '${CHAT_PORT}:8004'
     env_file:
       - .env
     environment:
@@ -235,7 +228,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - '${FRONTEND_PORT:-5173}:5173'
     env_file:
       - .env
     environment:
@@ -245,13 +238,12 @@ services:
       - ./frontend:/app:delegated
       - /app/node_modules
 
-
   connections:
     build:
       context: .
       dockerfile: services/connections/Dockerfile
     ports:
-      - "${CONNECTIONS_PORT}:8005"
+      - '${CONNECTIONS_PORT}:8005'
     env_file:
       - .env
     environment:
@@ -271,7 +263,6 @@ services:
         condition: service_completed_successfully
       postgres_db:
         condition: service_healthy
-
 
 volumes:
   postgres_data:

@@ -3,29 +3,20 @@ Notification manager for handling user Connection state.
 """
 
 import logging
-import json
-from uuid import UUID
-from uuid import UUID
-from typing import Dict, Any, Optional, List, Union
-from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson.objectid import ObjectId
+from typing import Any, List, Optional
+
 import asyncpg  # type: ignore
-# from pymongo import MongoClient
 
 from services.shared.utils.retry import CircuitBreaker, with_retry
-from services.shared.utils.retry import CircuitBreaker, with_retry
+
 # from services.rabbitmq.core.client import RabbitMQClient
-from ..db.models import (
-    Connection,
-)
-from ..db.schemas import (
-    Connection,
-    ConnectionStatus,
-    ConnectionCreate,
-    ConnectionUpdate
-)
-    
+from ..db.models import Connection
+# TODO: Check which needs schema and which needs model
+from ..db.schemas import ConnectionSchema, ConnectionCreate, ConnectionUpdate
+
+# from pymongo import MongoClient
+
+
 # from services.socket_io.app.core.socket_server import SocketServer as SocketManager
 
 # configure logging
@@ -67,9 +58,7 @@ class ConnectionManager:
         #     reset_timeout=30.0
         # )
         self.db_cb = CircuitBreaker(
-            "postgres",
-            failure_threshold=3,
-            reset_timeout=30.0
+            "postgres", failure_threshold=3, reset_timeout=30.0
         )
 
     async def initialize(self) -> None:
@@ -95,7 +84,7 @@ class ConnectionManager:
                     max_attempts=5,
                     initial_delay=5.0,
                     max_delay=60.0,
-                    circuit_breaker=self.db_cb
+                    circuit_breaker=self.db_cb,
                 )
 
             self._initialized = True
@@ -121,63 +110,19 @@ class ConnectionManager:
             logger.info("Connection manager shut down")
 
     async def _connect_database(self) -> None:
-        """Connect to MongoDB."""
-        # Connect to PostgreSQL
+        """Connect to PostgreSQL."""
         config = self.config["postgres"].copy()
-
         try:
-            # Connect to PostgreSQL
             if "options" in config:
-                # Remove options as it's not supported by asyncpg
                 del config["options"]
-
             self.postgres_client = await asyncpg.create_pool(
-                min_size=2,
-                max_size=10,
-                **config
+                min_size=2, max_size=10, **config
             )
             logger.info("Connected to PostgreSQL database")
-
             # Set search path for all connections in the pool
             async with self.postgres_client.acquire() as conn:
-                await conn.execute('SET search_path TO connections, public')
-
-                # Create schema and tables if they don't exist
-                await conn.execute('CREATE SCHEMA IF NOT EXISTS connections')
-
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS connections (
-                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                        user_id UUID NOT NULL REFERENCES users.users(id) ON DELETE CASCADE,
-                        friend_id UUID NOT NULL REFERENCES users.users(id) ON DELETE CASCADE,
-                        status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected', 'blocked')),
-                        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                        CONSTRAINT ck_user_friend_different CHECK (user_id != friend_id),
-                        CONSTRAINT unique_connection UNIQUE (user_id, friend_id)
-                    )
-                    """
-                )
-
-                # Create proper indexes matching the SQLAlchemy model
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_connection_user ON connections (user_id)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_connection_friend ON connections (friend_id)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_connection_user_friend ON connections (user_id, friend_id)
-                    """
-                )
-
-            logger.info("Database tables initialized")
+                await conn.execute("SET search_path TO connections, public")
+            logger.info("Postgres search_path set for pool")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
@@ -189,7 +134,6 @@ class ConnectionManager:
         except Exception:
             logger.error("Postgres connection failed")
             return False
-        
 
     # async def _connect_rabbitmq(self) -> None:
     #     """Connect to RabbitMQ."""
@@ -333,21 +277,23 @@ class ConnectionManager:
             return user_connections
 
         return empty_connections
-        
-    async def _get_user_connections(self, user_id: str) -> list[Connection] | None:
+
+    async def _get_user_connections(
+        self, user_id: str
+    ) -> list[Connection] | None:
         """Get a user's connections from database."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
 
-        try:          
+        try:
             logger.debug(f"Searching for connections of user_id: {user_id}")
-            
+
             async with self.postgres_client.acquire() as conn:
                 # Execute the query directly on the connection
-                
-                await conn.execute('SET search_path TO connections, public')
-                
+
+                await conn.execute("SET search_path TO connections, public")
+
                 query = """
                     SELECT * FROM connections.connections
                     WHERE user_id = $1
@@ -355,24 +301,26 @@ class ConnectionManager:
                 """
                 # Execute the query
                 rows = await conn.fetch(query, user_id)
-                
+
                 # Convert rows to list of Connection
                 connections = []
                 for row in rows:
                     try:
                         # Convert row to dict and handle UUID types
                         connection = Connection(
-                            id=row['id'],
-                            user_id=row['user_id'],
-                            friend_id=row['friend_id'],
-                            status=row['status'],
-                            created_at=row['created_at'],
-                            updated_at=row['updated_at']
+                            id=row["id"],
+                            user_id=row["user_id"],
+                            friend_id=row["friend_id"],
+                            status=row["status"],
+                            created_at=row["created_at"],
+                            updated_at=row["updated_at"],
                         )
                         connections.append(connection)
                     except Exception as e:
-                        logger.error(f"Error converting row to connection: {e}")
-                    
+                        logger.error(
+                            f"Error converting row to connection: {e}"
+                        )
+
                 return connections
 
         except ValueError as e:
@@ -393,43 +341,45 @@ class ConnectionManager:
             return user_connections
 
         return empty_connections
-        
+
     async def _get_all_connections(self) -> list[Connection] | None:
         """Get all user connections from database."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
 
-        try:          
-            logger.debug(f"Searching for all connections")            
+        try:
+            logger.debug("Searching for all connections")
             async with self.postgres_client.acquire() as conn:
                 # Execute the query directly on the connection
-                
-                await conn.execute('SET search_path TO connections, public')
-                
+
+                await conn.execute("SET search_path TO connections, public")
+
                 query = """
                     SELECT * FROM connections.connections
                 """
                 # Execute the query
                 rows = await conn.fetch(query)
-                
+
                 # Convert rows to list of Connection
                 connections = []
                 for row in rows:
                     try:
                         # Convert row to dict and handle UUID types
                         connection = Connection(
-                            id=row['id'],
-                            user_id=row['user_id'],
-                            friend_id=row['friend_id'],
-                            status=row['status'],
-                            created_at=row['created_at'],
-                            updated_at=row['updated_at']
+                            id=row["id"],
+                            user_id=row["user_id"],
+                            friend_id=row["friend_id"],
+                            status=row["status"],
+                            created_at=row["created_at"],
+                            updated_at=row["updated_at"],
                         )
                         connections.append(connection)
                     except Exception as e:
-                        logger.error(f"Error converting row to connection: {e}")
-                    
+                        logger.error(
+                            f"Error converting row to connection: {e}"
+                        )
+
                 return connections
 
         except ValueError as e:
@@ -439,18 +389,22 @@ class ConnectionManager:
             logger.error(f"Failed to get user connections: {e}")
             return None
 
-    async def create_connection(self, connection: ConnectionCreate) -> Connection | None:
+    async def create_connection(
+        self, connection: ConnectionCreate
+    ) -> Connection | None:
         """Create a new connection."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
 
-        try:          
-            logger.debug(f"Creating connection: {connection.user_id} -> {connection.friend_id}")
+        try:
+            logger.debug(
+                f"Creating connection: {connection.user_id} -> {connection.friend_id}"
+            )
             async with self.postgres_client.acquire() as conn:
                 # Execute the query directly on the connection
-                await conn.execute('SET search_path TO connections, public')
-                
+                await conn.execute("SET search_path TO connections, public")
+
                 # First direction (user_id -> friend_id)
                 query1 = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
@@ -458,8 +412,13 @@ class ConnectionManager:
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
                 # Execute first query
-                result1 = await conn.fetchrow(query1, connection.user_id, connection.friend_id, connection.status)
-                
+                result1 = await conn.fetchrow(
+                    query1,
+                    connection.user_id,
+                    connection.friend_id,
+                    connection.status,
+                )
+
                 # Second direction (friend_id -> user_id)
                 query2 = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
@@ -467,38 +426,47 @@ class ConnectionManager:
                     RETURNING id
                 """
                 # Execute second query
-                result2 = await conn.fetchrow(query2, connection.friend_id, connection.user_id, connection.status)
-                
+                result2 = await conn.fetchrow(
+                    query2,
+                    connection.friend_id,
+                    connection.user_id,
+                    connection.status,
+                )
+
                 if result1 and result2:
-                    logger.info(f"Bidirectional connection created with ID: {result1['id']}")
+                    logger.info(
+                        f"Bidirectional connection created with ID: {result1['id']}"
+                    )
                     return Connection(
-                        id=result1['id'],
-                        user_id=result1['user_id'],
-                        friend_id=result1['friend_id'],
-                        status=result1['status'],
-                        created_at=result1['created_at'],
-                        updated_at=result1['updated_at']
+                        id=result1["id"],
+                        user_id=result1["user_id"],
+                        friend_id=result1["friend_id"],
+                        status=result1["status"],
+                        created_at=result1["created_at"],
+                        updated_at=result1["updated_at"],
                     )
                 else:
                     logger.error("Failed to create connection")
                     return None
-            
+
         except Exception as e:
             logger.error(f"Failed to create connection: {e}")
             return None
 
-    async def update_connection(self, connection: ConnectionUpdate) -> Connection | None:
+    async def update_connection(
+        self, connection: ConnectionUpdate
+    ) -> Connection | None:
         """Update an existing connection."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
 
-        try:          
+        try:
             logger.debug(f"Updating connection for {connection.user_id}")
             async with self.postgres_client.acquire() as conn:
                 # Execute the query directly on the connection
-                await conn.execute('SET search_path TO connections, public')
-                
+                await conn.execute("SET search_path TO connections, public")
+
                 query = """
                     UPDATE connections.connections
                     SET status = $1, updated_at = NOW()
@@ -507,26 +475,32 @@ class ConnectionManager:
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
                 # Execute the query
-                result = await conn.fetchrow(query, connection.status, connection.user_id, connection.friend_id)
-                
+                result = await conn.fetchrow(
+                    query,
+                    connection.status,
+                    connection.user_id,
+                    connection.friend_id,
+                )
+
                 if result:
-                    logger.info(f"Connection updated with ID: {connection.user_id}")
+                    logger.info(
+                        f"Connection updated with ID: {connection.user_id}"
+                    )
                     return Connection(
-                        id=result['id'],
-                        user_id=result['user_id'],
-                        friend_id=result['friend_id'],
-                        status=result['status'],
-                        created_at=result['created_at'],
-                        updated_at=result['updated_at']
+                        id=result["id"],
+                        user_id=result["user_id"],
+                        friend_id=result["friend_id"],
+                        status=result["status"],
+                        created_at=result["created_at"],
+                        updated_at=result["updated_at"],
                     )
                 else:
                     logger.error("Failed to update connection")
                     return None
-            
+
         except Exception as e:
             logger.error(f"Failed to update connection: {e}")
             return None
-
 
     # async def _publish_status_update(
     #     self,

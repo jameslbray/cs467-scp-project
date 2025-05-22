@@ -1,7 +1,7 @@
-import type React from "react";
-import { Navigate, Outlet } from "react-router-dom";
-import DarkModeToggle from "../components/DarkModeToggle";
-import { useAuth } from "../contexts";
+import type React from 'react';
+import { Navigate, Outlet } from 'react-router-dom';
+import DarkModeToggle from '../components/DarkModeToggle';
+import { useAuth } from '../contexts/auth/authContext';
 
 const AuthenticatedLayout: React.FC = () => {
   const { isAuthenticated, isLoading, logout } = useAuth();
@@ -45,12 +45,12 @@ const AuthenticatedLayout: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <Outlet />
-      </main>
-    </div>
-  );
+			{/* Main Content */}
+			<main className='max-w-7xl mx-auto py-6 sm:px-6 lg:px-8'>
+				<Outlet />
+			</main>
+		</div>
+	);
 };
 
 export default AuthenticatedLayout;

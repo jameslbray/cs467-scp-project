@@ -20,11 +20,11 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
 )
 
-from ..core.config import get_settings
-from ..core.connection_manager import ConnectionManager
-from ..db.schemas import (
-    Connection, 
-    ErrorResponse, 
+from services.connections.app.core.config import get_settings
+from services.connections.app.core.connection_manager import ConnectionManager
+from services.connections.app.db.schemas import (
+    ConnectionSchema as Connection,
+    ErrorResponse,
     ConnectionCreate,
     ConnectionUpdate
     )
@@ -46,15 +46,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         payload = jwt.decode(
             token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
-        
+
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
+
         return user_id
     except jwt.JWTError:
         raise HTTPException(
@@ -132,7 +132,7 @@ async def get_user_connections(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only view your own connections",
         )
-    
+
     logger.info(f"Fetching connections for user: {user_id}")
     connection_data = await connection_manager.get_user_connections(user_id)
 
@@ -155,8 +155,8 @@ async def create_connection(
     connection_manager: ConnectionManager = Depends(get_connection_manager),
 ):
     """
-    Create a connection between user_id and friend_id. 
-    
+    Create a connection between user_id and friend_id.
+
     Parameters:
     - **user_id**: ID of the user whose sending the request
     - **friend_id**: ID of the friend to connect with
@@ -166,7 +166,7 @@ async def create_connection(
     """
     logger.info(f"Current user: {current_user}")
     logger.info(f"Creating connection between users {connection_data.user_id} -> {connection_data.friend_id}")
-    
+
     # Check if the user is trying to create a connection for their own user
     if str(connection_data.user_id) != str(current_user):
         raise HTTPException(
@@ -176,14 +176,14 @@ async def create_connection(
 
     try:
         response = await connection_manager.create_connection(connection_data)
-        
+
         if not response:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
                 detail="Connection creation failed",
             )
         return response
-            
+
     except Exception as e:
         logger.error(f"Failed to create connection: {e}")
         raise HTTPException(
@@ -222,22 +222,22 @@ async def update_connection(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only update your own connections"
         )
-    
-    
+
+
     logger.info(f"Updating connection {connection_data.user_id} -> {connection_data.status} -> {connection_data.friend_id}")
 
     try:
         # Call the manager to update connection status
         response = await connection_manager.update_connection(connection_data)
-        
+
         if not response:
             raise HTTPException(
                 status_code=404,
                 detail="Connection not found"
             )
-            
+
         return response
-        
+
     except Exception as e:
         logger.error(f"Failed to update connection: {e}")
         raise HTTPException(
@@ -276,16 +276,16 @@ async def update_connection(
 #     #         status_code=HTTP_403_FORBIDDEN,
 #     #         detail="You can only update your own status"
 #     #     )
-    
-    
+
+
 #     logger.info(f"Updating all notifications for user: {user_id}")
 
 #     try:
 #         # Call the manager to mark notification as read
 #         success = await notification_manager.mark_all_notifications_as_read(user_id)
-            
+
 #         return SuccessResponse(message="success")
-        
+
 #     except Exception as e:
 #         logger.error(f"Failed to update notification: {e}")
 #         raise HTTPException(
@@ -325,15 +325,15 @@ async def update_connection(
 #     #         detail="You can only update your own status"
 #     #     )
 
-    
+
 #     logger.info(f"Removing stale notification for user: {user_id}")
 
 #     try:
 #         # Call the manager to mark notification as read
 #         deleted_count = await notification_manager.delete_read_notifications(user_id)
-            
+
 #         return SuccessResponse(message="Successfully deleted {deleted_count} notifications")
-        
+
 #     except Exception as e:
 #         logger.error(f"Failed to update notification: {e}")
 #         raise HTTPException(
@@ -520,7 +520,7 @@ async def api_info():
         "endpoints": {
             "GET /connect/health": "Health check endpoint",
             "GET /connect/{user_id}": "Get a user's connections",
-            "GET /connect/all": "Get all connections", 
+            "GET /connect/all": "Get all connections",
             "POST /connect": "Create a new connection",
             "PUT /connect": "Update a connection",
         },
