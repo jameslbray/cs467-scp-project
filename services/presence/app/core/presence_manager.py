@@ -192,7 +192,6 @@ class PresenceManager:
                     """
                 )
 
-
             logger.info("Database tables initialized")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
@@ -231,6 +230,14 @@ class PresenceManager:
             logger.error(f"Failed to connect to RabbitMQ: {e}")
             raise
 
+    async def check_connection_health(self):
+        try:
+            await self.db_pool.execute("SELECT 1")
+            return True
+        except Exception:
+            logger.error("Postgres connection failed")
+            return False
+        
     async def _process_presence_message(self, message: Any) -> None:
         """Process a presence message from RabbitMQ."""
         try:
@@ -475,19 +482,20 @@ class PresenceManager:
             async with self.db_pool.acquire() as conn:
                 # Query for accepted connections in both directions
                 query = """
-                    SELECT connected_user_id FROM connections
-                    WHERE user_id = $1 AND connection_status = 'accepted'
+                    SELECT friend_id FROM connections.connections
+                    WHERE user_id = $1 AND status = 'accepted'
                     UNION
-                    SELECT user_id FROM connections
-                    WHERE connected_user_id = $1
-                    AND connection_status = 'accepted'
+                    SELECT user_id FROM connections.connections
+                    WHERE friend_id = $1
+                    AND status = 'accepted'
                 """
                 rows = await conn.fetch(query, user_id)
 
                 # Extract friend IDs from results
                 friend_ids = []
                 for row in rows:
-                    friend_id = row["connected_user_id"] or row["user_id"]
+                    # Use the correct column name
+                    friend_id = row["friend_id"] if "friend_id" in row else row["user_id"]
                     friend_ids.append(friend_id)
                 return friend_ids
         except Exception as e:

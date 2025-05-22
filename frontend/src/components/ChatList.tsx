@@ -12,7 +12,7 @@ interface ChatListProps {
 }
 
 const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
-	const { socket } = useSocketContext();
+	const { socket, isConnected } = useSocketContext();
 	const { user } = useAuth();
 	const currentUserId = user?.id ?? "";
 	const {
@@ -70,6 +70,16 @@ const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 				<h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
 					Chat Room
 				</h2>
+				{/* Connection status indicator */}
+				<div className='flex items-center'>
+					<div
+						className={`h-2 w-2 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'
+							}`}
+					/>
+					<span className='text-sm text-gray-700 dark:text-gray-300'>
+						{isConnected ? 'Connected' : 'Disconnected'}
+					</span>
+				</div>
 			</div>
 
 			{/* Messages Container */}

@@ -4,13 +4,13 @@ import DarkModeToggle from "../components/DarkModeToggle";
 import { useAuth } from "../contexts";
 
 const AuthenticatedLayout: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, logout } = useAuth();
 
   if (isLoading) {
     return (
-			<div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
-				<div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500" />
-			</div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500" />
+      </div>
     );
   }
 
@@ -31,6 +31,16 @@ const AuthenticatedLayout: React.FC = () => {
               <DarkModeToggle />
               {/* Add other header items here (profile, logout, etc.) */}
             </div>
+
+            {/* Logout button */}
+            <button
+              type='button'
+              onClick={logout}
+              className='ml-4 px-3 py-1 text-sm text-white bg-red-600 hover:bg-red-700 rounded-md focus:outline-none'
+            >
+              Logout
+            </button>
+
           </div>
         </div>
       </header>
