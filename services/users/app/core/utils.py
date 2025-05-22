@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from services.db_init.app.models import BlacklistedToken
+from services.users.app.db.models import BlacklistedToken
 
 
 def cleanup_expired_tokens(db: Session):

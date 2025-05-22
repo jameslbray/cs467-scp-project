@@ -6,9 +6,9 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.chat.app.schemas.message import MessageResponse
-from services.users.app.schemas import User
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.users.app.core.security import get_current_user
+from services.users.app.schemas import UserSchema as User
 
 from .core.config import get_settings
 from .core.rabbitmq import ChatRabbitMQClient
@@ -213,7 +213,7 @@ async def get_room_messages(
     room_id: str,
     limit: int = Query(default=50, ge=1, le=100),
     skip: int = Query(default=0, ge=0),
-    user_id: str = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """Get messages for a specific room."""
     room = await repo.get_room_by_id(room_id)

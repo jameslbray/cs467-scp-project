@@ -11,12 +11,12 @@ from passlib.context import CryptContext
 from sqlalchemy import Column
 from sqlalchemy.orm import Session
 
-from services.db_init.app.models import BlacklistedToken
-from services.db_init.app.models import User as UserModel
-
-from ..db.database import get_db
-from ..schemas import JWTTokenData, Token, User
-from .config import get_settings
+from services.users.app.core.config import get_settings
+from services.users.app.db.database import get_db
+from services.users.app.db.models import BlacklistedToken
+from services.users.app.db.models import User as UserModel
+from services.users.app.schemas import JWTTokenData, Token
+from services.users.app.schemas import UserSchema as User
 
 logger = logging.getLogger(__name__)
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { UserStatusIntf } from '../App';
 import ChatList from '../components/ChatList';
 import ConnectedUsers from '../components/ConnectedUsers';
+import NotificationBell from '../components/NotificationsList';
 import RoomList from '../components/RoomList';
 import UserStatus from '../components/UserStatus';
 import { useAuth, useTheme } from '../contexts';
@@ -12,13 +13,13 @@ import { useSocketEvent } from '../contexts/socket/useSocket';
 import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
 import { ServerEvents } from '../types/serverEvents';
-import NotificationBell from "../components/NotificationsList";
 // import type { NotificationResponseType } from "../types/notificationType";
-import AddNotificationTest from "../components/AddNotificationTest";
+import AddNotificationTest from '../components/AddNotificationTest';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 const ChatPage: React.FC = () => {
 	const { darkMode, toggleDarkMode } = useTheme();
-	const { user, logout } = useAuth();
+	const { user, logout, isLoading: authLoading } = useAuth();
 	const { isConnected } = useSocketContext();
 	const [friends, setFriends] = useState<Record<string, UserStatusIntf>>({});
 	const [friendCount, setFriendCount] = useState(0);
@@ -53,6 +54,10 @@ const ChatPage: React.FC = () => {
 		}
 	}, [rooms, roomsLoading, selectedRoom]);
 
+	if (authLoading || !isConnected) {
+		return <LoadingSpinner message='Connecting...' />;
+	}
+
 	if (!user) {
 		return (
 			<div className='flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900'>
@@ -70,9 +75,8 @@ const ChatPage: React.FC = () => {
 						<div className='flex items-center'>
 							<UserStatus />
 						</div>
-						<div className="flex items-center space-x-4">
-
-							<NotificationBell/>
+						<div className='flex items-center space-x-4'>
+							<NotificationBell />
 							{/* Dark mode toggle */}
 							<button
 								type='button'

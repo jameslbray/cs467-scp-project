@@ -19,20 +19,22 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from services.db_init.app.models import PasswordResetToken
-from services.db_init.app.models import User as UserModel
-
-from ..core import security
-from ..core.config import Settings, get_settings
-from ..core.utils import cleanup_expired_tokens, send_reset_email
-from ..db.database import get_db
-from ..schemas import (
+from services.users.app.core import security
+from services.users.app.core.config import Settings, get_settings
+from services.users.app.core.utils import (
+    cleanup_expired_tokens,
+    send_reset_email,
+)
+from services.users.app.db.database import get_db
+from services.users.app.db.models import PasswordResetToken
+from services.users.app.db.models import User as UserModel
+from services.users.app.schemas import (
     PasswordResetConfirm,
     PasswordResetRequest,
     Token,
-    User,
     UserCreate,
 )
+from services.users.app.schemas import UserSchema as User
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -179,7 +181,9 @@ async def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    )
     access_token = security.create_access_token(
         user_id=user.id, expires_delta=access_token_expires
     )

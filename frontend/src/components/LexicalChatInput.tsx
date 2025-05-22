@@ -25,7 +25,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { v4 as uuidv4 } from 'uuid';
 import { useEmojiSuggestion } from '../contexts/emojiSuggestionContext';
-import { getSocket } from '../socket/socket';
+import { useSocketContext } from '../contexts/socket/socketContext';
 import type { ChatMessageType } from '../types/chatMessageType';
 import { findEmojiByShortcode } from '../utils/emojiUtils';
 import { $createEmojiNode, EmojiNode } from './EmojiNode';
@@ -232,10 +232,10 @@ function EmojiShortcodeTransformPlugin() {
 }
 
 export default function ChatInput({ roomId, senderId, onSend }: ChatInputProps) {
-	const token = localStorage.getItem('auth_token');
-	if (!token) throw new Error('No auth token found');
-	const socket = getSocket(token) as Socket;
+	const { socket } = useSocketContext();
 	const contentEditableRef = useRef<HTMLDivElement | null>(null);
+
+	if (!socket) return null;
 
 	return (
 		<div className='flex flex-col gap-2 mt-4 relative'>

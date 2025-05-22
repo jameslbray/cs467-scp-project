@@ -9,9 +9,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .core.connection_manager import ConnectionManager
-from .core.config import get_settings
 from .api.routers import router
+from .core.config import get_settings
+from .core.connection_manager import ConnectionManager
+
 # from .core.rabbitmq import NotificationRabbitMQClient
 
 settings = get_settings()
@@ -19,10 +20,10 @@ settings = get_settings()
 # Configure logging
 logging.basicConfig(
     level=settings.LOG_LEVEL,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stdout,
-    force=True
+    force=True,
 )
 logger = logging.getLogger(__name__)
 
@@ -39,15 +40,13 @@ logger.info("Application settings loaded")
 # Create presence manager
 connection_manager = ConnectionManager(
     {
-        "rabbitmq": {
-            "url": settings.RABBITMQ_URL
-        },
+        "rabbitmq": {"url": settings.RABBITMQ_URL},
         "postgres": {
             "user": settings.POSTGRES_USER,
             "password": settings.POSTGRES_PASSWORD,
             "host": settings.POSTGRES_HOST,
             "port": settings.POSTGRES_PORT,
-            "database": settings.POSTGRES_DB
+            "database": settings.POSTGRES_DB,
         },
     }
 )
@@ -75,6 +74,7 @@ async def lifespan(app: FastAPI):
     logger.info("Connection service shut down successfully")
     # await rabbitmq_client.close()
     # logger.info("RabbitMQ connection closed")
+
 
 # Create FastAPI app
 app = FastAPI(

@@ -20,9 +20,13 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
 )
 
-from ..core.config import get_settings
-from ..core.connection_manager import ConnectionManager
-from ..db.schemas import Connection, ErrorResponse, ConnectionCreate
+from services.connections.app.core.config import get_settings
+from services.connections.app.core.connection_manager import ConnectionManager
+from services.connections.app.db.schemas import (
+    ConnectionSchema,
+    ConnectionCreate,
+    ErrorResponse,
+)
 
 # Set up OAuth2 with password flow (token-based authentication)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -41,15 +45,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         payload = jwt.decode(
             token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
-        
+
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
+
         return user_id
     except jwt.JWTError:
         raise HTTPException(
@@ -83,7 +87,7 @@ async def health_check(
 # Routes
 @router.get(
     "/connect/{user_id}",
-    response_model=list[Connection],
+    response_model=list[ConnectionSchema],
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         404: {"model": ErrorResponse, "description": "User not found"},
@@ -108,7 +112,7 @@ async def get_user_connections(
     #         status_code=HTTP_403_FORBIDDEN,
     #         detail="You can only view your own connections",
     #     )
-    
+
     logger.info(f"Fetching connections for user: {user_id}")
     connection_data = await connection_manager.get_user_connections()
 
@@ -117,7 +121,7 @@ async def get_user_connections(
 
 @router.get(
     "/connect/all",
-    response_model=list[Connection]
+    response_model=list[ConnectionSchema]
 )
 async def get_all_connections(
     connection_manager: ConnectionManager = Depends(get_connection_manager),
@@ -128,7 +132,7 @@ async def get_all_connections(
     Returns:
     - **list[Connection]**: All user connections
     """
-    logger.info(f"Fetching all user connections")
+    logger.info("Fetching all user connections")
     connection_data = await connection_manager.get_all_connections()
 
     return connection_data
@@ -136,7 +140,7 @@ async def get_all_connections(
 
 @router.post(
     "/connect/",
-    response_model=Connection,
+    response_model=ConnectionSchema,
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
         401: {"model": ErrorResponse, "description": "Unauthorized"},
@@ -150,8 +154,8 @@ async def create_connection(
     connection_manager: ConnectionManager = Depends(get_connection_manager),
 ):
     """
-    Create a connection between user_id and friend_id. 
-    
+    Create a connection between user_id and friend_id.
+
     Parameters:
     - **user_id**: ID of the user whose sending the request
     - **friend_id**: ID of the friend to connect with
@@ -165,19 +169,19 @@ async def create_connection(
     #         status_code=HTTP_403_FORBIDDEN,
     #         detail="You can only update your own status"
     #     )
-    
+
     logger.info(f"Creating connection for user: {connection_data.user_id}")
 
     try:
         response = await connection_manager.create_connection(connection_data)
-        
+
         if not response:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
                 detail="Connection creation failed",
             )
         return response
-            
+
     except Exception as e:
         logger.error(f"Failed to update connection: {e}")
         raise HTTPException(
@@ -218,22 +222,22 @@ async def create_connection(
 #     #         status_code=HTTP_403_FORBIDDEN,
 #     #         detail="You can only update your own status"
 #     #     )
-    
-    
+
+
 #     logger.info(f"Updating notification {notification_id} for user: {user_id}")
 
 #     try:
 #         # Call the manager to mark notification as read
 #         success = await notification_manager.mark_notification_as_read(notification_id, user_id)
-        
+
 #         if not success:
 #             raise HTTPException(
 #                 status_code=404,
 #                 detail="Notification not found or already read"
 #             )
-            
+
 #         return SuccessResponse(message="success")
-        
+
 #     except Exception as e:
 #         logger.error(f"Failed to update notification: {e}")
 #         raise HTTPException(
@@ -272,16 +276,16 @@ async def create_connection(
 #     #         status_code=HTTP_403_FORBIDDEN,
 #     #         detail="You can only update your own status"
 #     #     )
-    
-    
+
+
 #     logger.info(f"Updating all notifications for user: {user_id}")
 
 #     try:
 #         # Call the manager to mark notification as read
 #         success = await notification_manager.mark_all_notifications_as_read(user_id)
-            
+
 #         return SuccessResponse(message="success")
-        
+
 #     except Exception as e:
 #         logger.error(f"Failed to update notification: {e}")
 #         raise HTTPException(
@@ -321,15 +325,15 @@ async def create_connection(
 #     #         detail="You can only update your own status"
 #     #     )
 
-    
+
 #     logger.info(f"Removing stale notification for user: {user_id}")
 
 #     try:
 #         # Call the manager to mark notification as read
 #         deleted_count = await notification_manager.delete_read_notifications(user_id)
-            
+
 #         return SuccessResponse(message="Successfully deleted {deleted_count} notifications")
-        
+
 #     except Exception as e:
 #         logger.error(f"Failed to update notification: {e}")
 #         raise HTTPException(
@@ -516,6 +520,6 @@ async def api_info():
         "endpoints": {
             "GET /connect/health": "Health check endpoint",
             "GET /connect/{user_id}": "Get a user's connections",
-            "GET /connect/all": "Get all connections", 
+            "GET /connect/all": "Get all connections",
         },
     }
