@@ -76,3 +76,12 @@ class ErrorResponse(BaseModel):
 
     detail: str = Field(..., description="Error message")
     status_code: int = Field(..., description="HTTP status code")
+
+class ConnectionUpdate(BaseModel):
+    """Model for updating a connection."""
+    id: Optional[uuid.UUID] = Field(None, description="ID of the connection to update")
+    user_id: uuid.UUID = Field(..., description="ID of the user initiating the connection")
+    friend_id: uuid.UUID = Field(..., description="ID of the user being connected to")
+    status: ConnectionStatus = Field(..., description="New status of the connection")
+    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)

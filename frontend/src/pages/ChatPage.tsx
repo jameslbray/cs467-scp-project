@@ -1,33 +1,30 @@
-import { MoonIcon, SunIcon } from '@heroicons/react/24/outline';
 import type React from 'react';
 import { useEffect, useState } from 'react';
-import type { UserStatusIntf } from '../App';
+import type { UserStatusType } from '../types/userStatusType';
 import ChatList from '../components/ChatList';
 import ConnectedUsers from '../components/ConnectedUsers';
 import NotificationBell from '../components/NotificationsList';
 import RoomList from '../components/RoomList';
 import UserStatus from '../components/UserStatus';
-import { useAuth, useTheme } from '../contexts';
-import { useSocketContext } from '../contexts/socket/socketContext';
+import { useAuth } from '../contexts';
 import { useSocketEvent } from '../contexts/socket/useSocket';
 import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
 import { ServerEvents } from '../types/serverEvents';
 // import type { NotificationResponseType } from "../types/notificationType";
-import AddNotificationTest from '../components/AddNotificationTest';
-import LoadingSpinner from '../components/LoadingSpinner';
+import AddNotificationTest from "../components/AddNotificationTest";
+import FriendsList from '../components/FriendsList';
+import SearchUsers from '../components/SearchUsers';
 
 const ChatPage: React.FC = () => {
-	const { darkMode, toggleDarkMode } = useTheme();
-	const { user, logout, isLoading: authLoading } = useAuth();
-	const { isConnected } = useSocketContext();
-	const [friends, setFriends] = useState<Record<string, UserStatusIntf>>({});
+	const { user } = useAuth();
+	const [friends, setFriends] = useState<Record<string, UserStatusType>>({});
 	const [friendCount, setFriendCount] = useState(0);
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 	const { rooms, loading: roomsLoading } = useFetchRooms();
 
 	// Listen for initial friend statuses
-	useSocketEvent<{ statuses: Record<string, UserStatusIntf> }>(
+	useSocketEvent<{ statuses: Record<string, UserStatusType> }>(
 		ServerEvents.FRIEND_STATUSES,
 		(data) => {
 			setFriends(data.statuses);
@@ -35,7 +32,7 @@ const ChatPage: React.FC = () => {
 	);
 
 	// Listen for individual friend status changes
-	useSocketEvent<UserStatusIntf>(ServerEvents.FRIEND_STATUS_CHANGED, (data) => {
+	useSocketEvent<UserStatusType>(ServerEvents.FRIEND_STATUS_CHANGED, (data) => {
 		setFriends((prev) => ({ ...prev, [data.user_id]: data }));
 	});
 
@@ -75,43 +72,21 @@ const ChatPage: React.FC = () => {
 						<div className='flex items-center'>
 							<UserStatus />
 						</div>
-						<div className='flex items-center space-x-4'>
-							<NotificationBell />
-							{/* Dark mode toggle */}
-							<button
-								type='button'
-								onClick={toggleDarkMode}
-								className='p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none'
-								aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-							>
-								{darkMode ? <SunIcon className='h-6 w-6' /> : <MoonIcon className='h-6 w-6' />}
-							</button>
+						<div className="flex items-center space-x-4">
 
-							{/* Connection status indicator */}
-							<div className='flex items-center'>
-								<div
-									className={`h-2 w-2 rounded-full mr-2 ${
-										isConnected ? 'bg-green-500' : 'bg-red-500'
-									}`}
-								/>
-								<span className='text-sm text-gray-700 dark:text-gray-300'>
-									{isConnected ? 'Connected' : 'Disconnected'}
-								</span>
-							</div>
+							{/* Notifications */}
+							<NotificationBell />
+
+							{/* Search */}
+							<SearchUsers onConnectionChange={() => {
+								// Refresh friend list when connections change
+								// This could trigger a refetch if needed
+							}} />
 
 							{/* Friend count */}
-							<div className='text-sm text-gray-700 dark:text-gray-300'>
-								{friendCount} {friendCount === 1 ? 'friend' : 'friends'} online
-							</div>
+							<FriendsList friends={friends} friendCount={friendCount} />
 
-							{/* Logout button */}
-							<button
-								type='button'
-								onClick={logout}
-								className='ml-4 px-3 py-1 text-sm text-white bg-red-600 hover:bg-red-700 rounded-md focus:outline-none'
-							>
-								Logout
-							</button>
+
 						</div>
 					</div>
 				</div>

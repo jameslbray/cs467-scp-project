@@ -23,10 +23,11 @@ from starlette.status import (
 from services.connections.app.core.config import get_settings
 from services.connections.app.core.connection_manager import ConnectionManager
 from services.connections.app.db.schemas import (
-    ConnectionSchema,
-    ConnectionCreate,
+    ConnectionSchema as Connection,
     ErrorResponse,
-)
+    ConnectionCreate,
+    ConnectionUpdate
+    )
 
 # Set up OAuth2 with password flow (token-based authentication)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -84,10 +85,29 @@ async def health_check(
     return {"status": "healthy"} if await connection_manager.check_connection_health() else {"status": "unhealthy"}
 
 
+@router.get(
+    "/connect/all",
+    response_model=list[Connection]
+)
+async def get_all_connections(
+    connection_manager: ConnectionManager = Depends(get_connection_manager),
+):
+    """
+    Get all connections in the database. Useful for admin purposes or debugging.
+
+    Returns:
+    - **list[Connection]**: All user connections
+    """
+    logger.info(f"Fetching all user connections")
+    connection_data = await connection_manager.get_all_connections()
+
+    return connection_data
+
+
 # Routes
 @router.get(
     "/connect/{user_id}",
-    response_model=list[ConnectionSchema],
+    response_model=list[Connection],
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         404: {"model": ErrorResponse, "description": "User not found"},
@@ -95,7 +115,7 @@ async def health_check(
 )
 async def get_user_connections(
     user_id: str,
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     connection_manager: ConnectionManager = Depends(get_connection_manager),
 ):
     """
@@ -107,40 +127,21 @@ async def get_user_connections(
     Returns:
     - **ConnectionResponse**: User's current connection information
     """
-    # if current_user != user_id:
-    #     raise HTTPException(
-    #         status_code=HTTP_403_FORBIDDEN,
-    #         detail="You can only view your own connections",
-    #     )
+    if str(current_user) != str(user_id):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only view your own connections",
+        )
 
     logger.info(f"Fetching connections for user: {user_id}")
-    connection_data = await connection_manager.get_user_connections()
-
-    return connection_data
-
-
-@router.get(
-    "/connect/all",
-    response_model=list[ConnectionSchema]
-)
-async def get_all_connections(
-    connection_manager: ConnectionManager = Depends(get_connection_manager),
-):
-    """
-    Get all connections in the database
-
-    Returns:
-    - **list[Connection]**: All user connections
-    """
-    logger.info("Fetching all user connections")
-    connection_data = await connection_manager.get_all_connections()
+    connection_data = await connection_manager.get_user_connections(user_id)
 
     return connection_data
 
 
 @router.post(
-    "/connect/",
-    response_model=ConnectionSchema,
+    "/connect",
+    response_model=Connection,
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
         401: {"model": ErrorResponse, "description": "Unauthorized"},
@@ -150,7 +151,7 @@ async def get_all_connections(
 )
 async def create_connection(
     connection_data: ConnectionCreate,
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     connection_manager: ConnectionManager = Depends(get_connection_manager),
 ):
     """
@@ -163,14 +164,15 @@ async def create_connection(
     Returns:
     - **Connection**: Created Connection information
     """
-    # Check if the user is trying to update their own status
-    # if connection_data.user_id != current_user:
-    #     raise HTTPException(
-    #         status_code=HTTP_403_FORBIDDEN,
-    #         detail="You can only update your own status"
-    #     )
+    logger.info(f"Current user: {current_user}")
+    logger.info(f"Creating connection between users {connection_data.user_id} -> {connection_data.friend_id}")
 
-    logger.info(f"Creating connection for user: {connection_data.user_id}")
+    # Check if the user is trying to create a connection for their own user
+    if str(connection_data.user_id) != str(current_user):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only create connections for your own user"
+        )
 
     try:
         response = await connection_manager.create_connection(connection_data)
@@ -183,6 +185,60 @@ async def create_connection(
         return response
 
     except Exception as e:
+        logger.error(f"Failed to create connection: {e}")
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Failed to create connection",
+        )
+
+
+@router.put(
+    "/connect",
+    response_model=Connection,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+        403: {"model": ErrorResponse, "description": "Forbidden"},
+        404: {"model": ErrorResponse, "description": "User not found"},
+    },
+)
+async def update_connection(
+    connection_data: ConnectionUpdate,
+    current_user: str = Depends(get_current_user),
+    connection_manager: ConnectionManager = Depends(get_connection_manager),
+):
+    """
+    Update a user's connection status.
+
+    Parameters:
+    - **connection_data**: ConnectionUpdate object containing user_id, friend_id, and status
+
+    Returns:
+    - **Connection**: Updated connection information
+    """
+    # Check if the user is trying to update their own connection
+    if str(connection_data.user_id) != str(current_user):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only update your own connections"
+        )
+
+
+    logger.info(f"Updating connection {connection_data.user_id} -> {connection_data.status} -> {connection_data.friend_id}")
+
+    try:
+        # Call the manager to update connection status
+        response = await connection_manager.update_connection(connection_data)
+
+        if not response:
+            raise HTTPException(
+                status_code=404,
+                detail="Connection not found"
+            )
+
+        return response
+
+    except Exception as e:
         logger.error(f"Failed to update connection: {e}")
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
@@ -191,62 +247,8 @@ async def create_connection(
 
 
 # @router.put(
-#     "/notify/{user_id}",
-#     response_model=SuccessResponse,
-#     responses={
-#         400: {"model": ErrorResponse, "description": "Bad request"},
-#         401: {"model": ErrorResponse, "description": "Unauthorized"},
-#         403: {"model": ErrorResponse, "description": "Forbidden"},
-#         404: {"model": ErrorResponse, "description": "User not found"},
-#     },
-# )
-# async def create_user_notification(
-#     user_id: str,
-#     notification_id: str = Query(..., description="ID of the notification to mark as read"),
-#     # current_user: str = Depends(get_current_user),
-#     notification_manager: NotificationManager = Depends(get_notification_manager),
-# ):
-#     """
-#     Update a user's notification status to read.
-
-#     Parameters:
-#     - **user_id**: ID of the user whose notification is being updated
-#     - **notification_id**: Notification ID to be updated
-
-#     Returns:
-#     - **NotificationResponse**: Updated notification information
-#     """
-#     # Check if the user is trying to update their own status
-#     # if user_id != current_user:
-#     #     raise HTTPException(
-#     #         status_code=HTTP_403_FORBIDDEN,
-#     #         detail="You can only update your own status"
-#     #     )
-
-
-#     logger.info(f"Updating notification {notification_id} for user: {user_id}")
-
-#     try:
-#         # Call the manager to mark notification as read
-#         success = await notification_manager.mark_notification_as_read(notification_id, user_id)
-
-#         if not success:
-#             raise HTTPException(
-#                 status_code=404,
-#                 detail="Notification not found or already read"
-#             )
-
-#         return SuccessResponse(message="success")
-
-#     except Exception as e:
-#         logger.error(f"Failed to update notification: {e}")
-#         raise HTTPException(
-#             status_code=HTTP_404_NOT_FOUND,
-#             detail="Failed to update notification",
-#         )
-
-
-# @router.put(
+=======
+>>>>>>> origin/main
 #     "/notify/all/{user_id}",
 #     response_model=SuccessResponse,
 #     responses={
@@ -521,5 +523,7 @@ async def api_info():
             "GET /connect/health": "Health check endpoint",
             "GET /connect/{user_id}": "Get a user's connections",
             "GET /connect/all": "Get all connections",
+            "POST /connect": "Create a new connection",
+            "PUT /connect": "Update a connection",
         },
     }

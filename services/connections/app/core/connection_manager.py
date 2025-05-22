@@ -3,15 +3,16 @@ Notification manager for handling user Connection state.
 """
 
 import logging
-from datetime import datetime
 from typing import Any, List, Optional
 
 import asyncpg  # type: ignore
 
-# from services.rabbitmq.core.client import RabbitMQClient
-from services.connections.app.db.models import Connection
-from services.connections.app.db.schemas import ConnectionCreate
 from services.shared.utils.retry import CircuitBreaker, with_retry
+
+# from services.rabbitmq.core.client import RabbitMQClient
+from ..db.models import Connection
+# TODO: Check which needs schema and which needs model
+from ..db.schemas import ConnectionSchema, ConnectionCreate, ConnectionUpdate
 
 # from pymongo import MongoClient
 
@@ -271,7 +272,7 @@ class ConnectionManager:
         empty_connections: List[Connection] = []
 
         # Fetch from database if not in cache
-        user_connections = await self._get_user_connections()
+        user_connections = await self._get_user_connections(user_id)
         if user_connections:
             return user_connections
 
@@ -295,11 +296,11 @@ class ConnectionManager:
 
                 query = """
                     SELECT * FROM connections.connections
-                    WHERE user_id = $1 OR friend_id = $1
+                    WHERE user_id = $1
                     ORDER BY created_at DESC
                 """
                 # Execute the query
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, user_id)
 
                 # Convert rows to list of Connection
                 connections = []
@@ -404,28 +405,45 @@ class ConnectionManager:
                 # Execute the query directly on the connection
                 await conn.execute("SET search_path TO connections, public")
 
-                query = """
+                # First direction (user_id -> friend_id)
+                query1 = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
                     VALUES ($1, $2, $3)
-                    RETURNING id
+                    RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
-                # Execute the query
-                result = await conn.fetchrow(
-                    query,
+                # Execute first query
+                result1 = await conn.fetchrow(
+                    query1,
                     connection.user_id,
                     connection.friend_id,
                     connection.status,
                 )
 
-                if result:
-                    logger.info(f"Connection created with ID: {result['id']}")
+                # Second direction (friend_id -> user_id)
+                query2 = """
+                    INSERT INTO connections.connections (user_id, friend_id, status)
+                    VALUES ($1, $2, $3)
+                    RETURNING id
+                """
+                # Execute second query
+                result2 = await conn.fetchrow(
+                    query2,
+                    connection.friend_id,
+                    connection.user_id,
+                    connection.status,
+                )
+
+                if result1 and result2:
+                    logger.info(
+                        f"Bidirectional connection created with ID: {result1['id']}"
+                    )
                     return Connection(
-                        id=result["id"],
-                        user_id=connection.user_id,
-                        friend_id=connection.friend_id,
-                        status=connection.status,
-                        created_at=datetime.now(),
-                        updated_at=datetime.now(),
+                        id=result1["id"],
+                        user_id=result1["user_id"],
+                        friend_id=result1["friend_id"],
+                        status=result1["status"],
+                        created_at=result1["created_at"],
+                        updated_at=result1["updated_at"],
                     )
                 else:
                     logger.error("Failed to create connection")
@@ -435,270 +453,54 @@ class ConnectionManager:
             logger.error(f"Failed to create connection: {e}")
             return None
 
-    # async def mark_notification_as_read(self, notification_id: str, user_id: str) -> bool:
-    #     """Mark a notification as read.
+    async def update_connection(
+        self, connection: ConnectionUpdate
+    ) -> Connection | None:
+        """Update an existing connection."""
+        if not self.postgres_client:
+            logger.warning("Postgres not available")
+            return None
 
-    #     Args:
-    #         notification_id: The ID of the notification to mark as read
-    #         user_id: The user ID who owns the notification
+        try:
+            logger.debug(f"Updating connection for {connection.user_id}")
+            async with self.postgres_client.acquire() as conn:
+                # Execute the query directly on the connection
+                await conn.execute("SET search_path TO connections, public")
 
-    #     Returns:
-    #         bool: True if update was successful, False otherwise
-    #     """
-    #     if not self.mongo_client:
-    #         logger.warning("MongoDB not available")
-    #         return False
+                query = """
+                    UPDATE connections.connections
+                    SET status = $1, updated_at = NOW()
+                    WHERE (user_id = $2 AND friend_id = $3)
+                    OR (user_id = $3 AND friend_id = $2)
+                    RETURNING id, user_id, friend_id, status, created_at, updated_at
+                """
+                # Execute the query
+                result = await conn.fetchrow(
+                    query,
+                    connection.status,
+                    connection.user_id,
+                    connection.friend_id,
+                )
 
-    #     try:
-    #         # Get database
-    #         db_name = self.config["mongodb"].get("database", "notifications")
-    #         db = self.mongo_client[db_name]
+                if result:
+                    logger.info(
+                        f"Connection updated with ID: {connection.user_id}"
+                    )
+                    return Connection(
+                        id=result["id"],
+                        user_id=result["user_id"],
+                        friend_id=result["friend_id"],
+                        status=result["status"],
+                        created_at=result["created_at"],
+                        updated_at=result["updated_at"],
+                    )
+                else:
+                    logger.error("Failed to update connection")
+                    return None
 
-    #         try:
-    #             object_id = ObjectId(notification_id)
-    #         except Exception as e:
-    #             logger.error(f"Invalid ObjectId format: {notification_id}, error: {e}")
-    #             return False
-
-    #         # Create query with both notification_id and user_id for security
-    #         query = {
-    #             "_id": object_id,  # Use ObjectId, not string
-    #             "recipient_id": user_id
-    #         }
-
-    #         # Update document to mark as read
-    #         update = {
-    #             "$set": {
-    #                 "read": True,
-    #             }
-    #         }
-
-    #         # Update the document directly
-    #         result = await db.notifications.update_one(query, update)
-
-    #         # Check if update was successful
-    #         if result.modified_count == 1:
-    #             logger.info(f"Notification {notification_id} marked as read for user {user_id}")
-    #             return True
-    #         else:
-    #             # Check if document exists but wasn't modified (already read)
-    #             doc = await db.notifications.find_one({"_id": object_id})
-    #             if doc:
-    #                 logger.info(f"Notification {notification_id} exists but is already read")
-    #                 return True
-    #             logger.warning(f"Notification {notification_id} not found for user {user_id}")
-    #             return False
-
-    #     except Exception as e:
-    #         logger.error(f"Failed to mark notification as read: {e}")
-    #         return False
-
-    # async def mark_all_notifications_as_read(self, user_id: str) -> bool:
-    #         """Mark all of a user's notification as read.
-
-    #         Args:
-    #             user_id: The user ID who owns the notification
-
-    #         Returns:
-    #             bool: True if update was successful, False otherwise
-    #         """
-    #         if not self.mongo_client:
-    #             logger.warning("MongoDB not available")
-    #             return False
-
-    #         try:
-    #             # Get database
-    #             db_name = self.config["mongodb"].get("database", "notifications")
-    #             db = self.mongo_client[db_name]
-
-    #             # Create query with both notification_id and user_id for security
-    #             query = {
-    #                 "recipient_id": user_id
-    #             }
-
-    #             # Update document to mark as read
-    #             update = {
-    #                 "$set": {
-    #                     "read": True,
-    #                 }
-    #             }
-
-    #             # Update the document directly
-    #             result = await db.notifications.update_many(query, update)
-
-    #             # Check if update was successful
-    #             if result.modified_count > 0:
-    #                 logger.info(f"All notifications marked as read for user {user_id}")
-    #                 return True
-    #             else:
-    #                 # Check if document exists but wasn't modified (already read)
-    #                 doc = await db.notifications.find_one({"recipient_id": user_id})
-    #                 if doc:
-    #                     logger.info(f"Notifications exists but are already read")
-    #                     return True
-    #                 logger.warning(f"Notification not found for user {user_id}")
-    #                 return False
-
-    #         except Exception as e:
-    #             logger.error(f"Failed to mark notification as read: {e}")
-    #             return False
-
-    # async def delete_read_notifications(self, user_id: str) -> int:
-    #     """Delete all read notifications for a user.
-
-    #     Returns:
-    #         int: Number of notifications deleted
-    #     """
-    #     if not self.mongo_client:
-    #         return 0
-
-    #     try:
-    #         db = self.mongo_client[self.config["mongodb"].get("database", "notifications")]
-    #         result = await db.notifications.delete_many({
-    #             "recipient_id": user_id,
-    #             "read": True
-    #         })
-    #         return result.deleted_count
-    #     except Exception as e:
-    #         logger.error(f"Failed to delete read notifications: {e}")
-    #         return 0
-
-    # async def _update_user_notification(
-    #     self,
-    #     user_id: str,
-    #     status: StatusType,
-    #     last_changed: Optional[float] = None
-    # ) -> bool:
-    #     """Update a user's notifications.
-
-    #     Returns:
-    #         bool: True if update was successful, False otherwise
-    #     """
-    #     try:
-    #         status_type = status
-    #         current_time = last_changed or datetime.now().timestamp()
-
-    #         # Initialize user in presence_data if not exists
-    #         if user_id not in self.presence_data:
-    #             self.presence_data[user_id] = {
-    #                 "status": status_type.value,
-    #                 "last_seen": current_time
-    #             }
-    #             logger.info(f"Created new presence entry for user {user_id}")
-
-    #         else:
-    #             self.presence_data[user_id].update({
-    #                 "status": status_type.value,
-    #                 "last_seen": last_changed or datetime.now().timestamp()
-    #             })
-
-    #         # Update status in database and notify others
-    #         await with_retry(
-    #             lambda: self._save_user_status(
-    #                 user_id,
-    #                 status_type,
-    #                 last_changed
-    #             ),
-    #             max_attempts=3,
-    #             circuit_breaker=self.db_cb
-    #         )
-
-    #         # Publish status update to RabbitMQ
-    #         await with_retry(
-    #             lambda: self._publish_status_update(
-    #                 user_id,
-    #                 status_type,
-    #                 last_changed
-    #             ),
-    #             max_attempts=3,
-    #             circuit_breaker=self.rabbitmq_cb
-    #         )
-
-    #         # Notify friends
-    #         await with_retry(
-    #             lambda: self._notify_friends(user_id, status_type),
-    #             max_attempts=3,
-    #             circuit_breaker=self.rabbitmq_cb
-    #         )
-
-    #         logger.info(f"User {user_id} status updated to {status}")
-    #         return True
-
-    #     except ValueError:
-    #         logger.error(f"Invalid status: {status}")
-    #         return False
-
-    # async def _save_user_status(
-    #     self,
-    #     user_id: Union[str, int, UUID],
-    #     status: StatusType,
-    #     last_changed: Optional[float] = None
-    # ) -> None:
-    #     """Save user status to database.
-
-    #     Args:
-    #         user_id: User ID as string, int, or UUID
-    #         status: User's status
-    #         last_changed: Timestamp of last status change
-    #     """
-    #     if not self.db_pool:
-    #         logger.warning("Database pool not available")
-    #         return
-
-    #     try:
-    #         last_changed = last_changed or datetime.now().timestamp()
-
-    #         # Handle different user_id types
-    #         if isinstance(user_id, str):
-    #             try:
-    #                 # Try to parse as UUID first
-    #                 uuid_user_id = UUID(user_id)
-    #             except ValueError:
-    #                 # If not a valid UUID string, generate a v4 UUID
-    #                 uuid_user_id = UUID(int=int(user_id)) if user_id.isdigit() \
-    #                     else UUID(bytes=user_id.encode(), version=4)
-    #                 logger.debug(
-    #                     f"Generated UUID v4 from string: {user_id} -> {uuid_user_id}"
-    #                 )
-    #         elif isinstance(user_id, int):
-    #             # For integers, we create a UUID v4 using the int value
-    #             # This maintains consistency for the same integer input
-    #             try:
-    #                 uuid_user_id = UUID(int=user_id)
-    #             except ValueError:
-    #                 # If integer is too large, fall back to random UUID
-    #                 uuid_user_id = UUID(
-    #                     bytes=str(user_id).encode(),
-    #                     version=4
-    #                 )
-    #             logger.debug(
-    #                 f"Generated UUID v4 from int: {user_id} -> {uuid_user_id}"
-    #             )
-    #         elif isinstance(user_id, UUID):
-    #             uuid_user_id = user_id
-    #         else:
-    #             raise ValueError(f"Unsupported user_id type: {type(user_id)}")
-
-    #         async with self.db_pool.acquire() as conn:
-    #             await conn.execute(
-    #                 """
-    #                 INSERT INTO presence.user_status (
-    #                     user_id,
-    #                     status,
-    #                     last_changed
-    #                 ) VALUES ($1, $2, to_timestamp($3))
-    #                 ON CONFLICT (user_id)
-    #                 DO UPDATE SET
-    #                     status = $2,
-    #                     last_changed = to_timestamp($3)
-    #                 """,
-    #                 str(uuid_user_id),  # Convert UUID to string for PostgreSQL
-    #                 status.value,
-    #                 last_changed,
-    #             )
-    #     except Exception as e:
-    #         logger.error(f"Failed to save user status: {e}")
-    #         raise
+        except Exception as e:
+            logger.error(f"Failed to update connection: {e}")
+            return None
 
     # async def _publish_status_update(
     #     self,
