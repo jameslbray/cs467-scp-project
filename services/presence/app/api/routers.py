@@ -54,7 +54,7 @@ class StatusResponse(BaseModel):
 
     user_id: str
     status: str
-    last_seen: Optional[float] = None
+    last_status_change: Optional[float] = None
     additional_info: Optional[str] = None
 
 

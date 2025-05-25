@@ -30,7 +30,7 @@ export const StatusAPI = {
             },
         });
 
-        if (response.status !== 200) {
+        if (!response.ok) {
             throw new Error(`Error fetching status: ${response.statusText}`);
         }
 

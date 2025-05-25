@@ -1,7 +1,6 @@
 """
 Presence manager for handling user presence state.
 """
-
 import logging
 import json
 from typing import Dict, Any, Optional, List, Union
@@ -11,7 +10,6 @@ from enum import Enum
 from uuid import UUID
 from services.shared.utils.retry import CircuitBreaker, with_retry
 from services.rabbitmq.core.client import RabbitMQClient
-# from services.socket_io.app.core.socket_server import SocketServer as SocketManager
 
 # configure logging
 logger = logging.getLogger(__name__)
@@ -19,11 +17,11 @@ logger = logging.getLogger(__name__)
 
 class StatusType(str, Enum):
     """User status types."""
-
     ONLINE = "online"
     OFFLINE = "offline"
     AWAY = "away"
     BUSY = "busy"
+    INVISIBLE = "invisible"
 
 
 class UserStatus:
@@ -33,7 +31,7 @@ class UserStatus:
         self,
         user_id: str,
         status: StatusType,
-        last_changed: Optional[float] = None
+        last_status_change: Optional[float] = None
     ):
         try:
             # Convert string to UUID if it's not already
@@ -43,14 +41,14 @@ class UserStatus:
             logger.error(f"Invalid UUID format for user_id: {user_id}")
             raise
         self.status = status
-        self.last_changed = last_changed or datetime.now().timestamp()
+        self.last_status_change = last_status_change or datetime.now().timestamp()
 
     def dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
             "user_id": str(self.user_id),  # Convert UUID to string for JSON
             "status": self.status.value,
-            "last_changed": self.last_changed,
+            "last_status_change": self.last_status_change,
         }
 
 
@@ -164,35 +162,6 @@ class PresenceManager:
                 **config
             )
             logger.info("Connected to PostgreSQL database")
-
-            # Set search path for all connections in the pool
-            async with self.db_pool.acquire() as conn:
-                await conn.execute('SET search_path TO presence, public')
-
-                # Create schema and tables if they don't exist
-                await conn.execute('CREATE SCHEMA IF NOT EXISTS presence')
-
-                # Create user_status table
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS user_status (
-                        user_id TEXT PRIMARY KEY,
-                        status TEXT NOT NULL,
-                        last_changed TIMESTAMP NOT NULL DEFAULT NOW()
-                    )
-                    """
-                )
-
-
-                # Create indexes
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_user_status_last_changed
-                    ON user_status (last_changed)
-                    """
-                )
-
-            logger.info("Database tables initialized")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
@@ -247,20 +216,20 @@ class PresenceManager:
             if message_type == "status_update":
                 user_id = body.get("user_id")
                 status = body.get("status")
-                last_changed = body.get("last_changed")
+                last_status_change = body.get("last_status_change")
 
                 if user_id and status:
                     if self.db_pool:  # Only handle DB operations in presence service
                         await with_retry(
                             lambda: self._save_user_status(
-                                user_id, StatusType(status), last_changed),
+                                user_id, StatusType(status), last_status_change),
                             max_attempts=3,
                             circuit_breaker=self.db_cb
                         )
                     else:  # Socket.IO service just updates in-memory state
                         self.presence_data[user_id] = {
                             "status": status,
-                            "last_seen": last_changed or datetime.now().timestamp()
+                            "last_status_change": last_status_change or datetime.now().timestamp()
                         }
 
             elif message_type == "status_query":
@@ -292,7 +261,7 @@ class PresenceManager:
         self,
         user_id: str,
         status: StatusType,
-        last_changed: Optional[float] = None
+        last_status_change: Optional[float] = None
     ) -> bool:
         """Update a user's status.
 
@@ -301,20 +270,20 @@ class PresenceManager:
         """
         try:
             status_type = status
-            current_time = last_changed or datetime.now().timestamp()
+            current_time = last_status_change or datetime.now().timestamp()
 
             # Initialize user in presence_data if not exists
             if user_id not in self.presence_data:
                 self.presence_data[user_id] = {
                     "status": status_type.value,
-                    "last_seen": current_time
+                    "last_status_change": current_time
                 }
                 logger.info(f"Created new presence entry for user {user_id}")
 
             else:
                 self.presence_data[user_id].update({
                     "status": status_type.value,
-                    "last_seen": last_changed or datetime.now().timestamp()
+                    "last_status_change": last_status_change or datetime.now().timestamp()
                 })
 
             # Update status in database and notify others
@@ -322,7 +291,7 @@ class PresenceManager:
                 lambda: self._save_user_status(
                     user_id,
                     status_type,
-                    last_changed
+                    last_status_change
                 ),
                 max_attempts=3,
                 circuit_breaker=self.db_cb
@@ -333,7 +302,7 @@ class PresenceManager:
                 lambda: self._publish_status_update(
                     user_id,
                     status_type,
-                    last_changed
+                    last_status_change
                 ),
                 max_attempts=3,
                 circuit_breaker=self.rabbitmq_cb
@@ -357,21 +326,21 @@ class PresenceManager:
         self,
         user_id: Union[str, int, UUID],
         status: StatusType,
-        last_changed: Optional[float] = None
+        last_status_change: Optional[float] = None
     ) -> None:
         """Save user status to database.
 
         Args:
             user_id: User ID as string, int, or UUID
             status: User's status
-            last_changed: Timestamp of last status change
+            last_status_change: Timestamp of last status change
         """
         if not self.db_pool:
             logger.warning("Database pool not available")
             return
 
         try:
-            last_changed = last_changed or datetime.now().timestamp()
+            last_status_change = last_status_change or datetime.now().timestamp()
 
             # Handle different user_id types
             if isinstance(user_id, str):
@@ -407,19 +376,19 @@ class PresenceManager:
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO presence.user_status (
+                    INSERT INTO presence.presence (
                         user_id,
                         status,
-                        last_changed
+                        last_status_change
                     ) VALUES ($1, $2, to_timestamp($3))
                     ON CONFLICT (user_id)
                     DO UPDATE SET
                         status = $2,
-                        last_changed = to_timestamp($3)
+                        last_status_change = to_timestamp($3)
                     """,
                     str(uuid_user_id),  # Convert UUID to string for PostgreSQL
                     status.value,
-                    last_changed,
+                    last_status_change,
                 )
         except Exception as e:
             logger.error(f"Failed to save user status: {e}")
@@ -429,14 +398,14 @@ class PresenceManager:
         self,
         user_id: str,
         status: StatusType,
-        last_changed: Optional[float] = None
+        last_status_change: Optional[float] = None
     ) -> None:
         """Publish status update to RabbitMQ."""
         try:
             message = json.dumps({
                 "user_id": user_id,
                 "status": status.value,
-                "last_changed": last_changed or datetime.now().timestamp(),
+                "last_status_change": last_status_change or datetime.now().timestamp(),
             })
             await self.rabbitmq.publish_message(
                 exchange="user",
@@ -502,6 +471,27 @@ class PresenceManager:
             logger.error(f"Failed to get friends: {e}")
             return []
 
+    async def _get_friend_ids(self, user_id: str) -> List[str]:
+        """Get a user's friend IDs."""
+        if not self.db_pool:
+            logger.warning("Database pool not available")
+            return []
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                query = """
+                    SELECT friend_id FROM connections.connections
+                    WHERE user_id = $1 AND status = 'accepted'
+                    UNION
+                    SELECT user_id FROM connections.connections
+                    WHERE friend_id = $1 AND status = 'accepted'
+                """
+                rows = await conn.fetch(query, user_id)
+                return [str(row[0]) for row in rows]  # Convert to strings
+        except Exception as e:
+            logger.error(f"Failed to get friend IDs: {e}")
+            return []
+
     async def _get_user_status(self, user_id: str) -> UserStatus | None:
         """Get user status from database."""
         if not self.db_pool:
@@ -509,13 +499,11 @@ class PresenceManager:
             return None
 
         try:
-            if isinstance(user_id, UUID):
-                user_id = str(user_id)
             async with self.db_pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    SELECT user_id, status, last_changed
-                    FROM presence.user_status
+                    SELECT user_id, status, last_status_change
+                    FROM presence.presence
                     WHERE user_id = $1
                 """,
                     user_id,
@@ -525,7 +513,7 @@ class PresenceManager:
                     return UserStatus(
                         user_id=str(row["user_id"]),  # Convert UUID to string
                         status=StatusType(row["status"]),
-                        last_changed=row["last_changed"].timestamp(),
+                        last_status_change=row["last_status_change"].timestamp(),
                     )
                 return None
         except ValueError as e:
@@ -540,7 +528,7 @@ class PresenceManager:
         # Default values
         default_status = {
             "status": StatusType.OFFLINE.value,
-            "last_seen": 0,
+            "last_status_change": 0,
         }
 
         # Check cache first
@@ -548,7 +536,7 @@ class PresenceManager:
             presence_data = self.presence_data[user_id]
             return {
                 "status": presence_data.get("status", default_status["status"]),
-                "last_seen": presence_data.get("last_seen", default_status["last_seen"]),
+                "last_status_change": presence_data.get("last_status_change", default_status["last_status_change"]),
             }
 
         # Fetch from database if not in cache
@@ -558,27 +546,27 @@ class PresenceManager:
 
         return {
             "status": user_status.status.value,
-            "last_seen": user_status.last_changed,
+            "last_status_change": user_status.last_status_change,
         }
 
-    async def set_user_status(self, user_id: str, status: str, last_changed: Optional[float] = None) -> bool:
+    async def set_user_status(self, user_id: str, status: str, last_status_change: Optional[float] = None) -> bool:
         """Set user's status."""
         try:
             status_type = StatusType(status)
-            current_time = last_changed or datetime.now().timestamp()
+            current_time = last_status_change or datetime.now().timestamp()
 
             # Initialize user in presence_data if not exists
             if user_id not in self.presence_data:
                 self.presence_data[user_id] = {
                     "status": status_type.value,
-                    "last_seen": current_time
+                    "last_status_change": current_time
                 }
                 logger.info(f"Created new presence entry for user {user_id}")
 
             else:
                 self.presence_data[user_id].update({
                     "status": status_type.value,
-                    "last_seen": last_changed or datetime.now().timestamp()
+                    "last_status_change": last_status_change or datetime.now().timestamp()
                 })
 
             # Update status in database and notify others with circuit breaker
@@ -600,7 +588,7 @@ class PresenceManager:
             status_type = StatusType.OFFLINE
             self.presence_data[user_id].update(
                 {"status": status_type.value,
-                 "last_seen": datetime.now().timestamp()}
+                 "last_status_change": datetime.now().timestamp()}
             )
 
             # Update status in database and notify others with circuit breaker

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts';
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { userApi } from '../services/api';
 
 interface User {
   id: string;
@@ -56,6 +57,37 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
     }
   }, [user]);
 
+  useEffect(() => {
+    const fetchUsernames = async () => {
+      if (pendingRequests.length === 0) return;
+
+      // Collect all user IDs that need username lookup
+      const userIds = new Set<string>();
+      pendingRequests.forEach(req => {
+        userIds.add(req.user_id);
+        userIds.add(req.friend_id);
+      });
+
+      // Remove current user's ID
+      if (user?.id) userIds.delete(user.id);
+
+      // Fetch user details
+      try {
+        const users = await userApi.getUsersByIds(Array.from(userIds));
+        setSearchResults(prev => {
+          // Merge with existing results without duplicates
+          const existingIds = new Set(prev.map(u => u.id));
+          const newUsers: User[] = users.filter((u: User) => !existingIds.has(u.id));
+          return [...prev, ...newUsers];
+        });
+      } catch (error) {
+        console.error('Failed to fetch user details:', error);
+      }
+    };
+
+    fetchUsernames();
+  }, [pendingRequests]);
+
   // Focus input when dropdown is opened
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -66,17 +98,21 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
   // Fetch user connections
   const fetchUserConnections = async () => {
     if (!user?.id || !token) return;
-    
+    console.log('Fetching user connections for user:', user.id);
     try {
-      const response = await fetch(`${CONNECT_API_URL}/api/connect/all`, {
+      const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       if (response.ok) {
         const connections = await response.json();
-        setUserConnections(connections);
+        // Filter for accepted connections where this user is the friend
+        const accepted = connections.filter((conn: Connection) =>
+          conn.status === 'accepted' && conn.friend_id === user.id
+        );
+        setUserConnections(accepted);
       }
     } catch (error) {
       console.error('Failed to fetch user connections:', error);
@@ -84,42 +120,52 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
   };
 
   // Fetch pending requests
-  const fetchPendingRequests = async () => {
-    if (!user?.id || !token) return;
-    
-    try {
-      const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+const fetchPendingRequests = async () => {
+  if (!user?.id || !token) return;
+  console.log('Fetching pending requests for user:', user.id);
+  
+  try {
+    const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (response.ok) {
+      const connections = await response.json();
+      console.log('All connections:', connections);
+      console.log('Current user ID:', user.id);
+      
+      // Filter for pending requests where current user is the RECIPIENT
+      // This means friend_id === current_user_id AND status === 'pending'
+      const pending = connections.filter((conn: Connection) => {
+        const isRecipient = conn.friend_id === user.id;
+        const isPending = conn.status === 'pending';
+        console.log(`Connection ${conn.user_id} -> status: ${conn.status} -> ${conn.friend_id}, isRecipient: ${isRecipient}, isPending: ${isPending}`);
+        return isRecipient && isPending;
       });
       
-      if (response.ok) {
-        const connections = await response.json();
-        // Filter for pending requests where this user is the recipient
-        const pending = connections.filter((conn: Connection) => 
-          conn.status === 'pending' && conn.friend_id === user.id
-        );
-        setPendingRequests(pending);
-      }
-    } catch (error) {
-      console.error('Failed to fetch pending requests:', error);
+      console.log('Filtered pending requests:', pending);
+      setPendingRequests(pending);
     }
-  };
+  } catch (error) {
+    console.error('Failed to fetch pending requests:', error);
+  }
+};
 
   // Search for users
   const searchUsers = async () => {
     if (!searchTerm.trim() || !token) return;
-    
+    console.log('Searching users with term:', searchTerm);
     setIsLoading(true);
     try {
-      // This endpoint would need to be implemented on your backend
+      // Make API call to search users by username
       const response = await fetch(`${USERS_API_URL}/users/search?username=${encodeURIComponent(searchTerm)}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       if (response.ok) {
         const users = await response.json();
         // Filter out the current user
@@ -145,7 +191,11 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
   // Send a friend request
   const sendFriendRequest = async (friendId: string) => {
     if (!user?.id || !token) return;
-    
+    console.log('Sending friend request from', user.id, 'to', friendId);
+    if (getConnectionStatus(friendId) === 'pending') {
+      console.warn('Friend request already pending');
+      return;
+    }
     try {
       const response = await fetch(`${CONNECT_API_URL}/api/connect`, {
         method: 'POST',
@@ -159,7 +209,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
           status: 'pending'
         })
       });
-      
+
       if (response.ok) {
         // Refresh connections after sending request
         fetchUserConnections();
@@ -173,7 +223,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
   // Accept a friend request
   const acceptRequest = async (connection: Connection) => {
     if (!user?.id || !token) return;
-    
+
     try {
       const response = await fetch(`${CONNECT_API_URL}/api/connect`, {
         method: 'PUT',
@@ -187,7 +237,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
           status: 'accepted'
         })
       });
-      
+
       if (response.ok) {
         // Refresh requests and connections
         fetchPendingRequests();
@@ -202,7 +252,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
   // Reject a friend request
   const rejectRequest = async (connection: Connection) => {
     if (!user?.id || !token) return;
-    
+
     try {
       const response = await fetch(`${CONNECT_API_URL}/api/connect`, {
         method: 'PUT',
@@ -216,7 +266,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
           status: 'rejected'
         })
       });
-      
+
       if (response.ok) {
         // Refresh requests
         fetchPendingRequests();
@@ -227,44 +277,56 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
     }
   };
 
-  // Get connection status between current user and another user
   const getConnectionStatus = (userId: string): string | null => {
-    const connection = userConnections.find(
-      conn => (conn.user_id === user?.id && conn.friend_id === userId) || 
-              (conn.user_id === userId && conn.friend_id === user?.id)
+    // Check ALL connections for this user
+    const connection = [...userConnections, ...pendingRequests].find(
+      conn => (conn.user_id === user?.id && conn.friend_id === userId) ||
+        (conn.user_id === userId && conn.friend_id === user?.id)
     );
-    
+
     return connection ? connection.status : null;
   };
 
   // Render connection button based on status
   const renderConnectionButton = (userId: string) => {
     const status = getConnectionStatus(userId);
-    
+
+    // Find the actual connection to determine direction
+    const connection = [...userConnections, ...pendingRequests].find(
+      conn => (conn.user_id === user?.id && conn.friend_id === userId) ||
+        (conn.user_id === userId && conn.friend_id === user?.id)
+    );
+
     if (status === 'accepted') {
-      return (
-        <span className="text-green-500 text-xs">Connected</span>
-      );
-    } else if (status === 'pending') {
-      return (
-        <span className="text-yellow-500 text-xs">Pending</span>
-      );
-    } else if (status === 'rejected') {
-      return (
-        <span className="text-red-500 text-xs">Rejected</span>
-      );
-    } else if (status === 'blocked') {
-      return null;
-    } else {
-      return (
-        <button
-          onClick={() => sendFriendRequest(userId)}
-          className="text-xs bg-primary-500 hover:bg-primary-600 text-white px-2 py-1 rounded"
-        >
-          Connect
-        </button>
-      );
+      return <span className="text-green-500 text-xs">Connected</span>;
     }
+
+    if (status === 'pending') {
+      // Check if current user sent or received the request
+      if (connection?.user_id === user?.id) {
+        return <span className="text-yellow-500 text-xs">Request Sent</span>;
+      } else {
+        return <span className="text-yellow-500 text-xs">Request Received</span>;
+      }
+    }
+
+    if (status === 'rejected') {
+      return <span className="text-red-500 text-xs">Rejected</span>;
+    }
+
+    if (status === 'blocked') {
+      return null;
+    }
+
+    // No connection exists
+    return (
+      <button
+        onClick={() => sendFriendRequest(userId)}
+        className="text-xs bg-primary-500 hover:bg-primary-600 text-white px-2 py-1 rounded"
+      >
+        Connect
+      </button>
+    );
   };
 
   return (
@@ -288,21 +350,19 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
           {/* Tabs */}
           <div className="flex border-b border-gray-200 dark:border-gray-700">
             <button
-              className={`px-4 py-2 text-sm font-medium flex-1 ${
-                activeTab === 'search'
-                  ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+              className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === 'search'
+                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
               onClick={() => setActiveTab('search')}
             >
               Search
             </button>
             <button
-              className={`px-4 py-2 text-sm font-medium flex-1 ${
-                activeTab === 'requests'
-                  ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+              className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === 'requests'
+                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
               onClick={() => setActiveTab('requests')}
             >
               Requests {pendingRequests.length > 0 && `(${pendingRequests.length})`}
@@ -379,37 +439,42 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
           {activeTab === 'requests' && (
             <div className="max-h-60 overflow-y-auto">
               {pendingRequests.length > 0 ? (
-                pendingRequests.map((request) => (
-                  <div
-                    key={request.id || `${request.user_id}-${request.friend_id}`}
-                    className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center">
-                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 overflow-hidden mr-2">
-                          <div className="w-full h-full flex items-center justify-center text-gray-600 dark:text-gray-400">
-                            {request.user_id.charAt(0).toUpperCase()}
+                pendingRequests.map((request) => {
+                  // Use usernames instead of IDs if available
+                  const senderUsername = searchResults.find(u => u.id === request.user_id)?.username || request.user_id;
+
+                  return (
+                    <div
+                      key={request.id || `${request.user_id}-${request.friend_id}`}
+                      className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center">
+                          <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 overflow-hidden mr-2">
+                            <div className="w-full h-full flex items-center justify-center text-gray-600 dark:text-gray-400">
+                              {senderUsername.charAt(0).toUpperCase()}
+                            </div>
                           </div>
+                          <span className="truncate font-medium">{senderUsername}</span>
                         </div>
-                        <span className="truncate font-medium">{request.user_id}</span>
+                      </div>
+                      <div className="flex space-x-2 mt-1">
+                        <button
+                          onClick={() => acceptRequest(request)}
+                          className="flex-1 bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          onClick={() => rejectRequest(request)}
+                          className="flex-1 bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs"
+                        >
+                          Reject
+                        </button>
                       </div>
                     </div>
-                    <div className="flex space-x-2 mt-1">
-                      <button
-                        onClick={() => acceptRequest(request)}
-                        className="flex-1 bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs"
-                      >
-                        Accept
-                      </button>
-                      <button
-                        onClick={() => rejectRequest(request)}
-                        className="flex-1 bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 italic text-center">
                   No pending requests

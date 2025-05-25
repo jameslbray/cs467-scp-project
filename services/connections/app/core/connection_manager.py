@@ -278,9 +278,7 @@ class ConnectionManager:
 
         return empty_connections
 
-    async def _get_user_connections(
-        self, user_id: str
-    ) -> list[Connection] | None:
+    async def _get_user_connections(self, user_id: str) -> list[Connection] | None:
         """Get a user's connections from database."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
@@ -290,16 +288,15 @@ class ConnectionManager:
             logger.debug(f"Searching for connections of user_id: {user_id}")
 
             async with self.postgres_client.acquire() as conn:
-                # Execute the query directly on the connection
-
                 await conn.execute("SET search_path TO connections, public")
 
+                # Only get one direction of each relationship to avoid duplicates
                 query = """
-                    SELECT * FROM connections.connections
-                    WHERE user_id = $1
-                    ORDER BY created_at DESC
+                    SELECT DISTINCT ON (LEAST(user_id, friend_id), GREATEST(user_id, friend_id))
+                        * FROM connections.connections
+                    WHERE (user_id = $1 OR friend_id = $1)
+                    ORDER BY LEAST(user_id, friend_id), GREATEST(user_id, friend_id), created_at DESC
                 """
-                # Execute the query
                 rows = await conn.fetch(query, user_id)
 
                 # Convert rows to list of Connection
@@ -409,6 +406,8 @@ class ConnectionManager:
                 query1 = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
                     VALUES ($1, $2, $3)
+                    ON CONFLICT (user_id, friend_id) 
+                    DO UPDATE SET status = $3, updated_at = NOW()
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
                 # Execute first query
@@ -423,6 +422,8 @@ class ConnectionManager:
                 query2 = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
                     VALUES ($1, $2, $3)
+                    ON CONFLICT (user_id, friend_id) 
+                    DO UPDATE SET status = $3, updated_at = NOW()
                     RETURNING id
                 """
                 # Execute second query
