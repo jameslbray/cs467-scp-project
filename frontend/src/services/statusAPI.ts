@@ -10,7 +10,7 @@ export interface StatusUpdate {
 export interface StatusResponse {
     user_id: string;
     status: StatusType;
-    last_seen: string;
+    last_status_change: string;
     additional_info: string | null;
 }
 

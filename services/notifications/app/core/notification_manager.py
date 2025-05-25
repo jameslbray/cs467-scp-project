@@ -10,12 +10,9 @@ from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson.objectid import ObjectId
-# import asyncpg  # type: ignore
-# from pymongo import MongoClient
 
 from services.shared.utils.retry import CircuitBreaker, with_retry
-from services.shared.utils.retry import CircuitBreaker, with_retry
-# from services.rabbitmq.core.client import RabbitMQClient
+from .notification_rabbitmq import NotificationRabbitMQClient
 from ..db.models import (
     NotificationDB,
     NotificationDB,
@@ -24,8 +21,6 @@ from ..db.models import (
     NotificationRequest,
     DeliveryType
 )
-# from services.socket_io.app.core.socket_server import SocketServer as SocketManager
-
 # configure logging
 logger = logging.getLogger(__name__)
 
@@ -36,7 +31,7 @@ class NotificationManager:
     def __init__(
         self,
         config: dict[str, Any],
-        # socket_server: Optional[SocketManager] = None
+        rabbitmq_client: NotificationRabbitMQClient,
     ):
         """Initialize the notification manager.
 
@@ -47,28 +42,11 @@ class NotificationManager:
         self.config = config
         self._initialized = False
         self.mongo_client: Optional[AsyncIOMotorClient] = None
-        # self.db_pool: Optional[MongooseClient] = None
-        # self.socket_server = socket_server
-
-        # TODO: Decide if we need to keep this in memory or not
-
-        # User notification data
-        # self.notification_data: dict[str, dict[str, Any]] = {}
 
         # Initialize RabbitMQ client
-        # self.rabbitmq = RabbitMQClient()
+        self.rabbitmq_client = rabbitmq_client
 
-        # Initialize circuit breakers
-        # self.rabbitmq_cb = CircuitBreaker(
-        #     "rabbitmq",
-        #     failure_threshold=3,
-        #     reset_timeout=30.0
-        # )
-        self.db_cb = CircuitBreaker(
-            "mongodb",
-            failure_threshold=3,
-            reset_timeout=30.0
-        )
+        # Initialize circuit breaker
         self.db_cb = CircuitBreaker(
             "mongodb",
             failure_threshold=3,
@@ -82,15 +60,15 @@ class NotificationManager:
             return
 
         try:
-            # Initialize RabbitMQ client with circuit breaker
-            # await with_retry(
-            #     self._connect_rabbitmq,
-            #     max_attempts=5,
-            #     initial_delay=5.0,
-            #     max_delay=60.0,
-            #     circuit_breaker=self.rabbitmq_cb
-            # )
-
+            # Register message handlers
+            await self.rabbitmq_client.register_consumers(
+                self._process_general_notification,
+                self._process_user_notification,
+                self._process_connection_notification,
+                self._process_message_notification
+            )
+            logger.info("RabbitMQ client initialized and message handlers registered")
+            
             # Initialize database connection with circuit breaker
             if "mongodb" in self.config:
                 await with_retry(
@@ -111,14 +89,15 @@ class NotificationManager:
 
     async def shutdown(self) -> None:
         """Shutdown the notification manager."""
-        # await self.rabbitmq.close()
-
         try:
+            # Shutdown RabbitMQ client
+            await self.rabbitmq_client.shutdown()
+            
             if self.mongo_client is not None:
                 await self.mongo_client.close()
                 logger.info("MongoDB connection closed")
         except Exception as e:
-            logger.error(f"Error closing MongoDB connection: {e}")
+            logger.error(f"Error during shutdown: {e}")
         finally:
             self.mongo_client = None
             logger.info("Notification manager shut down")
@@ -195,138 +174,6 @@ class NotificationManager:
         except Exception:
             logger.error("MongoDB connection failed")
             return False
-        
-
-    # async def _connect_rabbitmq(self) -> None:
-    #     """Connect to RabbitMQ."""
-    #     try:
-    #         # Connect to RabbitMQ using the shared client
-    #         connected = await self.rabbitmq.connect()
-    #         if not connected:
-    #             raise Exception("Failed to connect to RabbitMQ")
-
-    #         # Declare exchange
-    #         await self.rabbitmq.declare_exchange("notification_events", "topic")
-    #         await self.rabbitmq.declare_exchange("user_events", "topic")
-
-    #         # Declare and bind queue
-    #         await self.rabbitmq.declare_queue(
-    #             "general_notifications",
-    #             durable=True
-    #         )
-    #         await self.rabbitmq.declare_queue(
-    #             "user_notifications",
-    #             durable=True
-    #         )
-    #         await self.rabbitmq.declare_queue(
-    #             "friend_requests",
-    #             durable=True
-    #         )
-
-    #         # Bind queue to exchange with routing key
-    #         # General notifications for all users
-    #         await self.rabbitmq.bind_queue(
-    #             "general_notifications",
-    #             "notification_events",
-    #             "broadcast.#"  # All broadcast messages
-    #         )
-
-    #         # User-specific notifications
-    #         await self.rabbitmq.bind_queue(
-    #             "user_notifications",
-    #             "notification_events",
-    #             "user.#"  # All user-targeted notifications
-    #         )
-
-    #         # Friend request events
-    #         await self.rabbitmq.bind_queue(
-    #             "friend_requests",
-    #             "user_events",
-    #             "friend_request.#"
-    #         )
-
-    #         #TODO: Do we want to keep this?
-    #         # Status updates
-    #         await self.rabbitmq.bind_queue(
-    #             "status_notifications",
-    #             "user_events",
-    #             "status.#"  # Status change events
-    #         )
-
-    #         # Start consuming messages with appropriate handlers
-    #         await self.rabbitmq.consume(
-    #             "general_notifications",
-    #             self._process_general_notification
-    #         )
-    #         await self.rabbitmq.consume(
-    #             "user_notifications",
-    #             self._process_user_notification
-    #         )
-    #         await self.rabbitmq.consume(
-    #             "friend_requests",
-    #             self._process_friend_request
-    #         )
-    #         await self.rabbitmq.consume(
-    #             "status_notifications",
-    #             self._process_status_notification
-    #         )
-
-    #         logger.info("Connected to RabbitMQ")
-    #     except Exception as e:
-    #         logger.error(f"Failed to connect to RabbitMQ: {e}")
-    #         raise
-
-    # async def _process_notification_message(self, message: Any) -> None:
-    #     """Process a presence message from RabbitMQ."""
-    #     # TODO: Get in sync with the team about how to use this
-
-    #     try:
-    #         body = json.loads(message.body.decode())
-    #         message_type = body.get("type")
-
-    #         if message_type == "status_update":
-    #             user_id = body.get("user_id")
-    #             status = body.get("status")
-    #             last_changed = body.get("last_changed")
-
-    #             if user_id and status:
-    #                 if self.db_pool:  # Only handle DB operations in presence service
-    #                     await with_retry(
-    #                         lambda: self._save_user_status(
-    #                             user_id, StatusType(status), last_changed),
-    #                         max_attempts=3,
-    #                         circuit_breaker=self.db_cb
-    #                     )
-    #                 else:  # Socket.IO service just updates in-memory state
-    #                     self.presence_data[user_id] = {
-    #                         "status": status,
-    #                         "last_seen": last_changed or datetime.now().timestamp()
-    #                     }
-
-    #         elif message_type == "status_query":
-    #             # Handle status queries through RabbitMQ
-    #             if self.db_pool:
-    #                 user_id = body.get("user_id")
-    #                 status = await with_retry(
-    #                     lambda: self._get_user_status(user_id),
-    #                     max_attempts=3,
-    #                     circuit_breaker=self.db_cb
-    #                 )
-    #                 # Publish status back
-    #                 await with_retry(
-    #                     lambda: self._publish_status_update(
-    #                         user_id,
-    #                         status.status if status else StatusType.OFFLINE
-    #                     ),
-    #                     max_attempts=3,
-    #                     circuit_breaker=self.rabbitmq_cb
-    #                 )
-
-    #     except Exception as e:
-    #         logger.error(f"Error processing presence message: {e}")
-    #         await message.nack(requeue=False)
-    #     else:
-    #         await message.ack()
 
     async def get_user_notifications(self, user_id: str) -> List[NotificationResponse]:
         """Get user's notifications."""
@@ -546,215 +393,312 @@ class NotificationManager:
             logger.error(f"Failed to delete read notifications: {e}")
             return 0
 
-    # async def _update_user_notification(
-    #     self,
-    #     user_id: str,
-    #     status: StatusType,
-    #     last_changed: Optional[float] = None
-    # ) -> bool:
-    #     """Update a user's notifications.
+    async def publish_notification_event(
+        self,
+        recipient_id: str,
+        sender_id: str,
+        reference_id: str,
+        notification_type: str,
+        content_preview: str,
+    ) -> bool:
+        """Publish a notification event to RabbitMQ."""
+        return await self.rabbitmq_client.publish_notification(
+            recipient_id,
+            sender_id,
+            reference_id,
+            notification_type,
+            content_preview
+        )
 
-    #     Returns:
-    #         bool: True if update was successful, False otherwise
-    #     """
-    #     try:
-    #         status_type = status
-    #         current_time = last_changed or datetime.now().timestamp()
+    async def publish_friend_request_notification(
+        self,
+        recipient_id: str,
+        sender_id: str,
+        connection_id: str,
+        sender_name: str,
+    ) -> bool:
+        """Publish a friend request notification event to RabbitMQ."""
+        return await self.rabbitmq_client.publish_friend_request(
+            recipient_id,
+            sender_id,
+            connection_id,
+            sender_name
+        )
 
-    #         # Initialize user in presence_data if not exists
-    #         if user_id not in self.presence_data:
-    #             self.presence_data[user_id] = {
-    #                 "status": status_type.value,
-    #                 "last_seen": current_time
-    #             }
-    #             logger.info(f"Created new presence entry for user {user_id}")
+    async def create_friend_request_notification(
+        self,
+        recipient_id: str,
+        sender_id: str,
+        connection_id: str,
+        sender_name: str,
+    ) -> bool:
+        """Create a friend request notification directly in the database."""
+        try:
+            notification_request = NotificationRequest(
+                recipient_id=recipient_id,
+                sender_id=sender_id,
+                reference_id=str(connection_id),
+                content_preview=f"{sender_name} sent you a friend request",
+                notification_type="friend_request",
+                timestamp=datetime.now().isoformat(),
+                status=DeliveryType.UNDELIVERED,
+                error=None,
+            )
+            
+            await self.create_notification(notification_request)
+            logger.info(f"Created friend request notification for recipient {recipient_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create friend request notification: {e}")
+            return False
 
-    #         else:
-    #             self.presence_data[user_id].update({
-    #                 "status": status_type.value,
-    #                 "last_seen": last_changed or datetime.now().timestamp()
-    #             })
+    async def _process_general_notification(self, message) -> None:
+        """Process a general notification message from RabbitMQ."""
+        try:
+            # Parse the message body
+            body = json.loads(message.body.decode())
+            logger.info(f"Received general notification: {body}")
 
-    #         # Update status in database and notify others
-    #         await with_retry(
-    #             lambda: self._save_user_status(
-    #                 user_id,
-    #                 status_type,
-    #                 last_changed
-    #             ),
-    #             max_attempts=3,
-    #             circuit_breaker=self.db_cb
-    #         )
+            # Extract notification fields
+            recipient_ids = body.get("recipient_ids", [])
+            sender_id = body.get("sender_id", "system")
+            reference_id = body.get("reference_id", "")
+            content_preview = body.get("content_preview", "System notification")
+            notification_type = body.get("notification_type", "system")
+            timestamp = body.get("timestamp", datetime.now().isoformat())
 
-    #         # Publish status update to RabbitMQ
-    #         await with_retry(
-    #             lambda: self._publish_status_update(
-    #                 user_id,
-    #                 status_type,
-    #                 last_changed
-    #             ),
-    #             max_attempts=3,
-    #             circuit_breaker=self.rabbitmq_cb
-    #         )
+            # Validate required fields
+            if not recipient_ids:
+                logger.error(f"Missing required recipient_ids in general notification: {body}")
+                await message.nack(requeue=False)  # Don't requeue malformed messages
+                return
 
-    #         # Notify friends
-    #         await with_retry(
-    #             lambda: self._notify_friends(user_id, status_type),
-    #             max_attempts=3,
-    #             circuit_breaker=self.rabbitmq_cb
-    #         )
+            # Create notification for all specified recipients
+            success_count = 0
+            for recipient_id in recipient_ids:
+                try:
+                    notification_request = NotificationRequest(
+                        recipient_id=recipient_id,
+                        sender_id=sender_id,
+                        reference_id=reference_id,
+                        content_preview=content_preview,
+                        notification_type=notification_type,
+                        timestamp=timestamp,
+                        status=DeliveryType.UNDELIVERED,
+                        error=None,
+                    )
+                    await self.create_notification(notification_request)
+                    success_count += 1
+                except Exception as inner_e:
+                    # Log error but continue with other recipients
+                    logger.error(f"Failed to create notification for recipient {recipient_id}: {inner_e}")
 
-    #         logger.info(f"User {user_id} status updated to {status}")
-    #         return True
+            logger.info(f"Created {success_count} of {len(recipient_ids)} general notifications")
+            await message.ack()
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in general notification message: {e}")
+            await message.nack(requeue=False)  # Don't requeue invalid JSON
+            
+        except Exception as e:
+            logger.error(f"Error processing general notification: {e}")
+            # Implement retry logic with headers
+            headers = message.headers or {}
+            retry_count = headers.get('x-retry-count', 0)
+            if retry_count < 3:  # Maximum 3 retries
+                headers['x-retry-count'] = retry_count + 1
+                await message.nack(requeue=True, headers=headers)
+            else:
+                logger.warning(f"General notification failed after {retry_count} retries, not requeuing")
+                await message.nack(requeue=False)
 
-    #     except ValueError:
-    #         logger.error(f"Invalid status: {status}")
-    #         return False
+    async def _process_user_notification(self, message) -> None:
+        """Process a user-specific notification message from RabbitMQ."""
+        try:
+            # Parse the message body
+            body = json.loads(message.body.decode())
+            logger.info(f"Received user notification: {body}")
 
-    # async def _save_user_status(
-    #     self,
-    #     user_id: Union[str, int, UUID],
-    #     status: StatusType,
-    #     last_changed: Optional[float] = None
-    # ) -> None:
-    #     """Save user status to database.
+            # Extract notification fields
+            recipient_id = body.get("recipient_id")
+            sender_id = body.get("sender_id", "system")
+            reference_id = body.get("reference_id", "")
+            content_preview = body.get("content_preview", "")
+            notification_type = body.get("notification_type", "user")
+            timestamp = body.get("timestamp", datetime.now().isoformat())
 
-    #     Args:
-    #         user_id: User ID as string, int, or UUID
-    #         status: User's status
-    #         last_changed: Timestamp of last status change
-    #     """
-    #     if not self.db_pool:
-    #         logger.warning("Database pool not available")
-    #         return
+            # Validate required fields
+            if not recipient_id:
+                logger.error(f"Missing required recipient_id in user notification: {body}")
+                await message.nack(requeue=False)  # Don't requeue malformed messages
+                return
 
-    #     try:
-    #         last_changed = last_changed or datetime.now().timestamp()
+            # Create notification for the user
+            notification_request = NotificationRequest(
+                recipient_id=recipient_id,
+                sender_id=sender_id,
+                reference_id=reference_id,
+                content_preview=content_preview,
+                notification_type=notification_type,
+                timestamp=timestamp,
+                status=DeliveryType.UNDELIVERED,
+                error=None,
+            )
+            
+            await self.create_notification(notification_request)
+            logger.info(f"Created user notification for recipient {recipient_id}")
+            await message.ack()
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in user notification message: {e}")
+            await message.nack(requeue=False)  # Don't requeue invalid JSON
+            
+        except Exception as e:
+            logger.error(f"Error processing user notification: {e}")
+            # Implement retry logic with headers
+            headers = message.headers or {}
+            retry_count = headers.get('x-retry-count', 0)
+            if retry_count < 3:  # Maximum 3 retries
+                headers['x-retry-count'] = retry_count + 1
+                await message.nack(requeue=True, headers=headers)
+            else:
+                logger.warning(f"User notification failed after {retry_count} retries, not requeuing")
+                await message.nack(requeue=False)
 
-    #         # Handle different user_id types
-    #         if isinstance(user_id, str):
-    #             try:
-    #                 # Try to parse as UUID first
-    #                 uuid_user_id = UUID(user_id)
-    #             except ValueError:
-    #                 # If not a valid UUID string, generate a v4 UUID
-    #                 uuid_user_id = UUID(int=int(user_id)) if user_id.isdigit() \
-    #                     else UUID(bytes=user_id.encode(), version=4)
-    #                 logger.debug(
-    #                     f"Generated UUID v4 from string: {user_id} -> {uuid_user_id}"
-    #                 )
-    #         elif isinstance(user_id, int):
-    #             # For integers, we create a UUID v4 using the int value
-    #             # This maintains consistency for the same integer input
-    #             try:
-    #                 uuid_user_id = UUID(int=user_id)
-    #             except ValueError:
-    #                 # If integer is too large, fall back to random UUID
-    #                 uuid_user_id = UUID(
-    #                     bytes=str(user_id).encode(),
-    #                     version=4
-    #                 )
-    #             logger.debug(
-    #                 f"Generated UUID v4 from int: {user_id} -> {uuid_user_id}"
-    #             )
-    #         elif isinstance(user_id, UUID):
-    #             uuid_user_id = user_id
-    #         else:
-    #             raise ValueError(f"Unsupported user_id type: {type(user_id)}")
+    async def _process_connection_notification(self, message) -> None:
+        """Process a connection notification message from RabbitMQ."""
+        try:
+            # Parse the message body
+            body = json.loads(message.body.decode())
+            logger.info(f"Received connection notification: {body}")
+            
+            # Extract common fields
+            recipient_id = body.get("recipient_id")
+            sender_id = body.get("sender_id")
+            reference_id = body.get("reference_id", "")
+            timestamp = body.get("timestamp", datetime.now().isoformat())
+            
+            # Validate required fields
+            if not recipient_id or not sender_id:
+                logger.error(f"Missing required fields in connection notification: {body}")
+                await message.nack(requeue=False)  # Don't requeue malformed messages
+                return
+            
+            # Handle different connection event types
+            event_type = body.get("event_type")
+            
+            if event_type == "friend_request":
+                # Create a notification for a new friend request
+                notification_request = NotificationRequest(
+                    recipient_id=recipient_id,
+                    sender_id=sender_id,
+                    reference_id=reference_id,
+                    content_preview=body.get("content_preview", "You received a new friend request"),
+                    notification_type="friend_request",
+                    timestamp=timestamp,
+                    status=DeliveryType.UNDELIVERED,
+                    error=None,
+                )
+                await self.create_notification(notification_request)
+                logger.info(f"Created friend request notification for {recipient_id} from {sender_id}")
+                
+            elif event_type == "friend_accepted":
+                # Create a notification for an accepted friend request
+                notification_request = NotificationRequest(
+                    recipient_id=recipient_id,
+                    sender_id=sender_id,
+                    reference_id=reference_id,
+                    content_preview=body.get("content_preview", "Your friend request was accepted"),
+                    notification_type="friend_accepted",
+                    timestamp=timestamp,
+                    status=DeliveryType.UNDELIVERED,
+                    error=None,
+                )
+                await self.create_notification(notification_request)
+                logger.info(f"Created friend acceptance notification for {recipient_id} from {sender_id}")
+                
+            elif event_type == "friend_removed":
+                # Handle friend removal, typically no notification needed
+                logger.debug(f"Received friend removal event - no notification created")
+                
+            else:
+                # Log unknown event types but acknowledge the message
+                logger.warning(f"Unknown connection event type: {event_type}")
+                
+            # Acknowledge successful processing
+            await message.ack()
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in message: {e}")
+            await message.nack(requeue=False)  # Don't requeue invalid JSON
+            
+        except Exception as e:
+            logger.error(f"Error processing connection notification: {e}")
+            # Requeue the message for retry unless it's been retried too many times
+            # You might want to check message headers for retry count
+            headers = message.headers or {}
+            retry_count = headers.get('x-retry-count', 0)
+            if retry_count < 3:  # Maximum 3 retries
+                # Add retry count to headers
+                headers['x-retry-count'] = retry_count + 1
+                await message.nack(requeue=True, headers=headers)
+            else:
+                # Too many retries, don't requeue
+                logger.warning(f"Message failed after {retry_count} retries, not requeuing")
+                await message.nack(requeue=False)
+    
+    async def _process_message_notification(self, message) -> None:
+        """Process a message notification from RabbitMQ."""
+        try:
+            # Parse the message body
+            body = json.loads(message.body.decode())
+            logger.info(f"Received message notification: {body}")
+            
+            # Extract notification fields
+            recipient_id = body.get("recipient_id")
+            sender_id = body.get("sender_id")
+            message_id = body.get("message_id", "")
+            content_preview = body.get("content_preview", "You have a new message")
+            timestamp = body.get("timestamp", datetime.now().isoformat())
+            
+            # Validate required fields
+            if not recipient_id or not sender_id:
+                logger.error(f"Missing required fields in message notification: {body}")
+                await message.nack(requeue=False)  # Don't requeue malformed messages
+                return
+            
+            # Truncate content preview if too long
+            if len(content_preview) > 100:
+                content_preview = content_preview[:97] + "..."
 
-    #         async with self.db_pool.acquire() as conn:
-    #             await conn.execute(
-    #                 """
-    #                 INSERT INTO presence.user_status (
-    #                     user_id,
-    #                     status,
-    #                     last_changed
-    #                 ) VALUES ($1, $2, to_timestamp($3))
-    #                 ON CONFLICT (user_id)
-    #                 DO UPDATE SET
-    #                     status = $2,
-    #                     last_changed = to_timestamp($3)
-    #                 """,
-    #                 str(uuid_user_id),  # Convert UUID to string for PostgreSQL
-    #                 status.value,
-    #                 last_changed,
-    #             )
-    #     except Exception as e:
-    #         logger.error(f"Failed to save user status: {e}")
-    #         raise
-
-    # async def _publish_status_update(
-    #     self,
-    #     user_id: str,
-    #     status: StatusType,
-    #     last_changed: Optional[float] = None
-    # ) -> None:
-    #     """Publish status update to RabbitMQ."""
-    #     try:
-    #         message = json.dumps({
-    #             "user_id": user_id,
-    #             "status": status.value,
-    #             "last_changed": last_changed or datetime.now().timestamp(),
-    #         })
-    #         await self.rabbitmq.publish_message(
-    #             exchange="user_events",
-    #             routing_key=f"status.{user_id}",
-    #             message=message
-    #         )
-    #     except Exception as e:
-    #         logger.error(f"Failed to publish status update: {e}")
-    #         raise
-
-    # async def _notify_friends(self, user_id: str, status: StatusType) -> None:
-    #     """Notify friends about a user's status change."""
-    #     if not self.db_pool:
-    #         logger.warning("Database pool not available")
-    #         return
-
-    #     try:
-    #         # Get friends with circuit breaker
-    #         friends = await with_retry(
-    #             lambda: self._get_friends(user_id),
-    #             max_attempts=3,
-    #             circuit_breaker=self.db_cb
-    #         )
-
-    #         # Publish status update for each friend with circuit breaker
-    #         for friend_id in friends:
-    #             await with_retry(
-    #                 lambda: self._publish_status_update(user_id, status),
-    #                 max_attempts=3,
-    #                 circuit_breaker=self.rabbitmq_cb
-    #             )
-    #     except Exception as e:
-    #         logger.error(f"Failed to notify friends: {e}")
-    #         raise
-
-    # async def _get_friends(self, user_id: str) -> List[str]:
-    #     """Get a user's friends."""
-    #     if not self.db_pool:
-    #         logger.warning("Database pool not available")
-    #         return []
-
-    #     try:
-    #         async with self.db_pool.acquire() as conn:
-    #             # Query for accepted connections in both directions
-    #             query = """
-    #                 SELECT connected_user_id FROM connections
-    #                 WHERE user_id = $1 AND connection_status = 'accepted'
-    #                 UNION
-    #                 SELECT user_id FROM connections
-    #                 WHERE connected_user_id = $1
-    #                 AND connection_status = 'accepted'
-    #             """
-    #             rows = await conn.fetch(query, user_id)
-
-    #             # Extract friend IDs from results
-    #             friend_ids = []
-    #             for row in rows:
-    #                 friend_id = row["connected_user_id"] or row["user_id"]
-    #                 friend_ids.append(friend_id)
-    #             return friend_ids
-    #     except Exception as e:
-    #         logger.error(f"Failed to get friends: {e}")
-    #         return []
+            # Create notification for message recipient
+            notification_request = NotificationRequest(
+                recipient_id=recipient_id,
+                sender_id=sender_id,
+                reference_id=message_id,
+                content_preview=content_preview,
+                notification_type="new_message",
+                timestamp=timestamp,
+                status=DeliveryType.UNDELIVERED,
+                error=None,
+            )
+            
+            await self.create_notification(notification_request)
+            logger.info(f"Created message notification for recipient {recipient_id} from {sender_id}")
+            await message.ack()
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in message notification: {e}")
+            await message.nack(requeue=False)  # Don't requeue invalid JSON
+            
+        except Exception as e:
+            logger.error(f"Error processing message notification: {e}")
+            # Implement retry logic with headers
+            headers = message.headers or {}
+            retry_count = headers.get('x-retry-count', 0)
+            if retry_count < 3:  # Maximum 3 retries
+                headers['x-retry-count'] = retry_count + 1
+                await message.nack(requeue=True, headers=headers)
+            else:
+                logger.warning(f"Message notification failed after {retry_count} retries, not requeuing")
+                await message.nack(requeue=False)

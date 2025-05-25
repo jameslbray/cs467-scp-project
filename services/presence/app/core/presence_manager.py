@@ -405,7 +405,7 @@ class PresenceManager:
             message = json.dumps({
                 "user_id": user_id,
                 "status": status.value,
-                "last_status_change": last_status_change or datetime.now().timestamp(),
+                "last_changed_status": last_status_change or datetime.now().timestamp(),
             })
             await self.rabbitmq.publish_message(
                 exchange="user",

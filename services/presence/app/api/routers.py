@@ -169,7 +169,7 @@ async def get_user_status(
     return StatusResponse(
         user_id=user_id,
         status=status_data.get("status", "offline"),
-        last_seen=status_data.get("last_seen"),
+        last_status_change=status_data.get("last_status_change"),
     )
 
 
@@ -224,7 +224,7 @@ async def update_user_status(
     return StatusResponse(
         user_id=user_id,
         status=status_data.get("status", "offline"),
-        last_seen=status_data.get("last_seen"),
+        last_status_change=status_data.get("last_status_change"),
         additional_info=status_update.additional_info,
     )
 
@@ -274,7 +274,7 @@ async def register_user_status(
     return StatusResponse(
         user_id=user_id,
         status=status_data.get("status", "offline"),
-        last_seen=status_data.get("last_seen")
+        last_status_change=status_data.get("last_status_change")
     )
 
 @router.get(
@@ -317,7 +317,7 @@ async def get_friend_statuses(
         statuses[friend_id] = StatusResponse(
             user_id=friend_id,
             status=status_data.get("status", "offline"),
-            last_seen=status_data.get("last_seen"),
+            last_status_change=status_data.get("last_status_change"),
         )
 
     return FriendStatusesResponse(statuses=statuses)
@@ -368,7 +368,7 @@ async def status_updates_websocket(
             status_data = await presence_manager.get_user_status(subscription_user_id)
             initial_statuses[subscription_user_id] = {
                 "status": status_data.get("status", "offline"),
-                "last_seen": status_data.get("last_seen"),
+                "last_status_change": status_data.get("last_status_change"),
             }
 
         await websocket.send_json(

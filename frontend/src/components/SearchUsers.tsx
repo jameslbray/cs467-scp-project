@@ -120,38 +120,38 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
   };
 
   // Fetch pending requests
-const fetchPendingRequests = async () => {
-  if (!user?.id || !token) return;
-  console.log('Fetching pending requests for user:', user.id);
-  
-  try {
-    const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
+  const fetchPendingRequests = async () => {
+    if (!user?.id || !token) return;
+    console.log('Fetching pending requests for user:', user.id);
 
-    if (response.ok) {
-      const connections = await response.json();
-      console.log('All connections:', connections);
-      console.log('Current user ID:', user.id);
-      
-      // Filter for pending requests where current user is the RECIPIENT
-      // This means friend_id === current_user_id AND status === 'pending'
-      const pending = connections.filter((conn: Connection) => {
-        const isRecipient = conn.friend_id === user.id;
-        const isPending = conn.status === 'pending';
-        console.log(`Connection ${conn.user_id} -> status: ${conn.status} -> ${conn.friend_id}, isRecipient: ${isRecipient}, isPending: ${isPending}`);
-        return isRecipient && isPending;
+    try {
+      const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
-      
-      console.log('Filtered pending requests:', pending);
-      setPendingRequests(pending);
+
+      if (response.ok) {
+        const connections = await response.json();
+        console.log('All connections:', connections);
+        console.log('Current user ID:', user.id);
+
+        // Filter for pending requests where current user is the RECIPIENT
+        // This means friend_id === current_user_id AND status === 'pending'
+        const pending = connections.filter((conn: Connection) => {
+          const isRecipient = conn.friend_id === user.id;
+          const isPending = conn.status === 'pending';
+          console.log(`Connection ${conn.user_id} -> status: ${conn.status} -> ${conn.friend_id}, isRecipient: ${isRecipient}, isPending: ${isPending}`);
+          return isRecipient && isPending;
+        });
+
+        console.log('Filtered pending requests:', pending);
+        setPendingRequests(pending);
+      }
+    } catch (error) {
+      console.error('Failed to fetch pending requests:', error);
     }
-  } catch (error) {
-    console.error('Failed to fetch pending requests:', error);
-  }
-};
+  };
 
   // Search for users
   const searchUsers = async () => {

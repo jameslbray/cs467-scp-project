@@ -10,9 +10,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.notification_manager import NotificationManager
+from .core.notification_rabbitmq import NotificationRabbitMQClient
 from .core.config import get_settings
 from .api.routers import router
-# from .core.rabbitmq import NotificationRabbitMQClient
 
 settings = get_settings()
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 logger.info("Application settings loaded")
 
 # Initialize RabbitMQ client
-# rabbitmq_client = NotificationRabbitMQClient(settings=settings)
+rabbitmq_client = NotificationRabbitMQClient()
 
 
 # Create presence manager
@@ -50,12 +50,11 @@ notification_manager = NotificationManager(
             "port": settings.MONGO_PORT,
             "uri": settings.mongo_uri
         },
-    }
+    },
+    rabbitmq_client=rabbitmq_client,
 )
 
 # Define the lifespan handler
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
@@ -63,8 +62,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize notification manager
     await notification_manager.initialize()
-    # await rabbitmq_client.connect()
-    # logger.info("RabbitMQ connection established")
+    await rabbitmq_client.initialize()
+    logger.info("NotificationRabbitMQ connection established")
     logger.info("Notification service started successfully")
 
     yield  # This is where FastAPI serves requests
@@ -74,8 +73,8 @@ async def lifespan(app: FastAPI):
     await notification_manager.shutdown()
 
     logger.info("Notification service shut down successfully")
-    # await rabbitmq_client.close()
-    # logger.info("RabbitMQ connection closed")
+    await rabbitmq_client.close()
+    logger.info("NotificationRabbitMQ connection closed")
 
 # Create FastAPI app
 app = FastAPI(
@@ -85,11 +84,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# app.add_middleware(SlowAPIMiddleware)
 
 # Include routers
 app.include_router(router, prefix=settings.API_PREFIX)
-# app.state.limiter = limiter
 
 # Configure CORS
 app.add_middleware(
@@ -100,17 +97,3 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# if __name__ == "__main__":
-#     import uvicorn
-
-#     # Load environment variables from .env file
-#     load_dotenv()
-
-#     # Run the application with Uvicorn
-#     uvicorn.run(
-#         app,
-#         host="localhost",
-#         port=8025,
-#         log_level=settings.LOG_LEVEL.lower()
-#     )

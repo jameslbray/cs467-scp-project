@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
+import httpx
 
 from fastapi import (
     APIRouter,
@@ -38,6 +39,30 @@ router = APIRouter(tags=["connections"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+class UserInfo(BaseModel):
+    """Model for user information"""
+    id: str
+    username: str
+    profile_picture_url: Optional[str] = None
+
+async def get_user_from_api(user_id: str, token: str) -> UserInfo:
+    """Get user info from the users service"""
+    users_service_url = "http://localhost:8001"  # Can be moved to config settings
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{users_service_url}/api/users/{user_id}",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Failed to get user info: {response.text}")
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to get user info: {response.text}"
+            )
+            
+        return UserInfo.parse_obj(response.json())
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
     """Extract and validate user ID from JWT token"""
@@ -153,6 +178,7 @@ async def create_connection(
     connection_data: ConnectionCreate,
     current_user: str = Depends(get_current_user),
     connection_manager: ConnectionManager = Depends(get_connection_manager),
+    token: str = Depends(oauth2_scheme),  # Get the token for authorization
 ):
     """
     Create a connection between user_id and friend_id.
@@ -164,32 +190,46 @@ async def create_connection(
     Returns:
     - **Connection**: Created Connection information
     """
-    logger.info(f"Current user: {current_user}")
-    logger.info(f"Creating connection between users {connection_data.user_id} -> {connection_data.friend_id}")
-
-    # Check if the user is trying to create a connection for their own user
+    # Check if user_id matches the authenticated user
     if str(connection_data.user_id) != str(current_user):
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
-            detail="You can only create connections for your own user"
+            detail="You can only create connections for yourself"
         )
 
-    try:
-        response = await connection_manager.create_connection(connection_data)
+    logger.info(f"Creating connection from {connection_data.user_id} to {connection_data.friend_id}")
 
-        if not response:
-            raise HTTPException(
-                status_code=HTTP_404_NOT_FOUND,
-                detail="Connection creation failed",
-            )
-        return response
-
-    except Exception as e:
-        logger.error(f"Failed to create connection: {e}")
+    # Create connection in database
+    connection = await connection_manager.create_connection(connection_data)
+    
+    if not connection:
         raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail="Failed to create connection",
+            status_code=400,
+            detail="Failed to create connection"
         )
+    
+    # If this is a friend request (pending status), publish notification event
+    if connection.status == "pending":
+        try:
+            # Get user information for notification content
+            sender_info = await get_user_from_api(connection.user_id, token)
+            sender_name = sender_info.username
+            
+            # Publish event to connection events exchange
+            await connection_manager.publish_notification_event(
+                recipient_id=str(connection.friend_id),
+                sender_id=str(connection.user_id),
+                reference_id=str(connection.id),
+                notification_type="friend_request",
+                content_preview=f"{sender_name} sent you a friend request"
+            )
+            
+            logger.info(f"Published friend request notification from {sender_name} to {connection.friend_id}")
+        except Exception as e:
+            # Log error but don't fail request
+            logger.error(f"Failed to publish notification event: {e}")
+    
+    return connection
 
 
 @router.put(
@@ -206,6 +246,7 @@ async def update_connection(
     connection_data: ConnectionUpdate,
     current_user: str = Depends(get_current_user),
     connection_manager: ConnectionManager = Depends(get_connection_manager),
+    token: str = Depends(oauth2_scheme),
 ):
     """
     Update a user's connection status.
@@ -223,11 +264,11 @@ async def update_connection(
             detail="You can only update your own connections"
         )
 
-
     logger.info(f"Updating connection {connection_data.user_id} -> {connection_data.status} -> {connection_data.friend_id}")
 
     try:
         # Call the manager to update connection status
+        original_connection = await connection_manager.get_connection(connection_data.user_id, connection_data.friend_id)
         response = await connection_manager.update_connection(connection_data)
 
         if not response:
@@ -235,6 +276,36 @@ async def update_connection(
                 status_code=404,
                 detail="Connection not found"
             )
+            
+        # If this was accepting a friend request, send notification to the other user
+        if original_connection and original_connection.status == "pending" and connection_data.status == "accepted":
+            try:
+                # Get user information
+                accepter_info = await get_user_from_api(connection_data.user_id, token)
+                accepter_name = accepter_info.username
+                
+                # Determine who is the original sender (to notify them)
+                original_sender_id = str(original_connection.user_id)
+                if original_sender_id == str(connection_data.user_id):
+                    # If the current user was the original sender, notify the friend
+                    recipient_id = str(connection_data.friend_id)
+                else:
+                    # Otherwise notify the original sender
+                    recipient_id = original_sender_id
+                
+                # Publish friend acceptance event
+                await connection_manager.publish_notification_event(
+                    recipient_id=recipient_id,
+                    sender_id=str(connection_data.user_id),
+                    reference_id=str(response.id),
+                    notification_type="friend_accepted",
+                    content_preview=f"{accepter_name} accepted your friend request"
+                )
+                
+                logger.info(f"Published friend acceptance notification to {recipient_id}")
+            except Exception as e:
+                # Log error but don't fail request
+                logger.error(f"Failed to publish friend acceptance notification: {e}")
 
         return response
 
@@ -245,149 +316,7 @@ async def update_connection(
             detail="Failed to update connection",
         )
 
-
-# @router.put(
-#     "/notify/all/{user_id}",
-#     response_model=SuccessResponse,
-#     responses={
-#         400: {"model": ErrorResponse, "description": "Bad request"},
-#         401: {"model": ErrorResponse, "description": "Unauthorized"},
-#         403: {"model": ErrorResponse, "description": "Forbidden"},
-#         404: {"model": ErrorResponse, "description": "User not found"},
-#     },
-# )
-# async def update_all_user_notifications(
-#     user_id: str,
-#     # current_user: str = Depends(get_current_user),
-#     notification_manager: NotificationManager = Depends(get_notification_manager),
-# ):
-#     """
-#     Update all of a user's notification status to read.
-
-#     Parameters:
-#     - **user_id**: ID of the user whose notification is being updated
-
-#     Returns:
-#     - **SuccessResponse**: Success message
-#     """
-#     # Check if the user is trying to update their own status
-#     # if user_id != current_user:
-#     #     raise HTTPException(
-#     #         status_code=HTTP_403_FORBIDDEN,
-#     #         detail="You can only update your own status"
-#     #     )
-
-
-#     logger.info(f"Updating all notifications for user: {user_id}")
-
-#     try:
-#         # Call the manager to mark notification as read
-#         success = await notification_manager.mark_all_notifications_as_read(user_id)
-
-#         return SuccessResponse(message="success")
-
-#     except Exception as e:
-#         logger.error(f"Failed to update notification: {e}")
-#         raise HTTPException(
-#             status_code=HTTP_404_NOT_FOUND,
-#             detail="Failed to update notification",
-#         )
-
-# @router.delete(
-#     "/notify/{user_id}",
-#     response_model=SuccessResponse,
-#     responses={
-#         400: {"model": ErrorResponse, "description": "Bad request"},
-#         401: {"model": ErrorResponse, "description": "Unauthorized"},
-#         403: {"model": ErrorResponse, "description": "Forbidden"},
-#         404: {"model": ErrorResponse, "description": "User not found"},
-#     },
-# )
-# async def delete_read_notifications(
-#     user_id: str,
-#     # current_user: str = Depends(get_current_user),
-#     notification_manager: NotificationManager = Depends(get_notification_manager),
-# ):
-#     """
-#     Update a user's notifications. Post body should contain the notification_id.
-
-#     Parameters:
-#     - **user_id**: ID of the user whose notification is being updated
-#     - **notification_id**: Notification ID to be updated
-
-#     Returns:
-#     - **NotificationResponse**: Updated notification information
-#     """
-#     # Check if the user is trying to update their own status
-#     # if user_id != current_user:
-#     #     raise HTTPException(
-#     #         status_code=HTTP_403_FORBIDDEN,
-#     #         detail="You can only update your own status"
-#     #     )
-
-
-#     logger.info(f"Removing stale notification for user: {user_id}")
-
-#     try:
-#         # Call the manager to mark notification as read
-#         deleted_count = await notification_manager.delete_read_notifications(user_id)
-
-#         return SuccessResponse(message="Successfully deleted {deleted_count} notifications")
-
-#     except Exception as e:
-#         logger.error(f"Failed to update notification: {e}")
-#         raise HTTPException(
-#             status_code=HTTP_404_NOT_FOUND,
-#             detail="Failed to update notification",
-#         )
-
-
-# # @router.get(
-# #     "/notify/friends/{user_id}",
-# #     response_model=FriendStatusesResponse,
-# #     responses={
-# #         401: {"model": ErrorResponse, "description": "Unauthorized"},
-# #         403: {"model": ErrorResponse, "description": "Forbidden"},
-# #         404: {"model": ErrorResponse, "description": "User not found"},
-# #     },
-# # )
-# # async def get_friend_statuses(
-# #     user_id: str,
-# #     current_user: str = Depends(get_current_user),
-# #     presence_manager: PresenceManager = Depends(get_presence_manager),
-# # ):
-# #     """
-# #     Get the status of all friends of a user
-
-# #     Parameters:
-# #     - **user_id**: ID of the user whose friends' statuses are being requested
-
-# #     Returns:
-# #     - **FriendStatusesResponse**: Status information for all friends
-# #     """
-# #     # Check if the user is requesting their own friends' statuses
-# #     if user_id != current_user:
-# #         raise HTTPException(
-# #             status_code=HTTP_403_FORBIDDEN,
-# #             detail="You can only view your own friends' statuses",
-# #         )
-
-# #     # Get friend IDs
-# #     friend_ids = await presence_manager._get_friend_ids(user_id)
-
-# #     # Get status for each friend
-# #     statuses = {}
-# #     for friend_id in friend_ids:
-# #         status_data = await presence_manager.get_user_status(friend_id)
-# #         statuses[friend_id] = StatusResponse(
-# #             user_id=friend_id,
-# #             status=status_data.get("status", "offline"),
-# #             last_seen=status_data.get("last_seen"),
-# #         )
-
-# #     return FriendStatusesResponse(statuses=statuses)
-
-
+# Uncomment the following code if you want to implement WebSocket subscriptions for status updates
 # @router.websocket("/ws/status/subscribe")
 # async def status_updates_websocket(
 #     websocket: WebSocket,

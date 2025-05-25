@@ -206,7 +206,7 @@ async def login_for_access_token(
                 "type": "status_update",
                 "user_id": str(user.id),
                 "status": "online",
-                "last_changed": datetime.now().timestamp(),
+                "last_status_change": datetime.now().timestamp(),
             }
         ),
     )
@@ -347,7 +347,7 @@ async def logout(
                 "type": "status_update",
                 "user_id": str(current_user.id),
                 "status": "offline",
-                "last_changed": datetime.now().timestamp(),
+                "last_status_change": datetime.now().timestamp(),
             }
         ),
     )
