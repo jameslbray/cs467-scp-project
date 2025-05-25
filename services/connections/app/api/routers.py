@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 import httpx
+import asyncio
 
 from fastapi import (
     APIRouter,
@@ -19,6 +20,7 @@ from starlette.status import (
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
+    HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
 from services.connections.app.core.config import get_settings
@@ -198,38 +200,48 @@ async def create_connection(
         )
 
     logger.info(f"Creating connection from {connection_data.user_id} to {connection_data.friend_id}")
-
-    # Create connection in database
-    connection = await connection_manager.create_connection(connection_data)
-    
-    if not connection:
-        raise HTTPException(
-            status_code=400,
-            detail="Failed to create connection"
-        )
     
     # If this is a friend request (pending status), publish notification event
-    if connection.status == "pending":
+    if getattr(connection_data, "status", None) == "pending":
         try:
-            # Get user information for notification content
-            sender_info = await get_user_from_api(connection.user_id, token)
-            sender_name = sender_info.username
-            
-            # Publish event to connection events exchange
-            await connection_manager.publish_notification_event(
-                recipient_id=str(connection.friend_id),
-                sender_id=str(connection.user_id),
-                reference_id=str(connection.id),
-                notification_type="friend_request",
-                content_preview=f"{sender_name} sent you a friend request"
+            # Create connection
+            connection = await connection_manager.create_connection(
+                connection_data
             )
-            
-            logger.info(f"Published friend request notification from {sender_name} to {connection.friend_id}")
+
+            # Only proceed if connection was created successfully
+            if connection is not None:
+                # Define sender and recipient IDs
+                sender_id = str(connection_data.user_id)
+                recipient_id = str(connection_data.friend_id)
+
+                # Publish notification with retry logic
+                notification_success = False
+                for attempt in range(3):  # Try 3 times
+                    notification_success = await connection_manager.publish_notification_event(
+                        reference_id=connection.id,
+                        sender_id=sender_id,
+                        recipient_id=recipient_id,
+                        notification_type="friend_request",
+                        content_preview="You have a new friend request"
+                    )
+                    if notification_success:
+                        break
+                    await asyncio.sleep(1)  # Wait before retrying
+
+                if not notification_success:
+                    logger.warning(
+                        "Could not publish notification after multiple attempts, "
+                        "but connection was created"
+                    )
+
+            return connection
         except Exception as e:
-            # Log error but don't fail request
-            logger.error(f"Failed to publish notification event: {e}")
-    
-    return connection
+            logger.error(f"Failed to create connection: {e}")
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create connection"
+            )
 
 
 @router.put(

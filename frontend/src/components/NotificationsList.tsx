@@ -11,6 +11,8 @@ import { formatRelativeTime } from "../utils/dateUtils";
 import { markNotificationAsRead } from "../services/notificationsAPI";
 import { fetchNotifications, deleteNotification, markAllNotificationsAsRead } from "../services/notificationsAPI";
 import { useAuth } from "../contexts/auth/authContext";
+import { useSocketEvent } from "../contexts/socket/useSocket"; // Add this import
+import { ServerEvents } from "../types/serverEvents"; // Add this import
 
 interface NotificationBellProps {
   className?: string;
@@ -33,6 +35,25 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
 
   // Count unread notifications
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  // Socket event listener for new notifications
+  useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, (newNotification) => {
+    // Add the new notification to the list and sort
+    setNotifications(prev => {
+      const updated = [newNotification, ...prev];
+      return updated.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+    });
+  });
+
+  // Socket event listener for bulk notification updates
+  useSocketEvent<NotificationResponseType[]>(ServerEvents.NOTIFICATIONS_UPDATE, (updatedNotifications) => {
+    // Replace the entire notifications list
+    setNotifications(updatedNotifications.sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ));
+  });
 
   // Handle marking notifications as read
   const handleMarkAsRead = async (notificationId: string, recipientId: string) => {
@@ -61,23 +82,17 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
     }
   };
 
-
   const handleMarkAllRead = async () => {
     try {
       // Mark all notifications as read
-      await Promise.all(
-        notifications.map(notification => {
-          if (!notification.read && user) {
-            return markAllNotificationsAsRead(user.id);
-          }
-          return Promise.resolve();
-        })
-      );
-
-      // Update state to reflect that all notifications are read
-      setNotifications(prev =>
-        prev.map(notification => ({ ...notification, read: true }))
-      );
+      if (user) {
+        await markAllNotificationsAsRead(user.id);
+      
+        // Update state to reflect that all notifications are read
+        setNotifications(prev =>
+          prev.map(notification => ({ ...notification, read: true }))
+        );
+      }
     }
     catch (error) {
       console.error("Failed to mark all notifications as read:", error);
@@ -115,13 +130,13 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
 
     getNotifications();
 
-    // Set up polling for notifications
-    const interval = setInterval(getNotifications, 30000); // Check every 30 seconds
+    // Set up polling for notifications (less frequent now that we have real-time updates)
+    const interval = setInterval(getNotifications, 60000); // Check every minute as backup
 
     return () => clearInterval(interval);
   }, [user]);
 
-
+  // Rest of the component remains the same
   return (
     <div className={`relative ${className}`} ref={ref}>
       {/* Bell button */}
@@ -131,6 +146,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
         className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none"
         aria-label="Notifications"
       >
+        {/* Rest of the button content remains the same */}
         {notifications.length === 0 ? (
           <BellSlashIcon className="h-6 w-6" />
         ) : (

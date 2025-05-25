@@ -49,6 +49,8 @@ class SocketServer:
         self.sio.on("presence:status:query", self._on_presence_status_query)
         self.sio.on("presence:friend:statuses", self._on_get_friend_statuses)
         
+        self.sio.on("notifications:fetch", self._on_notifications_fetch)
+        
         self.sio.on("get_connections", self._on_get_connections)
 
         # TODO: implement chat typing and chat read receipts functionality
@@ -120,6 +122,22 @@ class SocketServer:
         await self.rabbitmq.consume(
             "presence_updates",
             self._handle_presence_update_from_rabbitmq
+        )
+        
+        # Declare queue for notifications
+        await self.rabbitmq.declare_queue("notification_events", durable=True)
+
+        # Bind queue to notifications exchange
+        await self.rabbitmq.bind_queue(
+            "notification_events",
+            "notifications", 
+            "user.#"  # Use topic pattern to catch all user notifications
+        )
+
+        # Start consuming notification events
+        await self.rabbitmq.consume(
+            "notification_events",
+            self._handle_notification_from_rabbitmq
         )
         
         # Start consuming friend status responses
@@ -555,3 +573,71 @@ class SocketServer:
         except Exception as e:
             logger.error(f"Error handling friend statuses response: {e}")
             await message.nack(requeue=False)
+
+    async def _handle_notification_from_rabbitmq(self, message):
+        """Handle notification messages from RabbitMQ."""
+        try:
+            body = json.loads(message.body.decode())
+            notification_data = body.get("notification", {})
+            recipient_id = notification_data.get("recipient_id")
+            
+            if not recipient_id:
+                logger.warning("Notification received without recipient_id")
+                await message.ack()
+                return
+            
+            # Find the socket ID for the recipient
+            recipient_sid = self.get_sid_from_user_id(recipient_id)
+            if recipient_sid:
+                # Emit the notification to the client
+                await self.sio.emit(
+                    "notification:new",
+                    notification_data,
+                    room=recipient_sid
+                    )
+                logger.info(f"Emitted notification to user {recipient_id}")
+            else:
+                logger.info(f"User {recipient_id} not connected, notification not delivered")
+            
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error handling notification from RabbitMQ: {e}")
+            await message.nack(requeue=False)
+
+    async def _on_notifications_fetch(self, sid: str):
+        """Handle request for all notifications."""
+        user_id = self.get_user_id_from_sid(sid)
+        if not user_id:
+            logger.error(f"Notifications fetch from unauthenticated socket: {sid}")
+            await self.sio.emit(
+                "notifications:fetch:error", 
+                {"error": "Not authenticated"}, 
+                room=sid
+            )
+            return
+        
+        try:
+            # Use publish_and_wait to get all notifications
+            response = await self.rabbitmq.publish_and_wait(
+                exchange="notifications",
+                routing_key="user.get_all",
+                message={"user_id": user_id},
+                correlation_id=sid,
+                timeout=5.0
+            )
+            
+            if response and "notifications" in response:
+                await self.sio.emit("notifications:update", response["notifications"], room=sid)
+            else:
+                await self.sio.emit(
+                    "notifications:fetch:error",
+                    {"error": "Failed to fetch notifications"}, 
+                    room=sid
+                )
+        except Exception as e:
+            logger.error(f"Failed to fetch notifications: {e}")
+            await self.sio.emit(
+                "notifications:fetch:error", 
+                {"error": str(e)}, 
+                room=sid
+            )

@@ -23,7 +23,7 @@ class ConnectionManager:
     def __init__(
         self,
         config: dict[str, Any],
-        rabbitmq_client: ConnectionsRabbitMQClient = None
+        rabbitmq_client: ConnectionsRabbitMQClient
     ):
         """Initialize the notification manager.
 
@@ -33,7 +33,7 @@ class ConnectionManager:
         """
         self.config = config
         self._initialized = False
-        self.postgres_client: Optional[asyncpg.Pool] = None
+        self.postgres_client: asyncpg.Pool
 
         # Initialize RabbitMQ client
         self.rabbitmq = rabbitmq_client
@@ -104,34 +104,6 @@ class ConnectionManager:
             return True
         except Exception:
             logger.error("Postgres connection failed")
-            return False
-
-    async def publish_notification_event(
-        self,
-        recipient_id: str,
-        sender_id: str,
-        reference_id: str,
-        notification_type: str,
-        content_preview: str,
-    ) -> bool:
-        """Publish a notification event to RabbitMQ."""
-        # Determine the correct notification type and call the appropriate method
-        if notification_type == "friend_request":
-            return await self.rabbitmq.publish_friend_request(
-                recipient_id,
-                sender_id,
-                reference_id,
-                content_preview.split(" sent ")[0]  # Extract sender name from content
-            )
-        elif notification_type == "friend_accepted":
-            return await self.rabbitmq.publish_friend_accepted(
-                recipient_id,
-                sender_id,
-                reference_id,
-                content_preview.split(" accepted ")[0]  # Extract accepter name from content
-            )
-        else:
-            logger.warning(f"Unhandled notification type: {notification_type}")
             return False
 
     async def get_user_connections(self, user_id: str) -> List[Connection]:
@@ -433,11 +405,12 @@ class ConnectionManager:
                 "timestamp": datetime.now().isoformat(),
             })
             
-            # Publish to connection_events exchange
-            await self.rabbitmq.publish_message(
-                exchange="connection_events",
-                routing_key=routing_key,
-                message=message
+            # Publish friend request event using correct parameters
+            await self.rabbitmq.publish_friend_request(
+                recipient_id=recipient_id,
+                sender_id=sender_id,
+                connection_id=reference_id,
+                sender_name=content_preview
             )
             
             logger.info(f"Published {notification_type} notification for recipient {recipient_id}")

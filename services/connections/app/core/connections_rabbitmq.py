@@ -72,6 +72,9 @@ class ConnectionsRabbitMQClient:
             # Declare exchanges
             await self.rabbitmq.declare_exchange("connection_events", "topic")
             await self.rabbitmq.declare_exchange("notification_events", "topic")
+            
+            await self.rabbitmq.declare_exchange("connection_events", "topic")
+            await self.rabbitmq.declare_exchange("notifications", "topic")   
 
             # Declare queue for connection events
             await self.rabbitmq.declare_queue(

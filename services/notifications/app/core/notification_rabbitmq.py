@@ -5,6 +5,7 @@ import logging
 import json
 from typing import Any, Callable, Dict, Optional
 from datetime import datetime
+from bson import ObjectId
 
 from services.rabbitmq.core.client import RabbitMQClient as BaseRabbitMQClient
 from services.shared.utils.retry import CircuitBreaker, with_retry
@@ -26,29 +27,43 @@ class NotificationRabbitMQClient:
         )
         self._initialized = False
 
+    # Add in the initialize method or create one if it doesn't exist
     async def initialize(self) -> bool:
-        """Initialize the RabbitMQ client."""
+        """Initialize the connection manager."""
         if self._initialized:
-            logger.warning("RabbitMQ client already initialized")
+            logger.warning("Connection manager already initialized")
             return True
 
         try:
-            # Connect to RabbitMQ with retry
+            # Initialize RabbitMQ client with retries
             await with_retry(
-                self._connect,
+                self._initialize_rabbitmq,
                 max_attempts=5,
                 initial_delay=5.0,
                 max_delay=60.0,
-                circuit_breaker=self.circuit_breaker
+                circuit_breaker=self.circuit_breaker,
             )
-            
+
             self._initialized = True
-            logger.info("RabbitMQ client initialized successfully")
+            logger.info("Connection manager initialized successfully")
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize RabbitMQ client: {e}")
-            self._initialized = False
+            logger.error(f"Failed to initialize connection manager: {e}")
             return False
+
+    async def _initialize_rabbitmq(self) -> bool:
+        """Initialize RabbitMQ connection and exchanges."""
+        # Connect to RabbitMQ
+        connected = await self.rabbitmq.connect()
+        if not connected:
+            raise Exception("Failed to connect to RabbitMQ")
+
+        # Declare exchanges
+        await self.rabbitmq.declare_exchange("connection_events", "topic")
+        await self.rabbitmq.declare_exchange("notifications", "topic")
+
+        logger.info("RabbitMQ connection and exchanges initialized")
+        return True
 
     async def shutdown(self) -> None:
         """Shutdown the RabbitMQ client."""
@@ -173,13 +188,21 @@ class NotificationRabbitMQClient:
             if not self._initialized:
                 await self.initialize()
                 
-            message = json.dumps({
+            # Create the notification payload
+            notification = {
                 "recipient_id": recipient_id,
                 "sender_id": sender_id,
                 "reference_id": str(reference_id),
                 "notification_type": notification_type,
                 "content_preview": content_preview,
                 "timestamp": datetime.now().isoformat(),
+                "notification_id": str(ObjectId()),
+                "read": False
+            }
+            
+            # Wrap in the expected format for socket_server.py
+            message = json.dumps({
+                "notification": notification
             })
             
             await self.rabbitmq.publish_message(
@@ -206,13 +229,23 @@ class NotificationRabbitMQClient:
             if not self._initialized:
                 await self.initialize()
                 
-            message = json.dumps({
+            # Create the notification payload
+            notification = {
                 "event_type": "friend_request",
                 "recipient_id": recipient_id,
                 "sender_id": sender_id,
                 "reference_id": str(connection_id),
                 "content_preview": f"{sender_name} sent you a friend request",
                 "timestamp": datetime.now().isoformat(),
+                # Add notification_id field for frontend tracking
+                "notification_id": str(ObjectId()),
+                "read": False,
+                "notification_type": "friend_request"
+            }
+            
+            # Wrap in the expected format
+            message = json.dumps({
+                "notification": notification
             })
             
             await self.rabbitmq.publish_message(
