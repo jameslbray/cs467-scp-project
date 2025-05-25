@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 # Service registry - maps service names to their URLs
 SERVICE_REGISTRY = {
-    "users": "http://users:8001",
-    "chat": "http://chat:8001",
-    "notifications": "http://notifications:8004",
-    "presence": "http://presence:8005",
+    "users": "http://localhost:8001",
+    "chat": "http://localhost:8000",
+    "notifications": "http://localhost:8003",
+    "presence": "http://localhost:8002",
+    "connections": "http://localhost:8004",
 }
 
 

@@ -10,7 +10,7 @@ from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 from .config import get_socket_io_config
-from .events import AuthEvents, EventType, create_event
+from .events import AuthEvents, EventType, create_event, PresenceEvents
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -44,14 +44,20 @@ class SocketServer:
         self.sio.on("disconnect", self._on_disconnect)
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
-        self.sio.on("presence", self._on_presence_update)
+        
+        self.sio.on("presence:status:update", self._on_presence_status_update)
+        self.sio.on("presence:status:query", self._on_presence_status_query)
+        self.sio.on("presence:friend:statuses", self._on_get_friend_statuses)
+        
         self.sio.on("get_connections", self._on_get_connections)
 
         # TODO: implement chat typing and chat read receipts functionality
         self.sio.on("chat_typing", self._on_chat_typing)
         self.sio.on("chat_read", self._on_chat_read)
+        
         # Register auth event handlers
         self.auth_events = AuthEvents(self.sio, self.rabbitmq)
+        self.presence_events = PresenceEvents(self.sio, self.rabbitmq)
 
     async def initialize(self) -> bool:
         """Initialize the Socket.IO server and its dependencies."""
@@ -86,10 +92,41 @@ class SocketServer:
             raise Exception("Failed to connect to RabbitMQ")
 
         # Declare exchanges
-        await self.rabbitmq.declare_exchange("chat", "topic")
-        await self.rabbitmq.declare_exchange("presence", "topic")
+        await self.rabbitmq.declare_exchange("chat", "direct")
+        await self.rabbitmq.declare_exchange("presence", "direct")
         await self.rabbitmq.declare_exchange("notifications", "topic")
-        await self.rabbitmq.declare_exchange("auth", "topic")
+        await self.rabbitmq.declare_exchange("auth", "direct")
+        await self.rabbitmq.declare_exchange("connection_events", "topic")
+        
+        # Declare queues
+        await self.rabbitmq.declare_queue("presence_updates", durable=True)
+        await self.rabbitmq.declare_queue("presence_responses", durable=True)
+
+        # Bind queue to presence exchange for status updates
+        await self.rabbitmq.bind_queue(
+            "presence_updates",
+            "presence",
+            "status.updates"
+        )
+        
+        # ADDED: Bind queue for friend status responses
+        await self.rabbitmq.bind_queue(
+            "presence_responses",
+            "presence", 
+            "friend.statuses.response"
+        )
+
+        # Start consuming presence updates
+        await self.rabbitmq.consume(
+            "presence_updates",
+            self._handle_presence_update_from_rabbitmq
+        )
+        
+        # ADDED: Start consuming friend status responses
+        await self.rabbitmq.consume(
+            "presence_responses",
+            self._handle_friend_statuses_response
+        )
 
         logger.info("RabbitMQ connection and exchanges initialized")
         return True
@@ -195,22 +232,27 @@ class SocketServer:
                 room=sid,
             )
 
-    async def _on_presence_update(
+    async def _on_presence_status_update(
         self, sid: str, data: Dict[str, Any]
     ) -> None:
-        """Handle presence update."""
+        """Handle presence status update."""
         user_id = self.get_user_id_from_sid(sid)
         if not user_id:
             logger.error(f"Presence update from unauthenticated socket: {sid}")
+            await self.sio.emit(
+                "presence:status:update:error", 
+                {"error": "Not authenticated"}, 
+                room=sid
+            )
             return
 
         # Create structured presence event
         presence_event = create_event(
-            EventType.PRESENCE_UPDATE,
+            EventType.PRESENCE_STATUS_UPDATE,
             "socket_io",
             user_id=user_id,
             status=data.get("status", "online"),
-            last_seen=datetime.now().timestamp(),
+            last_status_change=datetime.now().timestamp(),
             metadata=data.get("metadata", {}),
         )
 
@@ -218,15 +260,58 @@ class SocketServer:
         try:
             await with_retry(
                 lambda: self.rabbitmq.publish_message(
-                    exchange="user",
-                    routing_key=f"status.{user_id}",
+                    exchange="presence",
+                    routing_key="status.updates",
                     message=json.dumps(presence_event),
                 ),
                 max_attempts=3,
                 circuit_breaker=self.rabbitmq_cb,
             )
+            
+            # Send success response back to client
+            await self.sio.emit(
+                "presence:status:update:success", 
+                {"status": data.get("status", "online")}, 
+                room=sid
+            )
+            
         except Exception as e:
             logger.error(f"Failed to publish presence update: {e}")
+            await self.sio.emit(
+                "presence:status:update:error", 
+                {"error": "Failed to update status"}, 
+                room=sid
+            )
+
+    async def _on_presence_status_query(self, sid: str, data: Dict[str, Any]) -> None:
+        """Handle presence status query."""
+        user_id = self.get_user_id_from_sid(sid)
+        if not user_id:
+            logger.error(f"Presence query from unauthenticated socket: {sid}")
+            return
+
+        try:
+            # Query presence service via RabbitMQ
+            response = await self.rabbitmq.publish_and_wait(
+                exchange="presence",
+                routing_key="status.query",
+                message={
+                    "type": EventType.PRESENCE_STATUS_QUERY.value,
+                    "user_id": data.get("target_user_id", user_id),
+                    "requester_id": user_id
+                },
+                correlation_id=sid,
+            )
+            
+            await self.sio.emit("presence:status:query:success", response, room=sid)
+            
+        except Exception as e:
+            logger.error(f"Failed to query presence status: {e}")
+            await self.sio.emit(
+                "presence:status:query:error", 
+                {"error": "Failed to query status"}, 
+                room=sid
+            )
 
     async def _on_get_connections(self, sid: str) -> None:
         connections = []
@@ -321,6 +406,29 @@ class SocketServer:
                 )
         await self.sio.emit("refresh_connections", {})
 
+    async def _publish_presence_update(self, user_id: str, status: str) -> None:
+        """Publish presence update to RabbitMQ."""
+        try:
+            # Create structured presence event
+            presence_event = create_event(
+                EventType.PRESENCE_STATUS_UPDATE,
+                "socket_io",
+                user_id=user_id,
+                status=status,
+                last_status_change=datetime.now().timestamp(),
+                metadata={}
+            )
+            
+            await self.rabbitmq.publish_message(
+                exchange="presence",
+                routing_key="status.updates",
+                message=json.dumps(presence_event)
+            )
+            logger.debug(f"Published presence update for {user_id}: {status}")
+        except Exception as e:
+            logger.error(f"Failed to publish presence update: {e}")
+            raise
+
     async def _on_chat_typing(self, sid: str, data: Dict[str, Any]) -> None:
         """Handle chat typing."""
         pass
@@ -328,3 +436,121 @@ class SocketServer:
     async def _on_chat_read(self, sid: str, data: Dict[str, Any]) -> None:
         """Handle chat read."""
         pass
+
+    async def _handle_presence_update_from_rabbitmq(self, message):
+        try:
+            body = json.loads(message.body.decode())
+            user_id = body.get("user_id")
+            status = body.get("status")
+            last_status_change = body.get("last_status_change")
+            
+            if not user_id or not status:
+                logger.warning("Incomplete presence update received")
+                await message.ack()
+                return
+                
+            # Format the presence update for Socket.IO
+            presence_data = {
+                "user_id": user_id,
+                "status": status,
+                "last_status_change": last_status_change
+            }
+            
+            # UPDATED: Use standardized event name
+            await self.sio.emit("presence:friend:status:changed", presence_data)
+            
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error handling presence update from RabbitMQ: {e}")
+            await message.nack(requeue=False)
+
+    async def _notify_friends_of_status(self, user_id: str, status_data: dict):
+        """Notify all online friends of a user's status change."""
+        try:
+            # Get friend list through RabbitMQ
+            response = await self.rabbitmq.publish_and_wait(
+                exchange="presence",
+                routing_key="presence.get_friends",
+                message={"user_id": user_id},
+                timeout=5.0
+            )
+            
+            if not response or not response.get("friends"):
+                return
+                
+            # For each online friend, send the status update
+            for friend_id in response["friends"]:
+                friend_sid = self.get_sid_from_user_id(friend_id)
+                if friend_sid:  # If friend is connected
+                    await self.sio.emit(
+                        "friend_status_changed", 
+                        status_data, 
+                        room=friend_sid
+                    )
+        except Exception as e:
+            logger.error(f"Failed to notify friends of status update: {e}")
+
+    async def _on_get_friend_statuses(self, sid: str):
+        """Handle request for friend statuses."""
+        user_id = self.get_user_id_from_sid(sid)
+        if not user_id:
+            logger.error(f"Friend status request from unauthenticated socket: {sid}")
+            await self.sio.emit(
+                "presence:friend:statuses:error", 
+                {"error": "Not authenticated"}, 
+                room=sid
+            )
+            return
+        
+        try:
+            # Use publish_and_wait for RPC-style communication
+            response = await self.rabbitmq.publish_and_wait(
+                exchange="presence",
+                routing_key="friend.statuses",
+                message={"user_id": user_id},
+                correlation_id=sid,
+                timeout=10.0  # Increased timeout
+            )
+            
+            logger.info(f"Received friend statuses response: {response}")
+            
+            if response and "statuses" in response:
+                await self.sio.emit("presence:friend:statuses:success", {
+                    "statuses": response["statuses"]
+                }, room=sid)
+            else:
+                await self.sio.emit("presence:friend:statuses:error", {
+                    "error": "No statuses received"
+                }, room=sid)
+                
+        except Exception as e:
+            logger.error(f"Failed to get friend statuses: {e}")
+            await self.sio.emit(
+                "presence:friend:statuses:error", 
+                {"error": str(e)}, 
+                room=sid
+            )
+
+    async def _handle_friend_statuses_response(self, message):
+        """Handle friend statuses response from presence service."""
+        try:
+            body = json.loads(message.body.decode())
+            requesting_user_id = body.get("requesting_user_id")
+            statuses = body.get("statuses", {})
+            
+            logger.info(f"Received friend statuses response for user {requesting_user_id}")
+            
+            # Find the socket ID for the requesting user
+            sid = self.get_sid_from_user_id(requesting_user_id)
+            if sid:
+                await self.sio.emit("presence:friend:statuses:success", {
+                    "statuses": statuses
+                }, room=sid)
+                logger.info(f"Sent friend statuses to socket {sid}")
+            else:
+                logger.warning(f"No socket found for user {requesting_user_id}")
+                
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error handling friend statuses response: {e}")
+            await message.nack(requeue=False)

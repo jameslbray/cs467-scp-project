@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, TypedDict, Union
+from typing import Dict, Any, Optional, TypedDict, Union, Literal
 from enum import Enum
 
 
@@ -16,8 +16,11 @@ class EventType(str, Enum):
     CHAT_READ = "chat:read"
 
     # Presence events
-    PRESENCE_UPDATE = "presence:update"
-    PRESENCE_QUERY = "presence:query"
+    PRESENCE_STATUS_UPDATE = "presence:status:update"
+    PRESENCE_STATUS_QUERY = "presence:status:query"
+    PRESENCE_STATUS_CHANGED = "presence:status:changed"  # For notifications
+    PRESENCE_FRIEND_STATUSES = "presence:friend:statuses"
+    PRESENCE_FRIEND_STATUS_CHANGED = "presence:friend:status:changed"
 
     # Notification events
     NOTIFICATION = "notification"
@@ -74,7 +77,7 @@ class PresenceEvent(BaseEvent):
 
     user_id: str
     status: UserStatus
-    last_seen: float
+    last_status_change: float
     metadata: Optional[Dict[str, Any]]
 
 
@@ -82,10 +85,13 @@ class NotificationEvent(BaseEvent):
     """Notification event structure."""
 
     recipient_id: str
-    title: str
-    message: str
-    level: str  # info, warning, error, success
-    data: Optional[Dict[str, Any]]
+    sender_id: str
+    reference_id: str
+    content_preview: str
+    status: Literal["delivered", "undelivered", "error"]
+    error: Optional[str] = None
+    read: Optional[bool] = None
+    notification_type: Literal["message", "friend_request", "status_update"]
 
 
 class SystemEvent(BaseEvent):
@@ -153,7 +159,7 @@ def create_event(event_type: EventType, source: str, **kwargs) -> Event:
         )
     elif event_type in {EventType.PRESENCE_UPDATE, EventType.PRESENCE_QUERY}:
         # PresenceEvent
-        required = ["user_id", "status", "last_seen"]
+        required = ["user_id", "status", "last_status_change"]
         for key in required:
             if key not in kwargs:
                 raise ValueError(f"PresenceEvent requires '{key}'")
@@ -163,12 +169,14 @@ def create_event(event_type: EventType, source: str, **kwargs) -> Event:
             source=source,
             user_id=kwargs["user_id"],
             status=kwargs["status"],
-            last_seen=kwargs["last_seen"],
+            last_status_change=kwargs["last_status_change"],
             metadata=kwargs.get("metadata")
         )
     elif event_type == EventType.NOTIFICATION:
         # NotificationEvent
-        required = ["recipient_id", "title", "message", "level"]
+        required = ["recipient_id", "sender_id", "reference_id",
+            "content_preview", "status", "notification_type", "error",
+            "read"]
         for key in required:
             if key not in kwargs:
                 raise ValueError(f"NotificationEvent requires '{key}'")
@@ -177,9 +185,13 @@ def create_event(event_type: EventType, source: str, **kwargs) -> Event:
             timestamp=timestamp,
             source=source,
             recipient_id=kwargs["recipient_id"],
-            title=kwargs["title"],
-            message=kwargs["message"],
-            level=kwargs["level"],
+            sender_id=kwargs["sender_id"],
+            reference_id=kwargs["reference_id"],
+            content_preview=kwargs["content_preview"],
+            status=kwargs["status"],
+            error=kwargs.get("error"),
+            read=kwargs.get("read"),
+            notification_type=kwargs["notification_type"],
             data=kwargs.get("data")
         )
     elif event_type in {EventType.SYSTEM_ERROR, EventType.SYSTEM_INFO}:
