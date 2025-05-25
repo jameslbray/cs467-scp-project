@@ -122,7 +122,7 @@ class SocketServer:
             self._handle_presence_update_from_rabbitmq
         )
         
-        # ADDED: Start consuming friend status responses
+        # Start consuming friend status responses
         await self.rabbitmq.consume(
             "presence_responses",
             self._handle_friend_statuses_response
@@ -533,6 +533,7 @@ class SocketServer:
 
     async def _handle_friend_statuses_response(self, message):
         """Handle friend statuses response from presence service."""
+        logger.info("=== RECEIVED FRIEND STATUSES RESPONSE MESSAGE ===")
         try:
             body = json.loads(message.body.decode())
             requesting_user_id = body.get("requesting_user_id")

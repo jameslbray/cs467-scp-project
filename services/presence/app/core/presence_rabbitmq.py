@@ -11,6 +11,7 @@ from services.shared.utils.retry import CircuitBreaker, with_retry
 
 logger = logging.getLogger(__name__)
 
+
 class PresenceRabbitMQClient:
     """RabbitMQ client for presence service."""
 
@@ -41,7 +42,7 @@ class PresenceRabbitMQClient:
                 max_delay=60.0,
                 circuit_breaker=self.circuit_breaker
             )
-            
+
             self._initialized = True
             logger.info("RabbitMQ client initialized successfully")
             return True
@@ -163,6 +164,7 @@ class PresenceRabbitMQClient:
                 "type": "presence:status:update",
                 "user_id": user_id,
                 "status": status,
+                "source": "presence_service", 
                 "last_status_change": last_status_change or datetime.now().timestamp(),
             })
             
@@ -194,6 +196,7 @@ class PresenceRabbitMQClient:
                 "type": "presence:status:query:response",
                 "user_id": user_id,
                 "status": status,
+                "source": "presence_service", 
                 "last_status_change": last_status_change or datetime.now().timestamp(),
             })
             
@@ -260,6 +263,7 @@ class PresenceRabbitMQClient:
                 "reference_id": str(connection_id),
                 "content_preview": f"{sender_name} sent you a friend request",
                 "timestamp": datetime.now().isoformat(),
+                "source": "presence_service",
             })
             
             await self.rabbitmq.publish_message(
@@ -314,4 +318,4 @@ class PresenceRabbitMQClient:
 
     async def is_connected(self) -> bool:
         """Check if connected to RabbitMQ."""
-        return self._initialized and await self.rabbitmq.is_connected()
+        return self._initialized and self.rabbitmq.is_connected()

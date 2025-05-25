@@ -21,7 +21,6 @@ class StatusType(str, Enum):
     OFFLINE = "offline"
     AWAY = "away"
     BUSY = "busy"
-    INVISIBLE = "invisible"
 
 
 class UserStatus:
@@ -174,6 +173,11 @@ class PresenceManager:
 
     async def _handle_status_update(self, data: Dict[str, Any], message: Any) -> None:
         """Handle status update messages."""
+        # Skip if this message came from ourselves
+        if data.get("source") == "presence_service":
+            await message.ack()
+            return
+        
         try:
             user_id = data.get("user_id")
             status = data.get("status")
@@ -213,6 +217,10 @@ class PresenceManager:
 
     async def _handle_status_query(self, data: Dict[str, Any], message: Any) -> None:
         """Handle status query messages."""
+        # Skip if this message came from ourselves
+        if data.get("source") == "presence_service":
+            await message.ack()
+            return
         try:
             user_id = data.get("user_id") or data.get("target_user_id")
             correlation_id = message.correlation_id
@@ -237,8 +245,16 @@ class PresenceManager:
             logger.error(f"Error handling status query: {e}")
             await message.nack(requeue=False)
 
-    async def _handle_friend_statuses_request(self, data: Dict[str, Any], message: Any) -> None:
+    async def _handle_friend_statuses_request(
+        self,
+        data: Dict[str, Any],
+        message: Any
+    ) -> None:
         """Handle friend statuses request messages."""
+        # Skip if this message came from ourselves
+        if data.get("source") == "presence_service":
+            await message.ack()
+            return
         try:
             user_id = data.get("user_id")
             correlation_id = message.correlation_id
@@ -289,16 +305,14 @@ class PresenceManager:
                         "last_status_change": datetime.now().timestamp()
                     }
             
-            # Publish friend statuses response
             await self.rabbitmq.publish_friend_statuses_response(
-                user_id,
+                user_id,  # requesting_user_id
                 statuses,
                 correlation_id=correlation_id
             )
             
             logger.info(f"Published friend statuses response for user {user_id}")
             await message.ack()
-            
         except Exception as e:
             logger.error(f"Error handling friend statuses request: {e}")
             await message.nack(requeue=False)
@@ -316,7 +330,6 @@ class PresenceManager:
         """
         try:
             status_type = status
-            current_time = last_status_change or datetime.now().timestamp()
 
             # Update status in database and notify others
             await with_retry(
@@ -487,7 +500,7 @@ class PresenceManager:
                     )
                 return None
         except ValueError as e:
-            logger.error(f"Invalid UUID format for user_id: {user_id}")
+            logger.error(f"Invalid UUID format for user_id: {user_id} error: {e}")
             return None
         except Exception as e:
             logger.error(f"Failed to get user status: {e}")
@@ -511,11 +524,12 @@ class PresenceManager:
             "last_status_change": user_status.last_status_change,
         }
 
-    async def set_user_status(self, user_id: str, status: str, last_status_change: Optional[float] = None) -> bool:
+    async def set_user_status(self, 
+                              user_id: str, 
+                              status: str) -> bool:
         """Set user's status."""
         try:
             status_type = StatusType(status)
-            current_time = last_status_change or datetime.now().timestamp()
 
             # Update status in database and notify others with circuit breaker
             await with_retry(

@@ -203,7 +203,7 @@ const UserStatus: React.FC = () => {
 					<div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
 						<h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Status Options</h3>
 					</div>
-					{['online', 'away', 'busy', 'invisible', 'offline'].map((statusOption) => (
+					{['online', 'away', 'busy', 'offline'].map((statusOption) => (
 						<button
 							key={statusOption}
 							className={`w-full text-left px-4 py-2 text-sm ${status === statusOption
