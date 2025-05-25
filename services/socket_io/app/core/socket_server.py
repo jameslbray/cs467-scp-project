@@ -5,7 +5,6 @@ from typing import Any, Dict, Never, Optional
 
 import socketio
 
-from services.presence.app.core.presence_manager import PresenceManager
 from services.rabbitmq.core.client import RabbitMQClient
 from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
@@ -40,17 +39,12 @@ class SocketServer:
             "rabbitmq", failure_threshold=3, reset_timeout=30
         )
 
-        # Initialize presence manager
-        self.presence_manager = PresenceManager(
-            {"rabbitmq": {"url": rabbitmq_settings.RABBITMQ_URL}}
-        )
-
         # Register event handlers
         self.sio.on("connect", self._on_connect)
         self.sio.on("disconnect", self._on_disconnect)
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
-        self.sio.on("presence_update", self._on_presence_update)
+        self.sio.on("presence", self._on_presence_update)
         self.sio.on("get_connections", self._on_get_connections)
 
         # TODO: implement chat typing and chat read receipts functionality
@@ -73,14 +67,6 @@ class SocketServer:
                 initial_delay=5.0,
                 max_delay=60.0,
                 circuit_breaker=self.rabbitmq_cb,
-            )
-
-            # Initialize presence manager
-            await with_retry(
-                self.presence_manager.initialize,
-                max_attempts=3,
-                initial_delay=5.0,
-                max_delay=30.0,
             )
 
             logger.info("Socket.IO server initialized successfully")
@@ -111,7 +97,6 @@ class SocketServer:
     async def shutdown(self) -> None:
         """Shutdown the Socket.IO server and its dependencies."""
         logger.info("Socket.IO server shutting down")
-        await self.presence_manager.shutdown()
         await self.rabbitmq.close()
 
     async def _on_connect(
@@ -158,25 +143,6 @@ class SocketServer:
         except Exception as e:
             logger.error(f"Error during token validation: {e}")
             await self.sio.disconnect(sid)
-
-    async def _publish_presence_update(
-        self, user_id: str, status: str
-    ) -> Never:
-        """Publish presence update to RabbitMQ."""
-        await self.rabbitmq.publish_message(
-            exchange="user",
-            routing_key=f"status.{user_id}",
-            message=json.dumps(
-                {
-                    "type": "status_update",
-                    "user_id": user_id,
-                    "status": status,
-                    "last_changed": datetime.now().timestamp(),
-                }
-            ),
-        )
-        # Ensures Never return type
-        raise Exception("Presence update complete")
 
     async def _on_error(self, sid: str, error: Exception) -> None:
         """Handle socket error."""

@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
+from fastapi import Request, status, Depends
 
 from fastapi import (
     APIRouter,
@@ -21,6 +22,8 @@ from starlette.status import (
 
 from ..core.config import settings
 from ..core.presence_manager import PresenceManager
+if TYPE_CHECKING:
+    from ..core.presence_rabbitmq import PresenceRabbitMQClient
 
 # Set up OAuth2 with password flow (token-based authentication)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -117,21 +120,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+def get_rabbitmq_client(request: Request):
+    return request.app.state.rabbitmq_client
 
 # Dependency to get the PresenceManager instance
-
-
-def get_presence_manager():
-    """Get the global PresenceManager instance from the app state"""
-    from ..main import presence_manager
-
-    if presence_manager is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Presence service not initialized"
-        )
-    return presence_manager
-
+def get_presence_manager(request: Request) -> PresenceManager:
+    # Initialize with config and the RabbitMQ client
+    return request.app.state.presence_manager
 
 # Routes
 @router.get("/presence/health")
@@ -187,6 +182,7 @@ async def update_user_status(
     user_id: str,
     status_update: StatusUpdate,
     current_user: str = Depends(get_current_user),
+    rabbitmq: "PresenceRabbitMQClient" = Depends(get_rabbitmq_client),
     presence_manager: PresenceManager = Depends(get_presence_manager),
 ):
     """
