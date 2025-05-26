@@ -93,7 +93,7 @@ async def health_check():
 )
 async def get_user_notifications(
     user_id: str,
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
@@ -124,7 +124,7 @@ async def get_user_notifications(
 async def create_user_notification(
     user_id: str,
     notification_update: NotificationRequest,
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
@@ -144,6 +144,12 @@ async def create_user_notification(
     #         detail="You can only update your own status"
     #     )
 
+    if user_id != current_user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only update your own status"
+        )
+
     logger.info(f"Creating notification for user: {user_id}")
 
     try:
@@ -159,6 +165,8 @@ async def create_user_notification(
                 detail="Notification creation failed",
             )
         return SuccessResponse(message="success")
+
+        return {"message" : "success"}
 
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
@@ -178,10 +186,10 @@ async def create_user_notification(
         404: {"model": ErrorResponse, "description": "User not found"},
     },
 )
-async def create_user_notification(
+async def read_user_notification(
     user_id: str,
     notification_id: str = Query(..., description="ID of the notification to mark as read"),
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
@@ -202,6 +210,12 @@ async def create_user_notification(
     #     )
 
 
+    if user_id != current_user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only update your own status"
+        )
+
     logger.info(f"Updating notification {notification_id} for user: {user_id}")
 
     try:
@@ -215,6 +229,9 @@ async def create_user_notification(
             )
 
         return SuccessResponse(message="success")
+
+
+        return "success"
 
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
@@ -236,7 +253,7 @@ async def create_user_notification(
 )
 async def update_all_user_notifications(
     user_id: str,
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
@@ -256,6 +273,12 @@ async def update_all_user_notifications(
     #     )
 
 
+    if user_id != current_user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only update your own status"
+        )
+
     logger.info(f"Updating all notifications for user: {user_id}")
 
     try:
@@ -263,6 +286,9 @@ async def update_all_user_notifications(
         success = await notification_manager.mark_all_notifications_as_read(user_id)
 
         return SuccessResponse(message="success")
+
+
+        return "success"
 
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
@@ -283,7 +309,7 @@ async def update_all_user_notifications(
 )
 async def delete_read_notifications(
     user_id: str,
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
@@ -304,6 +330,12 @@ async def delete_read_notifications(
     #     )
 
 
+    if user_id != current_user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only update your own status"
+        )
+
     logger.info(f"Removing stale notification for user: {user_id}")
 
     try:
@@ -311,6 +343,9 @@ async def delete_read_notifications(
         deleted_count = await notification_manager.delete_read_notifications(user_id)
 
         return SuccessResponse(message="Successfully deleted {deleted_count} notifications")
+
+
+        return f"Successfully deleted {deleted_count} notifications"
 
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
@@ -552,10 +587,6 @@ async def api_info():
             "PUT /api/notify/{user_id}": "Mark a notification as read",
             "PUT /api/notify/all/{user_id}": "Mark all notifications as read",
             "DELETE /api/notify/{user_id}": "Delete read notifications",
-            # "GET /api/notify/friends/{user_id}": "Get status of all friends",
-            # "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
-            # "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
-            # "WS /api/ws/notify/subscribe": "WebSocket for real-time notifications updates",
-            # "POST /api/notify/subscribe": "HTTP fallback for notifications subscriptions",
+
         },
     }

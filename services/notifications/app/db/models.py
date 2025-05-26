@@ -44,6 +44,7 @@ class NotificationRequest(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat(), description="Time the notification was sent")
     status: DeliveryType = Field(default=DeliveryType.UNDELIVERED, description="Delivery status")
     error: Optional[str] = Field(default=None, description="Error message if any")
+    notification_type: NotificationType = Field(default=NotificationType.MESSAGE, description="Type of notification")
     
     # Convert to DB model
     def to_db_model(self) -> 'NotificationDB':

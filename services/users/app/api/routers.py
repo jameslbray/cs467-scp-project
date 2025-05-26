@@ -206,7 +206,7 @@ async def login_for_access_token(
                 "type": "status_update",
                 "user_id": str(user.id),
                 "status": "online",
-                "last_changed": datetime.now().timestamp(),
+                "last_status_change": datetime.now().timestamp(),
             }
         ),
     )
@@ -282,6 +282,30 @@ async def search_users(
     # Return empty list if no users found
     return users
 
+@router.get("/users/", response_model=list[User])
+async def search_users_id(
+    user_ids: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(security.get_current_user),
+):
+    """Search for users by user_id."""
+    logger.info(f"Searching for user_ids: '{user_ids}'")
+    
+    # Split the comma-separated string into a list
+    id_list = [id.strip() for id in user_ids.split(',') if id.strip()]
+    
+    if not id_list:
+        return []
+    
+    users = (
+        db.query(UserModel)
+        .filter(UserModel.id.in_(id_list))
+        .all()
+    )
+    
+    return users
+
+
 @router.post("/logout")
 async def logout(
     request: Request,
@@ -323,7 +347,7 @@ async def logout(
                 "type": "status_update",
                 "user_id": str(current_user.id),
                 "status": "offline",
-                "last_changed": datetime.now().timestamp(),
+                "last_status_change": datetime.now().timestamp(),
             }
         ),
     )

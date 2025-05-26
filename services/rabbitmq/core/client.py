@@ -147,16 +147,23 @@ class RabbitMQClient:
         # Publish the message
         if exchange:
             # Get the exchange by name or declare it if it doesn't exist
-            exchange_obj = await self.channel.get_exchange(
-                exchange, ensure=False
-            )
+            try:
+                exchange_obj = await self.channel.get_exchange(
+                    exchange, ensure=False
+                )
+            except Exception:
+                # Exchange doesn't exist, this shouldn't happen but let's handle it
+                logger.warning(f"Exchange {exchange} not found, using default exchange")
+                exchange_obj = self.channel.default_exchange
             # Publish to the named exchange
             await exchange_obj.publish(message_body, routing_key=routing_key)
+            logger.debug(f"Published message to exchange {exchange} with routing key {routing_key}")
         else:
-            # Use default exchange if no exchange name is ovided
+            # Use default exchange if no exchange name is provided
             await self.channel.default_exchange.publish(
                 message_body, routing_key=routing_key
             )
+            logger.debug(f"Published message to default exchange with routing key {routing_key}")
 
     async def declare_queue(self, queue_name: str, durable: bool = True):
         """Declare a queue"""
@@ -198,14 +205,19 @@ class RabbitMQClient:
         if not self.is_connected():
             raise Exception("Not connected to RabbitMQ")
 
-        # Get the queue
-        queue = await self.channel.get_queue(queue_name)
+        # Get the queue - declare it if it doesn't exist
+        try:
+            queue = await self.channel.get_queue(queue_name, ensure=False)
+        except Exception:
+            # Queue doesn't exist, declare it
+            queue = await self.channel.declare_queue(name=queue_name, durable=True)
 
         # Get the exchange
-        exchange = await self.channel.get_exchange(exchange_name)
+        exchange = await self.channel.get_exchange(exchange_name, ensure=False)
 
         # Bind the queue to the exchange with the routing key
         await queue.bind(exchange=exchange, routing_key=routing_key)
+        logger.info(f"Bound queue {queue_name} to exchange {exchange_name} with routing key {routing_key}")
 
     async def consume(self, queue_name: str, callback):
         """Start consuming messages from a queue"""

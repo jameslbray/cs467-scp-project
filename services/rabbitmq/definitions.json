@@ -5,7 +5,9 @@
       "name": "guest",
       "password_hash": "guest",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
-      "tags": ["administrator"]
+      "tags": [
+        "administrator"
+      ]
     }
   ],
   "vhosts": [
@@ -44,7 +46,7 @@
     {
       "name": "notifications",
       "vhost": "/",
-      "type": "direct",
+      "type": "topic",
       "durable": true,
       "auto_delete": false,
       "internal": false,
@@ -58,11 +60,20 @@
       "auto_delete": false,
       "internal": false,
       "arguments": {}
+    },
+    {
+      "name": "connections",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
     }
   ],
   "queues": [
     {
-      "name": "presence_updates",
+      "name": "presence",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
@@ -88,13 +99,20 @@
       "durable": true,
       "auto_delete": false,
       "arguments": {}
+    },
+    {
+      "name": "connections",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
     }
   ],
   "bindings": [
     {
       "source": "presence",
       "vhost": "/",
-      "destination": "presence_updates",
+      "destination": "presence",
       "destination_type": "queue",
       "routing_key": "updates",
       "arguments": {}
@@ -119,6 +137,14 @@
       "source": "users",
       "vhost": "/",
       "destination": "user_events",
+      "destination_type": "queue",
+      "routing_key": "events",
+      "arguments": {}
+    },
+    {
+      "source": "connections",
+      "vhost": "/",
+      "destination": "connections",
       "destination_type": "queue",
       "routing_key": "events",
       "arguments": {}

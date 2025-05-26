@@ -62,9 +62,9 @@ class Connection(Base):
     )
 
     # # Relationships
-    user = relationship(
-        "User", foreign_keys=[user_id], back_populates="connections"
-    )
-    friend = relationship(
-        "User", foreign_keys=[friend_id], back_populates="friends"
-    )
+    # user = relationship(
+    #     "User", foreign_keys=[user_id], back_populates="connections"
+    # )
+    # friend = relationship(
+    #     "User", foreign_keys=[friend_id], back_populates="friends"
+    # )

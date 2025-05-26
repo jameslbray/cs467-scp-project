@@ -10,8 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from ..app.core.presence_manager import PresenceManager
+from .core.presence_rabbitmq import PresenceRabbitMQClient
 from ..app.core.config import settings
 from .api.routers import router
+
 
 # Load environment variables
 load_dotenv()
@@ -20,37 +22,36 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create presence manager
-presence_manager = PresenceManager(
-    {
-        "rabbitmq": {
-            "url": os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-        },
-        "postgres": {
-            "user": os.getenv("PRESENCE_POSTGRES_USER", "postgres"),
-            "password": os.getenv("PRESENCE_POSTGRES_PASSWORD", "postgres"),
-            "host": os.getenv("PRESENCE_POSTGRES_HOST", "postgres_db"),
-            "database": os.getenv("PRESENCE_POSTGRES_DB", "sycolibre"),
-            "port": int(os.getenv("PRESENCE_POSTGRES_PORT", "5432")),
-        },
-    }
-)
-
     
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Starting Notification service...")
-
+    app.state.rabbitmq_client = PresenceRabbitMQClient()
     # Initialize notification manager
-    await presence_manager.initialize()
+    app.state.presence_manager = PresenceManager(
+        {
+            "postgres": {
+                "user": settings.POSTGRES_USER,
+                "password": settings.POSTGRES_PASSWORD,
+                "host": settings.POSTGRES_HOST,
+                "port": settings.POSTGRES_PORT,
+                "database": settings.POSTGRES_DB
+            },
+        },
+        rabbitmq_client=app.state.rabbitmq_client
+    )
+    await app.state.presence_manager.initialize()   
+    await app.state.rabbitmq_client.initialize()
+    
     logger.info("Presence service started successfully")
 
     yield  # This is where FastAPI serves requests
 
     # Shutdown logic
     logger.info("Shutting down Presence Service")
-    await presence_manager.shutdown()
+    await app.state.presence_manager.shutdown()
+    await app.state.rabbitmq_client.shutdown()
 
     logger.info("Presence service shut down successfully")
 
