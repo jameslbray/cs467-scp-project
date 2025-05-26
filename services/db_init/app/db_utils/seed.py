@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -26,6 +27,9 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
     try:
+        # Use hardcoded UUIDs for test users
+        TEST_USER1_ID = "11111111-1111-1111-1111-111111111111"
+        TEST_USER2_ID = "22222222-2222-2222-2222-222222222222"
         test_user = db.query(User).filter(User.username == "test_user").first()
         test_user2 = (
             db.query(User).filter(User.username == "test_user2").first()
@@ -33,6 +37,7 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
         if not test_user:
             logger.info("Creating test user 1...")
             test_user = User(
+                id=TEST_USER1_ID,
                 username="test_user",
                 email="test@example.com",
                 hashed_password=ph.hash("password"),
@@ -51,6 +56,7 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
         if not test_user2:
             logger.info("Creating test user 2...")
             test_user2 = User(
+                id=TEST_USER2_ID,
                 username="test_user2",
                 email="test2@example.com",
                 hashed_password=ph.hash("password"),
@@ -101,6 +107,13 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
                 )
                 db.add(test_connection2)
                 db.commit()
+            # Write test user IDs and usernames to a shared file for MongoDB seeding
+            test_users = [
+                {"id": TEST_USER1_ID, "username": "test_user"},
+                {"id": TEST_USER2_ID, "username": "test_user2"},
+            ]
+            with open("/tmp/test_users.json", "w") as f:
+                json.dump(test_users, f)
         test_token = "test-reset-token-123"
         expiry = datetime.now(UTC) + timedelta(hours=1)
         existing_reset = (

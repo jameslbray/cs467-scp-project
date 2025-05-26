@@ -115,8 +115,8 @@ export const authApi = {
 export const userApi = {
 	getProfile: async () => {
 		const response = await fetch(`${API_BASE_URL}/profile`, {
-			method: 'GET',
 			headers: getAuthHeaders(),
+			method: 'GET',
 		});
 
 		if (!response.ok) {

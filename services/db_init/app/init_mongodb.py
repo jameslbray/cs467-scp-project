@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -78,12 +79,22 @@ async def init_mongodb():
             message_count = await db.messages.count_documents({})
             if message_count == 0:
                 now = datetime.now(timezone.utc).isoformat()
+                test_users = [
+                        {
+                            "id": "11111111-1111-1111-1111-111111111111",
+                            "username": "test_user",
+                        },
+                        {
+                            "id": "22222222-2222-2222-2222-222222222222",
+                            "username": "test_user2",
+                        },
+                    ]
                 test_messages = [
                     {
                         "_id": str(uuid.uuid4()),
                         "room_id": room_id,
-                        "sender_id": str(uuid.uuid4()),  # Example user ID
-                        "content": "Hello, this is a test message from the database initialization!",
+                        "sender_id": test_users[0]["id"],
+                        "content": f"Hello from {test_users[0]['username']}! Welcome to the chat system!",
                         "created_at": now,
                         "updated_at": now,
                         "is_edited": False,
@@ -91,8 +102,8 @@ async def init_mongodb():
                     {
                         "_id": str(uuid.uuid4()),
                         "room_id": room_id,
-                        "sender_id": str(uuid.uuid4()),
-                        "content": "Welcome to the chat system!",
+                        "sender_id": test_users[1]["id"],
+                        "content": f"Welcome from {test_users[1]['username']}! I hope you're having a great day.",
                         "created_at": now,
                         "updated_at": now,
                         "is_edited": False,

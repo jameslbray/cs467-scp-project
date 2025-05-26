@@ -32,6 +32,7 @@ class User(Base):
         server_default=text("uuid_generate_v4()"),
     )
     username = Column(String(50), nullable=False, unique=True, index=True)
+    display_name = Column(String(100), nullable=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     hashed_password = Column(String(255), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())

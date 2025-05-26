@@ -42,6 +42,8 @@ class User(BaseModel):
 
     username: str
     email: EmailStr
+    display_name: Optional[str] = None
+    profile_picture_url: Optional[str] = None
 
 
 class UserCreate(User):
@@ -56,7 +58,6 @@ class UserSchema(User):
     id: UUID
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    profile_picture_url: Optional[str] = None
     last_login: Optional[datetime] = None
     status: Optional[UserStatusSchema] = None
     # Note: We don't include connections/friends here to avoid circular references

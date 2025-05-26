@@ -6,6 +6,7 @@ from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -37,6 +38,10 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 settings = get_settings()
 logger.info("Application settings loaded")
 
+# Ensure static directory exists
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static", "profile_pics")
+os.makedirs(STATIC_DIR, exist_ok=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,6 +49,15 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up User Service")
     await app.state.rabbitmq_client.connect()
     logger.info("RabbitMQ connection established")
+
+    # Mount static files for profile pictures
+    app.mount(
+        "/static",
+        StaticFiles(
+            directory=os.path.join(os.path.dirname(__file__), "static")
+        ),
+        name="static",
+    )
 
     yield  # This is where FastAPI serves requests
 

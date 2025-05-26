@@ -3,18 +3,23 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import sys
 from datetime import UTC, datetime, timedelta
+from typing import Optional
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
+    File,
     HTTPException,
     Request,
+    UploadFile,
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -50,6 +55,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["users"])
 settings = get_settings()
+
+
+class UserUpdate(BaseModel):
+    display_name: Optional[str] = None
+    profile_picture_url: Optional[str] = None
 
 
 @router.get("/")
@@ -112,6 +122,8 @@ async def register_user(
         email=user.email,
         username=user.username,
         hashed_password=hashed_password,
+        display_name=user.display_name,
+        profile_picture_url=user.profile_picture_url,
     )
     db.add(db_user)
     db.commit()
@@ -260,6 +272,7 @@ async def read_users_me(
 ):
     return current_user
 
+
 @router.get("/users/search", response_model=list[User])
 async def search_users(
     username: str,
@@ -282,6 +295,7 @@ async def search_users(
     # Return empty list if no users found
     return users
 
+
 @router.get("/users/", response_model=list[User])
 async def search_users_id(
     user_ids: str,
@@ -290,19 +304,15 @@ async def search_users_id(
 ):
     """Search for users by user_id."""
     logger.info(f"Searching for user_ids: '{user_ids}'")
-    
+
     # Split the comma-separated string into a list
-    id_list = [id.strip() for id in user_ids.split(',') if id.strip()]
-    
+    id_list = [id.strip() for id in user_ids.split(",") if id.strip()]
+
     if not id_list:
         return []
-    
-    users = (
-        db.query(UserModel)
-        .filter(UserModel.id.in_(id_list))
-        .all()
-    )
-    
+
+    users = db.query(UserModel).filter(UserModel.id.in_(id_list)).all()
+
     return users
 
 
@@ -414,6 +424,56 @@ async def password_reset_confirm(
     db.delete(reset_token)  # Invalidate the token
     db.commit()
     return {"message": "Password has been reset successfully."}
+
+
+@router.patch("/users/me", response_model=User)
+async def update_user_me(
+    update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(security.get_current_user),
+):
+    updated = False
+    if update.display_name is not None:
+        current_user.display_name = update.display_name
+        updated = True
+    if update.profile_picture_url is not None:
+        current_user.profile_picture_url = update.profile_picture_url
+        updated = True
+    if updated:
+        db.add(current_user)
+        db.commit()
+        db.refresh(current_user)
+    return current_user
+
+
+@router.post("/users/me/profile-picture")
+async def upload_profile_picture(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(security.get_current_user),
+):
+    # Only allow image uploads
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+
+    # Save file to static/profile_pics with a unique name
+    ext = os.path.splitext(file.filename)[1]
+    filename = f"{current_user.id}{ext}"
+    static_dir = os.path.join(
+        os.path.dirname(__file__), "..", "static", "profile_pics"
+    )
+    os.makedirs(static_dir, exist_ok=True)
+    file_path = os.path.join(static_dir, filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Update user's profile_picture_url
+    url_path = f"/static/profile_pics/{filename}"
+    current_user.profile_picture_url = url_path
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return {"profile_picture_url": url_path}
 
 
 __all__ = ["router"]

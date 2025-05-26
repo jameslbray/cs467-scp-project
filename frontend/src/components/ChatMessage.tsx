@@ -10,7 +10,8 @@ interface ChatMessageProps {
 	author?: {
 		id: string;
 		username: string;
-		profilePicture?: string;
+		display_name?: string;
+		profile_picture_url?: string;
 	};
 }
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isCurrentUser = false, author }) => {
@@ -19,6 +20,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isCurrentUser = fals
 				addSuffix: true,
 		  })
 		: 'Invalid date';
+	const displayName = author?.display_name || author?.username;
+	const profilePicture = author?.profile_picture_url;
 	return (
 		<div className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}>
 			<div
@@ -30,20 +33,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isCurrentUser = fals
 				<div className='flex items-center mb-1'>
 					{!isCurrentUser && (
 						<div className='flex items-center'>
-							{author?.profilePicture ? (
-								<img
-									src={author.profilePicture}
-									alt={author.username}
-									className='w-8 h-8 rounded-full mr-2'
-								/>
+							{profilePicture ? (
+								<img src={profilePicture} alt={displayName} className='w-8 h-8 rounded-full mr-2' />
 							) : (
 								<div className='w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-white mr-2'>
-									{author?.username.charAt(0).toUpperCase()}
+									{displayName?.charAt(0).toUpperCase()}
 								</div>
 							)}
-							<span className='font-medium text-gray-900 dark:text-gray-100'>
-								{author?.username}
-							</span>
+							<span className='font-medium text-gray-900 dark:text-gray-100'>{displayName}</span>
 						</div>
 					)}
 					<span className='text-xs text-gray-500 dark:text-gray-400 ml-auto'>{timeAgo}</span>
