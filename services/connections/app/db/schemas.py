@@ -77,6 +77,7 @@ class ErrorResponse(BaseModel):
     detail: str = Field(..., description="Error message")
     status_code: int = Field(..., description="HTTP status code")
 
+
 class ConnectionUpdate(BaseModel):
     """Model for updating a connection."""
     id: Optional[uuid.UUID] = Field(None, description="ID of the connection to update")

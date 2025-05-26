@@ -1,6 +1,10 @@
 export enum ServerEvents {
-  REQUEST_STATUSES = 'presence:request_friend_statuses',
-  FRIEND_STATUSES = 'presence:friend_statuses',
-  FRIEND_STATUS_CHANGED = 'presence:friend_status_changed',
-  UPDATE_STATUS = 'presence:update_status'
+  PRESENCE_UPDATE = 'presence',
+  FRIEND_STATUSES = 'presence:friend:statuses',
+  FRIEND_STATUSES_SUCCESS = 'presence:friend:statuses:success',
+  FRIEND_STATUSES_ERROR = 'presence:friend:statuses:error',
+  FRIEND_STATUS_CHANGED = 'presence:friend:status:changed',
+  UPDATE_STATUS = 'presence:update_status',
+  NEW_NOTIFICATION = "notification:new",
+  NOTIFICATIONS_UPDATE = "notifications:update"
 } 

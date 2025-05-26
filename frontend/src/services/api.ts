@@ -140,4 +140,21 @@ export const userApi = {
 
 		return response.json();
 	},
+
+	getUsersByIds: async (ids: string[]) => {
+    if (!ids.length) return [];
+
+    // Send as comma-separated values
+    const response = await fetch(`${API_BASE_URL}/users/?user_ids=${ids.join(',')}`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+    });
+
+		if (!response.ok) {
+			const errorData = await response.json();
+			throw new Error(errorData.message || 'Failed to fetch users');
+		}
+
+		return response.json();
+	}
 };

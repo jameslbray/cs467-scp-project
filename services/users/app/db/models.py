@@ -49,21 +49,21 @@ class User(Base):
     status = relationship(
         "UserStatus",
         back_populates="user",
-        uselist=False,
-        cascade="all, delete-orphan",
+        uselist=False  # This ensures it's a one-to-one relationship
     )
 
     connections = relationship(
-        "Connection",
+        "Connection", 
         foreign_keys="Connection.user_id",
-        back_populates="user",
-        cascade="all, delete-orphan",
+        primaryjoin="User.id == Connection.user_id",
+        viewonly=True  # This makes it read-only and avoids the back_populates requirement
     )
+    
     friends = relationship(
         "Connection",
-        foreign_keys="Connection.friend_id",
-        back_populates="friend",
-        cascade="all, delete-orphan",
+        foreign_keys="Connection.friend_id", 
+        primaryjoin="User.id == Connection.friend_id",
+        viewonly=True  # This makes it read-only and avoids the back_populates requirement
     )
 
     password_reset_tokens = relationship(
@@ -74,13 +74,14 @@ class User(Base):
 
 
 class UserStatus(Base):
-    __tablename__ = "user_status"
+    __tablename__ = "presence"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('online', 'away', 'offline')",
+            "status IN ('online', 'away', 'offline', 'busy', 'invisible')",
             name="ck_user_status_enum",
         ),
         {
+            "schema": "presence",
             "comment": (
                 "Stores the current online status of users "
                 "and when it was last updated"

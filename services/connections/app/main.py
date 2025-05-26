@@ -12,8 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.routers import router
 from .core.config import get_settings
 from .core.connection_manager import ConnectionManager
-
-# from .core.rabbitmq import NotificationRabbitMQClient
+from .core.connections_rabbitmq import ConnectionsRabbitMQClient as RabbitMQClient
 
 settings = get_settings()
 
@@ -34,7 +33,7 @@ logger = logging.getLogger(__name__)
 logger.info("Application settings loaded")
 
 # Initialize RabbitMQ client
-# rabbitmq_client = NotificationRabbitMQClient(settings=settings)
+rabbitmq_client = RabbitMQClient()
 
 
 # Create presence manager
@@ -48,7 +47,8 @@ connection_manager = ConnectionManager(
             "port": settings.POSTGRES_PORT,
             "database": settings.POSTGRES_DB,
         },
-    }
+    },
+    rabbitmq_client=rabbitmq_client
 )
 
 # Define the lifespan handler
@@ -61,8 +61,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize notification manager
     await connection_manager.initialize()
-    # await rabbitmq_client.connect()
-    # logger.info("RabbitMQ connection established")
+    await rabbitmq_client.initialize()
+    logger.info("Connections RabbitMQ connection established")
     logger.info("Connection service started successfully")
 
     yield  # This is where FastAPI serves requests
@@ -72,8 +72,8 @@ async def lifespan(app: FastAPI):
     await connection_manager.shutdown()
 
     logger.info("Connection service shut down successfully")
-    # await rabbitmq_client.close()
-    # logger.info("RabbitMQ connection closed")
+    await rabbitmq_client.shutdown()
+    logger.info("Connections RabbitMQ connection closed")
 
 
 # Create FastAPI app
@@ -84,11 +84,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# app.add_middleware(SlowAPIMiddleware)
 
 # Include routers
 app.include_router(router, prefix=settings.API_PREFIX)
-# app.state.limiter = limiter
 
 # Configure CORS
 app.add_middleware(
@@ -98,18 +96,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# if __name__ == "__main__":
-#     import uvicorn
-
-#     # Load environment variables from .env file
-#     load_dotenv()
-
-#     # Run the application with Uvicorn
-#     uvicorn.run(
-#         app,
-#         host="localhost",
-#         port=8025,
-#         log_level=settings.LOG_LEVEL.lower()
-#     )

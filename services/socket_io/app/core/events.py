@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional, TypedDict, Union
+from typing import Any, Dict, Optional, TypedDict, Union, Literal
 
 from socketio import AsyncServer
 
@@ -26,11 +26,14 @@ class EventType(str, Enum):
     CHAT_READ = "chat:read"
 
     # Presence events
-    PRESENCE_UPDATE = "presence:update"
-    PRESENCE_QUERY = "presence:query"
+    PRESENCE_STATUS_UPDATE = "presence:status:update"
+    PRESENCE_STATUS_QUERY = "presence:status:query"
+    PRESENCE_STATUS_CHANGED = "presence:status:changed"
+    PRESENCE_FRIEND_STATUSES = "presence:friend:statuses"
+    PRESENCE_FRIEND_STATUS_CHANGED = "presence:friend:status:changed"
 
     # Notification events
-    NOTIFICATION = "notification"
+    NOTIFICATIONS = "notifications"
 
     # System events
     SYSTEM_ERROR = "system:error"
@@ -71,17 +74,20 @@ class PresenceEvent(BaseEvent):
     """Presence-related event structure."""
     user_id: str
     status: UserStatus
-    last_seen: float
+    last_status_change: float
     metadata: Optional[Dict[str, Any]]
 
 
 class NotificationEvent(BaseEvent):
     """Notification event structure."""
     recipient_id: str
-    title: str
-    message: str
-    level: str  # info, warning, error, success
-    data: Optional[Dict[str, Any]]
+    sender_id: str
+    reference_id: str
+    content_preview: str
+    status: Literal["delivered", "undelivered", "error"]
+    error: Optional[str]
+    read: Optional[bool]
+    notification_type: Literal["message", "friend_request", "status_update"]
 
 
 class SystemEvent(BaseEvent):
@@ -215,3 +221,15 @@ class AuthEvents:
                     message=str(e)
                 )
                 await self.sio.emit('auth:logout:error', error_event, room=sid)
+
+
+class PresenceEvents:
+    """Handles presence-related Socket.IO events."""
+
+    def __init__(self, sio: AsyncServer, rabbitmq: RabbitMQClient):
+        self.sio = sio
+        self.rabbitmq = rabbitmq
+        self.setup_handlers()
+
+    def setup_handlers(self):
+        pass

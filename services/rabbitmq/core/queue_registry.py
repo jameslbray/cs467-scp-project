@@ -25,8 +25,8 @@ class QueueRegistry:
     # Define all queues here
     QUEUES = {
         # Presence Service Queues
-        "presence_updates": QueueConfig(
-            name="presence_updates",
+        "presence": QueueConfig(
+            name="presence",
             durable=True,
             exchange="presence",
             routing_key="updates"
@@ -55,7 +55,12 @@ class QueueRegistry:
             exchange="users",
             routing_key="events"
         ),
-        
+        "connections": QueueConfig(
+        name="connections",
+        durable=True,
+        exchange="connections",
+        routing_key="events"
+        ),
     }
 
     @classmethod
