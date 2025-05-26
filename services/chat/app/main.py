@@ -15,6 +15,7 @@ from .core.rabbitmq import ChatRabbitMQClient
 from .core.socket_connector import SocketManager
 from .db.chat_repository import ChatRepository
 from .db.mongo import close_mongo_connection, get_db, init_mongo
+from services.chat.app.schemas.room import RoomCreate
 
 settings = get_settings()
 # Configure logging
@@ -227,3 +228,19 @@ async def get_room_messages(
     messages = await repo.get_messages(room_id, skip, limit)
 
     return messages
+
+
+@app.post("/rooms")
+async def create_room(
+    room: dict,  # Accept raw dict to allow extra fields
+    user: User = Depends(get_current_user),
+):
+    """Create a new chat room with selected participants."""
+    # Ensure the creator is included in the participants
+    participant_ids = set(room.get("participant_ids", []))
+    participant_ids.add(str(user.id))
+    room["participant_ids"] = list(participant_ids)
+    room["created_by"] = str(user.id)
+    room_obj = RoomCreate(**room)
+    created_room = await repo.create(room_obj)
+    return created_room

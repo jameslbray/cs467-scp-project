@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
+from argon2 import PasswordHasher
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -12,6 +13,12 @@ from services.db_init.app.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+ph = PasswordHasher(
+    time_cost=3,
+    memory_cost=65536,
+    parallelism=4,
+)
 
 
 def seed_initial_data_if_not_exists(engine: Engine) -> bool:
@@ -28,7 +35,7 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
             test_user = User(
                 username="test_user",
                 email="test@example.com",
-                hashed_password="$argon2id$v=19$m=65536,t=3,p=4$GUMIQSjF+L+XslaqVSql1A$YRxMqFsROQsIl0cZjA0zZp7oUZbE7UCqqnGqRgb6c7M",
+                hashed_password=ph.hash("password"),
                 profile_picture_url="https://example.com/test.jpg",
             )
             db.add(test_user)
@@ -46,7 +53,7 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
             test_user2 = User(
                 username="test_user2",
                 email="test2@example.com",
-                hashed_password="$argon2id$v=19$m=65536,t=3,p=4$GUMIQSjF+L+XslaqVSql1A$YRxMqFsROQsIl0cZjA0zZp7oUZbE7UCqqnGqRgb6c7M",
+                hashed_password=ph.hash("password"),
                 profile_picture_url="https://example.com/test2.jpg",
             )
             db.add(test_user2)
