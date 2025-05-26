@@ -18,7 +18,7 @@ class UserStatus(Base):
     __tablename__ = "presence"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('online', 'away', 'offline')",
+            "status IN ('online', 'away', 'busy', 'offline')",
             name="ck_user_status_enum",
         ),
         {

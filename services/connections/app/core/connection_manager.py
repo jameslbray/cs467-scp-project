@@ -58,7 +58,7 @@ class ConnectionManager:
                     max_delay=60.0,
                     circuit_breaker=self.db_cb,
                 )
-                
+            await self.rabbitmq.register_consumers(self._process_connection_message)
             self._initialized = True
             logger.info("Connection manager initialized successfully")
 
@@ -380,6 +380,8 @@ class ConnectionManager:
         reference_id: str,
         notification_type: str,
         content_preview: str,
+        correlation_id: Optional[str] = None,
+        reply_to: Optional[str] = None,
     ) -> bool:
         """Publish a notification event to RabbitMQ."""
         try:
@@ -393,6 +395,10 @@ class ConnectionManager:
             else:
                 routing_key = f"connection.{notification_type}"
                 event_type = notification_type
+            
+            if not correlation_id:
+                import uuid
+                correlation_id = str(uuid.uuid4())
             
             # Prepare message
             message = json.dumps({
@@ -409,8 +415,10 @@ class ConnectionManager:
             await self.rabbitmq.publish_friend_request(
                 recipient_id=recipient_id,
                 sender_id=sender_id,
-                connection_id=reference_id,
-                sender_name=content_preview
+                connection_id=correlation_id,
+                message=message,
+                routing_key=routing_key,
+                reply_to=reply_to
             )
             
             logger.info(f"Published {notification_type} notification for recipient {recipient_id}")
@@ -419,13 +427,12 @@ class ConnectionManager:
             logger.error(f"Failed to publish notification event: {e}")
             return False
 
-    async def _process_connection_update(self, message) -> None:
+    async def _process_connection_message(self, message) -> None:
         """Process a connection update message from RabbitMQ."""
         try:
             body = json.loads(message.body.decode())
             logger.info(f"Processing connection update: {body}")
-            # Logic to handle connection updates 
-            # This might update caches or trigger additional actions
+            
             await message.ack()
         except Exception as e:
             logger.error(f"Error processing connection update: {e}")

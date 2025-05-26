@@ -12,6 +12,7 @@ from services.shared.utils.retry import CircuitBreaker, with_retry
 
 logger = logging.getLogger(__name__)
 
+
 class NotificationRabbitMQClient:
     """RabbitMQ client for notification service."""
 
@@ -58,10 +59,8 @@ class NotificationRabbitMQClient:
         if not connected:
             raise Exception("Failed to connect to RabbitMQ")
 
-        # Declare exchanges
-        await self.rabbitmq.declare_exchange("connection_events", "topic")
-        await self.rabbitmq.declare_exchange("notifications", "topic")
-
+        await self._connect()
+        
         logger.info("RabbitMQ connection and exchanges initialized")
         return True
 
@@ -84,55 +83,35 @@ class NotificationRabbitMQClient:
                 raise Exception("Failed to connect to RabbitMQ")
 
             # Declare exchanges
-            await self.rabbitmq.declare_exchange("notification_events", "topic")
-            await self.rabbitmq.declare_exchange("connection_events", "topic")
-            await self.rabbitmq.declare_exchange("message_events", "topic")
+            await self.rabbitmq.declare_exchange("notifications", "topic")
+            await self.rabbitmq.declare_exchange("connections", "topic")
+            # Might use for chat events
+            # await self.rabbitmq.declare_exchange("message_events", "topic")
 
             # Declare queues for different types of notifications
             await self.rabbitmq.declare_queue(
-                "general_notifications",
+                "notifications",
                 durable=True
             )
+            
             await self.rabbitmq.declare_queue(
-                "user_notifications",
-                durable=True
-            )
-            await self.rabbitmq.declare_queue(
-                "connection_notifications",
-                durable=True
-            )
-            await self.rabbitmq.declare_queue(
-                "message_notifications",
+                "connections",
                 durable=True
             )
 
             # Bind queues to exchanges with routing keys
             # General notifications for all users
             await self.rabbitmq.bind_queue(
-                "general_notifications",
-                "notification_events",
+                "notifications",
+                "notifications",
                 "broadcast.#"  # All broadcast messages
-            )
-
-            # User-specific notifications
-            await self.rabbitmq.bind_queue(
-                "user_notifications",
-                "notification_events",
-                "user.#"  # All user-targeted notifications
             )
 
             # Connection events (friend requests, etc)
             await self.rabbitmq.bind_queue(
-                "connection_notifications",
-                "connection_events",
-                "connection.#"  # All connection-related events
-            )
-
-            # Message events (new messages, etc)
-            await self.rabbitmq.bind_queue(
-                "message_notifications",
-                "message_events",
-                "message.#"  # All message-related events
+                "connections",
+                "connections",
+                "connections.#"  # All connection-related events
             )
 
             logger.info("Connected to RabbitMQ for notification events")
@@ -142,10 +121,8 @@ class NotificationRabbitMQClient:
 
     async def register_consumers(
         self, 
-        general_handler: Callable, 
-        user_handler: Callable,
+        notifications_handler: Callable, 
         connection_handler: Callable,
-        message_handler: Callable
     ) -> None:
         """Register consumer handlers for different queues."""
         try:
@@ -154,22 +131,14 @@ class NotificationRabbitMQClient:
                 
             # Start consuming messages with provided handlers
             await self.rabbitmq.consume(
-                "general_notifications",
-                general_handler
+                "notifications",
+                notifications_handler
             )
             await self.rabbitmq.consume(
-                "user_notifications",
-                user_handler
-            )
-            await self.rabbitmq.consume(
-                "connection_notifications",
+                "connections",
                 connection_handler
             )
-            await self.rabbitmq.consume(
-                "message_notifications",
-                message_handler
-            )
-            
+
             logger.info("Consumer handlers registered successfully")
         except Exception as e:
             logger.error(f"Failed to register consumer handlers: {e}")
@@ -206,8 +175,8 @@ class NotificationRabbitMQClient:
             })
             
             await self.rabbitmq.publish_message(
-                exchange="notification_events",
-                routing_key=f"user.{recipient_id}",
+                exchange="notifications",
+                routing_key="notifications",
                 message=message
             )
             
@@ -249,8 +218,8 @@ class NotificationRabbitMQClient:
             })
             
             await self.rabbitmq.publish_message(
-                exchange="connection_events",
-                routing_key=f"connection.friend_request",
+                exchange="connections",
+                routing_key=f"connections.friend_request",
                 message=message
             )
             
@@ -262,4 +231,4 @@ class NotificationRabbitMQClient:
 
     async def is_connected(self) -> bool:
         """Check if connected to RabbitMQ."""
-        return self._initialized and await self.rabbitmq.is_connected()
+        return self._initialized and self.rabbitmq.is_connected()

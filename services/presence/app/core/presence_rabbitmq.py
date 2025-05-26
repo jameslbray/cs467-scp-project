@@ -75,18 +75,15 @@ class PresenceRabbitMQClient:
 
             # Declare queues matching updated definitions
             await self.rabbitmq.declare_queue(
-                "presence", 
+                "presence",
                 durable=True
             )
-            await self.rabbitmq.declare_queue(
-                "presence_updates",
-                durable=True
-            )
+            
             await self.rabbitmq.declare_queue(
                 "user_events",
                 durable=True
             )
-
+            
             # Bind queues with standardized routing keys
             await self.rabbitmq.bind_queue(
                 "presence",
@@ -95,14 +92,8 @@ class PresenceRabbitMQClient:
             )
             
             await self.rabbitmq.bind_queue(
-                "presence_updates",
                 "presence",
-                "status.updates"
-            )
-            
-            await self.rabbitmq.bind_queue(
                 "presence",
-                "presence", 
                 "status.query"
             )
             
@@ -125,8 +116,9 @@ class PresenceRabbitMQClient:
             raise
 
     async def register_consumers(
-        self, 
-        presence_handler: Callable
+        self,
+        presence_handler: Callable,
+        user_event_handler: Optional[Callable] = None
     ) -> None:
         """Register consumer handler for the presence queue."""
         try:
@@ -140,8 +132,8 @@ class PresenceRabbitMQClient:
             )
             
             await self.rabbitmq.consume(
-                "presence_updates", 
-                self._handle_presence_updates
+                "user_events",
+                user_event_handler
             )
             
             logger.info("Consumer handler registered successfully")
@@ -164,7 +156,7 @@ class PresenceRabbitMQClient:
                 "type": "presence:status:update",
                 "user_id": user_id,
                 "status": status,
-                "source": "presence_service", 
+                "source": "presence_service",
                 "last_status_change": last_status_change or datetime.now().timestamp(),
             })
             
@@ -200,12 +192,19 @@ class PresenceRabbitMQClient:
                 "last_status_change": last_status_change or datetime.now().timestamp(),
             })
             
-            await self.rabbitmq.publish_message(
-                exchange="presence",
-                routing_key="status.query.response",
-                message=message,
-                correlation_id=correlation_id
-            )
+            if correlation_id is not None:
+                await self.rabbitmq.publish_message(
+                    exchange="presence",
+                    routing_key="status.query.response",
+                    message=message,
+                    correlation_id=correlation_id
+                )
+            else:
+                await self.rabbitmq.publish_message(
+                    exchange="presence",
+                    routing_key="status.query.response",
+                    message=message
+                )
             
             logger.info(f"Published status query response for {user_id}")
             return True
@@ -217,7 +216,8 @@ class PresenceRabbitMQClient:
         self,
         requesting_user_id: str,
         statuses: Dict[str, Any],
-        correlation_id: Optional[str] = None
+        correlation_id: str,
+        reply_to: Optional[str],
     ) -> bool:
         """Publish friend statuses response to RabbitMQ."""
         try:
@@ -225,20 +225,30 @@ class PresenceRabbitMQClient:
                 await self.initialize()
                 
             message = json.dumps({
-                "type": "presence:friend:statuses:response",
-                "requesting_user_id": requesting_user_id,
+                "type": "presence:friend:statuses",
+                "user_id": requesting_user_id,
                 "statuses": statuses,
                 "timestamp": datetime.now().timestamp()
             })
             
-            await self.rabbitmq.publish_message(
-                exchange="presence",
-                routing_key="friend.statuses.response",
-                message=message,
-                correlation_id=correlation_id
-            )
+            if reply_to is not None:
+                await self.rabbitmq.publish_message(
+                    exchange="presence",
+                    routing_key=reply_to,
+                    message=message,
+                    correlation_id=correlation_id,
+                )
+            else:
+                await self.rabbitmq.publish_message(
+                    exchange="presence",
+                    routing_key="friend.statuses",
+                    message=message,
+                    correlation_id=correlation_id
+                )
             
-            logger.info(f"Published friend statuses response for {requesting_user_id}")
+            logger.info(
+                f"Published friend statuses response for {requesting_user_id}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to publish friend statuses response: {e}")

@@ -33,7 +33,7 @@ class EventType(str, Enum):
     PRESENCE_FRIEND_STATUS_CHANGED = "presence:friend:status:changed"
 
     # Notification events
-    NOTIFICATION = "notification"
+    NOTIFICATIONS = "notifications"
 
     # System events
     SYSTEM_ERROR = "system:error"

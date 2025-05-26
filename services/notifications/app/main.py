@@ -61,8 +61,8 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Notification service...")
 
     # Initialize notification manager
-    await notification_manager.initialize()
     await rabbitmq_client.initialize()
+    await notification_manager.initialize()
     logger.info("NotificationRabbitMQ connection established")
     logger.info("Notification service started successfully")
 
@@ -71,9 +71,8 @@ async def lifespan(app: FastAPI):
     # Shutdown logic
     logger.info("Shutting down notification Service")
     await notification_manager.shutdown()
-
     logger.info("Notification service shut down successfully")
-    await rabbitmq_client.close()
+    await rabbitmq_client.shutdown()
     logger.info("NotificationRabbitMQ connection closed")
 
 # Create FastAPI app

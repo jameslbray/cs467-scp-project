@@ -4,8 +4,13 @@ import type { StatusType } from "../types";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { useSocketContext } from "../contexts/socket/socketContext";
 import { useAuth } from "../contexts/auth/authContext";
+import type { UserStatusType } from "../types/userStatusType";
 
-const UserStatus: React.FC = () => {
+type UserStatusProps = {
+	friends: UserStatusType[];
+};
+
+const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 	const { status, isLoading, error, updateStatus } = useUserStatus();
 	const [isOpen, setIsOpen] = useState(false);
 	const [isUpdating, setIsUpdating] = useState(false);
@@ -122,10 +127,13 @@ const UserStatus: React.FC = () => {
 		};
 
 		// Request initial friend statuses when component mounts
-		if (user?.id) {
+		if (user?.id && socket) {
 			addDebugInfo(`Requesting initial friend statuses for user ${user.id}`);
 			setTimeout(() => {
-				socket.emit('presence:friend:statuses');
+				socket.emit('presence:friend:statuses', { 
+					user_id: user.id,
+					friend_ids: friends.map(friend => friend.user_id) 
+				});
 			}, 1000); // Delay to ensure connection is stable
 		}
 

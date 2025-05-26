@@ -59,13 +59,11 @@ class NotificationManager:
             logger.warning("Notification manager already initialized")
             return
 
-        try:
+        try:           
             # Register message handlers
             await self.rabbitmq_client.register_consumers(
-                self._process_general_notification,
-                self._process_user_notification,
-                self._process_connection_notification,
-                self._process_message_notification
+                self._process_notification,
+                self._process_connection,
             )
             logger.info("RabbitMQ client initialized and message handlers registered")
             
@@ -186,8 +184,7 @@ class NotificationManager:
             return user_notifications
 
         return empty_notifications
-
-        
+      
     async def _get_user_notifications(self, user_id: str) -> list[NotificationResponse] | None:
         """Get user notifications from database."""
         if not self.mongo_client:
@@ -257,6 +254,15 @@ class NotificationManager:
             # Log with the actual ObjectId from MongoDB
             logger.info(f"Notification inserted with ID: {result.inserted_id}")
             
+            # Publish to RabbitMQ
+            await self.publish_notification_event(
+                recipient_id=notification.recipient_id,
+                sender_id=notification.sender_id,
+                reference_id=notification.reference_id,
+                notification_type=notification.notification_type,
+                content_preview=notification.content_preview
+            )
+            
             # Return all notifications for the recipient
             return await self.get_user_notifications(notification.recipient_id)
             
@@ -283,7 +289,6 @@ class NotificationManager:
             db_name = self.config["mongodb"].get("database", "notifications")
             db = self.mongo_client[db_name]
             
-
             try:
                 object_id = ObjectId(notification_id)
             except Exception as e:
@@ -438,8 +443,8 @@ class NotificationManager:
                 recipient_id=recipient_id,
                 sender_id=sender_id,
                 reference_id=str(connection_id),
-                content_preview=f"{sender_name} sent you a friend request",
-                notification_type="friend_request",
+                content_preview="You have a new friend request",
+                notification_type=NotificationType.FRIEND_REQUEST,
                 timestamp=datetime.now().isoformat(),
                 status=DeliveryType.UNDELIVERED,
                 error=None,
@@ -452,7 +457,7 @@ class NotificationManager:
             logger.error(f"Failed to create friend request notification: {e}")
             return False
 
-    async def _process_general_notification(self, message) -> None:
+    async def _process_notification(self, message) -> None:
         """Process a general notification message from RabbitMQ."""
         try:
             # Parse the message body
@@ -469,7 +474,7 @@ class NotificationManager:
 
             # Validate required fields
             if not recipient_ids:
-                logger.error(f"Missing required recipient_ids in general notification: {body}")
+                logger.error(f"Missing required recipient_ids in notification: {body}")
                 await message.nack(requeue=False)  # Don't requeue malformed messages
                 return
 
@@ -493,7 +498,7 @@ class NotificationManager:
                     # Log error but continue with other recipients
                     logger.error(f"Failed to create notification for recipient {recipient_id}: {inner_e}")
 
-            logger.info(f"Created {success_count} of {len(recipient_ids)} general notifications")
+            logger.info(f"Created {success_count} of {len(recipient_ids)} notifications")
             await message.ack()
             
         except json.JSONDecodeError as e:
@@ -565,7 +570,7 @@ class NotificationManager:
                 logger.warning(f"User notification failed after {retry_count} retries, not requeuing")
                 await message.nack(requeue=False)
 
-    async def _process_connection_notification(self, message) -> None:
+    async def _process_connection(self, message) -> None:
         """Process a connection notification message from RabbitMQ."""
         try:
             # Parse the message body

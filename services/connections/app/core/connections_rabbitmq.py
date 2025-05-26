@@ -11,6 +11,7 @@ from services.shared.utils.retry import CircuitBreaker, with_retry
 
 logger = logging.getLogger(__name__)
 
+
 class ConnectionsRabbitMQClient:
     """RabbitMQ client for connection service."""
 
@@ -70,14 +71,12 @@ class ConnectionsRabbitMQClient:
                 raise Exception("Failed to connect to RabbitMQ")
 
             # Declare exchanges
-            await self.rabbitmq.declare_exchange("connection_events", "topic")
-            await self.rabbitmq.declare_exchange("notification_events", "topic")
-            
-            await self.rabbitmq.declare_exchange("notifications", "topic")   
+            await self.rabbitmq.declare_exchange("connections", "topic")
+            await self.rabbitmq.declare_exchange("notifications", "topic")
 
             # Declare queue for connection events
             await self.rabbitmq.declare_queue(
-                "connection_updates",
+                "connections",
                 durable=True
             )
             
@@ -89,14 +88,14 @@ class ConnectionsRabbitMQClient:
 
             # Bind queues to exchanges with appropriate routing keys
             await self.rabbitmq.bind_queue(
-                "connection_updates",
-                "connection_events",
+                "connections",
+                "connections",
                 "connection.#"  # All connection update events
             )
             
             await self.rabbitmq.bind_queue(
                 "connection_notifications", 
-                "notification_events",
+                "notifications",
                 "connection.#"  # All connection notification events
             )
             
@@ -116,7 +115,7 @@ class ConnectionsRabbitMQClient:
                 
             # Start consuming messages with provided handlers
             await self.rabbitmq.consume(
-                "connection_updates",
+                "connections",
                 connection_update_handler
             )
             
@@ -130,7 +129,9 @@ class ConnectionsRabbitMQClient:
         recipient_id: str,
         sender_id: str,
         connection_id: str,
-        sender_name: str,
+        message: Optional[str] = None,
+        routing_key: Optional[str] = None,
+        reply_to: Optional[str] = None,
     ) -> bool:
         """Publish a friend request notification event."""
         try:
@@ -143,14 +144,20 @@ class ConnectionsRabbitMQClient:
                 "sender_id": sender_id,
                 "reference_id": str(connection_id),
                 "notification_type": "friend_request",
-                "content_preview": f"{sender_name} sent you a friend request",
+                "content_preview": f"{sender_id} sent you a friend request",
                 "timestamp": datetime.now().isoformat(),
             })
             
+            if routing_key is None:
+                routing_key = "connections.friend_request"
+            if reply_to is None:
+                reply_to = "connection_notifications"
+                
             await self.rabbitmq.publish_message(
-                exchange="connection_events",
-                routing_key="connection.friend_request",
-                message=message
+                exchange="connections",
+                routing_key=routing_key,
+                message=message,
+                reply_to=reply_to
             )
             
             logger.info(f"Published friend request notification for recipient {recipient_id}")
@@ -182,8 +189,8 @@ class ConnectionsRabbitMQClient:
             })
             
             await self.rabbitmq.publish_message(
-                exchange="connection_events",
-                routing_key="connection.friend_accepted",
+                exchange="connectios",
+                routing_key="connections.friend_accepted",
                 message=message
             )
             
@@ -195,4 +202,4 @@ class ConnectionsRabbitMQClient:
 
     async def is_connected(self) -> bool:
         """Check if connected to RabbitMQ."""
-        return self._initialized and await self.rabbitmq.is_connected()
+        return self._initialized and self.rabbitmq.is_connected()

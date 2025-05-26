@@ -20,7 +20,7 @@ import { useSocketEvent } from '../contexts/socket/useSocket';
 
 const ChatPage: React.FC = () => {
     const { user, isLoading: authLoading } = useAuth();
-    const { isConnected } = useSocketContext();
+    const { isConnected, socket } = useSocketContext();
     const [friends, setFriends] = useState<Record<string, UserStatusType>>({});
     const [friendCount, setFriendCount] = useState(0);
     const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -32,6 +32,8 @@ const ChatPage: React.FC = () => {
     useSocketEvent<{ statuses: Record<string, UserStatusType> }>(
         ServerEvents.FRIEND_STATUSES,
         (data) => {
+            console.log("Received friend statuses:", data);
+
             setFriends(data.statuses);
         }
     );
@@ -44,7 +46,7 @@ const ChatPage: React.FC = () => {
     // Listen for new notification events
     useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, () => {
         setHasNewNotification(true);
-        
+
         // Optional: Add sound notification
         try {
             const notificationSound = new Audio('/notification-sound.mp3');
@@ -63,6 +65,16 @@ const ChatPage: React.FC = () => {
     useEffect(() => {
         setFriendCount(Object.keys(friends).length);
     }, [friends]);
+
+    useEffect(() => {
+        if (isConnected && user) {
+            // Request friend statuses from server
+            if (socket) {
+                console.log("Requesting friend statuses...");
+                socket.emit(ServerEvents.FRIEND_STATUSES);
+            }
+        }
+    }, [isConnected, user]);
 
     // Select 'general' room by default when rooms are loaded
     useEffect(() => {
@@ -93,15 +105,16 @@ const ChatPage: React.FC = () => {
                 <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
                     <div className='flex justify-between items-center h-16'>
                         <div className='flex items-center'>
-                            <UserStatus />
+                            <UserStatus friends={Object.values(friends)} />
                         </div>
                         <div className='flex items-center space-x-4'>
-                            {/* Notifications - now with hasNewNotification prop */}
+
+                            {/* Notifications */}
                             <div className={hasNewNotification ? 'animate-pulse' : ''} onClick={handleNotificationBellClick}>
                                 <NotificationBell />
                             </div>
 
-                            {/* Rest of the header content remains the same */}
+                            {/* Search users */}
                             <SearchUsers
                                 onConnectionChange={() => {
                                     // Refresh friend list when connections change
@@ -109,36 +122,36 @@ const ChatPage: React.FC = () => {
                                 }}
                             />
 
-                            {/* Friend count */}
+                            {/* Friends List */}
                             <FriendsList friends={friends} friendCount={friendCount} />
                         </div>
                     </div>
                 </div>
             </header>
 
-			{/* Main content */}
-			<main className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8'>
-				<div className='grid grid-cols-1 lg:grid-cols-3 gap-8'>
-					{/* Sidebar with status */}
-					<div className='lg:col-span-1'>
-						<RoomList onSelectRoom={setSelectedRoom} />
-						<ConnectedUsers />
-						<AddNotificationTest />
-					</div>
-					{/* Chat panel */}
-					<div className='lg:col-span-2'>
-						{selectedRoom ? (
-							<ChatList roomId={selectedRoom._id} />
-						) : (
-							<div className='flex items-center justify-center h-full text-gray-500 dark:text-gray-400'>
-								Select a room to start chatting
-							</div>
-						)}
-					</div>
-				</div>
-			</main>
-		</div>
-	);
+            {/* Main content */}
+            <main className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8'>
+                <div className='grid grid-cols-1 lg:grid-cols-3 gap-8'>
+                    {/* Sidebar with status */}
+                    <div className='lg:col-span-1'>
+                        <RoomList onSelectRoom={setSelectedRoom} />
+                        <ConnectedUsers />
+                        <AddNotificationTest />
+                    </div>
+                    {/* Chat panel */}
+                    <div className='lg:col-span-2'>
+                        {selectedRoom ? (
+                            <ChatList roomId={selectedRoom._id} />
+                        ) : (
+                            <div className='flex items-center justify-center h-full text-gray-500 dark:text-gray-400'>
+                                Select a room to start chatting
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </main>
+        </div>
+    );
 };
 
 export default ChatPage;
