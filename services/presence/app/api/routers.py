@@ -99,16 +99,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         payload = jwt.decode(
             token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
-        
+
         # Try both 'sub' and 'username' claims
         username: str = payload.get("sub") or payload.get("username")
         if username is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
+
         return username
     except jwt.JWTError:
         raise HTTPException(
@@ -250,13 +250,13 @@ async def register_user_status(
 
     Returns:
     - **StatusResponse**: New status information
-    """  
+    """
     if user_id != current_user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only register your own status"
         )
-    
+
     # Update status
     success = await presence_manager.set_new_user_status(
         user_id
