@@ -1,6 +1,5 @@
 # services/users/app/db/models.py
 from sqlalchemy import (
-    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -33,6 +32,7 @@ class User(Base):
         server_default=text("uuid_generate_v4()"),
     )
     username = Column(String(50), nullable=False, unique=True, index=True)
+    display_name = Column(String(100), nullable=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     hashed_password = Column(String(255), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
@@ -45,25 +45,18 @@ class User(Base):
     profile_picture_url = Column(String(255))
     last_login = Column(DateTime)
 
-    # one‑to‑one relationship to UserStatus
-    status = relationship(
-        "UserStatus",
-        back_populates="user",
-        uselist=False  # This ensures it's a one-to-one relationship
-    )
-
     connections = relationship(
-        "Connection", 
+        "Connection",
         foreign_keys="Connection.user_id",
         primaryjoin="User.id == Connection.user_id",
-        viewonly=True  # This makes it read-only and avoids the back_populates requirement
+        viewonly=True,  # This makes it read-only and avoids the back_populates requirement
     )
-    
+
     friends = relationship(
         "Connection",
-        foreign_keys="Connection.friend_id", 
+        foreign_keys="Connection.friend_id",
         primaryjoin="User.id == Connection.friend_id",
-        viewonly=True  # This makes it read-only and avoids the back_populates requirement
+        viewonly=True,  # This makes it read-only and avoids the back_populates requirement
     )
 
     password_reset_tokens = relationship(
@@ -71,41 +64,6 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
-
-
-class UserStatus(Base):
-    __tablename__ = "presence"
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('online', 'away', 'offline', 'busy', 'invisible')",
-            name="ck_user_status_enum",
-        ),
-        {
-            "schema": "presence",
-            "comment": (
-                "Stores the current online status of users "
-                "and when it was last updated"
-            )
-        },
-    )
-
-    user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    status = Column(
-        String(10),
-        nullable=False,
-        server_default="'offline'",
-    )
-    last_status_change = Column(
-        DateTime,
-        nullable=False,
-        server_default=func.now(),
-    )
-
-    user = relationship("User", back_populates="status")
 
 
 class BlacklistedToken(Base):

@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
 import { useSocketContext } from '../contexts/socket/socketContext';
 import { useFetchMessages } from '../hooks/useFetchMessages';
+import { userApi } from '../services/api';
+import type { User } from '../types';
 import type { ChatMessageType } from '../types/chatMessageType';
 import ChatMessage from './ChatMessage';
 import ChatInput from './LexicalChatInput';
@@ -11,12 +13,15 @@ interface ChatListProps {
 	roomId: string;
 }
 
+type EnrichedUser = User & { display_name?: string; profile_picture_url?: string };
+
 const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 	const { socket, isConnected } = useSocketContext();
 	const { user } = useAuth();
 	const currentUserId = user?.id ?? '';
 	const { messages: initialMessages, loading, error } = useFetchMessages(roomId, 50);
 	const [messages, setMessages] = useState<ChatMessageType[]>([]);
+	const [userMap, setUserMap] = useState<Record<string, EnrichedUser>>({});
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 
 	// Initialize messages from backend fetch
@@ -35,6 +40,21 @@ const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 		);
 		setMessages(mapped);
 	}, [initialMessages]);
+
+	// Fetch user info for all unique sender_ids
+	useEffect(() => {
+		const uniqueSenderIds = Array.from(new Set(messages.map((msg) => msg.sender_id)));
+		if (uniqueSenderIds.length === 0) return;
+		userApi.getUsersByIds(uniqueSenderIds).then((users: EnrichedUser[]) => {
+			console.log('🚀 ~ users from API:', users);
+			const map: Record<string, EnrichedUser> = {};
+			users.forEach((u) => {
+				const key = 'id' in u && typeof u.id === 'string' ? u.id : u.userId;
+				if (key) map[key] = u;
+			});
+			setUserMap(map);
+		});
+	}, [messages]);
 
 	// Scroll to bottom whenever messages change
 	useEffect(() => {
@@ -62,15 +82,12 @@ const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 	return (
 		<div className='flex flex-col h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-visible'>
 			{/* Chat Header */}
-			<div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
-				<h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-					Chat Room
-				</h2>
+			<div className='p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm'>
+				<h2 className='text-lg font-semibold text-gray-800 dark:text-gray-100'>Chat Room</h2>
 				{/* Connection status indicator */}
 				<div className='flex items-center'>
 					<div
-						className={`h-2 w-2 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'
-							}`}
+						className={`h-2 w-2 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
 					/>
 					<span className='text-sm text-gray-700 dark:text-gray-300'>
 						{isConnected ? 'Connected' : 'Disconnected'}
@@ -94,14 +111,30 @@ const ChatList: React.FC<ChatListProps> = ({ roomId }) => {
 					</div>
 				) : (
 					<div className='space-y-4'>
-						{messages.map((message) => (
-							<ChatMessage
-								key={message.id}
-								message={message}
-								author={{ id: message.sender_id, username: message.sender_id }}
-								isCurrentUser={message.sender_id === currentUserId}
-							/>
-						))}
+						{messages.map((message) => {
+							const user = userMap[message.sender_id];
+							const author = user
+								? {
+										id: user.userId,
+										username: user.username || 'Unknown User',
+										...(user.display_name ? { display_name: user.display_name } : {}),
+										...(user.profile_picture_url
+											? { profile_picture_url: user.profile_picture_url }
+											: {}),
+								  }
+								: {
+										id: message.sender_id,
+										username: 'Unknown User',
+								  };
+							return (
+								<ChatMessage
+									key={message.id}
+									message={message}
+									author={author}
+									isCurrentUser={message.sender_id === currentUserId}
+								/>
+							);
+						})}
 						<div ref={messagesEndRef} />
 					</div>
 				)}

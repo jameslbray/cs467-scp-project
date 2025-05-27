@@ -115,8 +115,8 @@ export const authApi = {
 export const userApi = {
 	getProfile: async () => {
 		const response = await fetch(`${API_BASE_URL}/profile`, {
-			method: 'GET',
 			headers: getAuthHeaders(),
+			method: 'GET',
 		});
 
 		if (!response.ok) {
@@ -142,13 +142,13 @@ export const userApi = {
 	},
 
 	getUsersByIds: async (ids: string[]) => {
-    if (!ids.length) return [];
+		if (!ids.length) return [];
 
-    // Send as comma-separated values
-    const response = await fetch(`${API_BASE_URL}/users/?user_ids=${ids.join(',')}`, {
-        method: 'GET',
-        headers: getAuthHeaders(),
-    });
+		// Send as comma-separated values
+		const response = await fetch(`${API_BASE_URL}/users/?user_ids=${ids.join(',')}`, {
+			method: 'GET',
+			headers: getAuthHeaders(),
+		});
 
 		if (!response.ok) {
 			const errorData = await response.json();
@@ -156,5 +156,31 @@ export const userApi = {
 		}
 
 		return response.json();
-	}
+	},
+};
+
+// Chat/Room API calls
+export const chatApi = {
+	createRoom: async (data: {
+		name: string;
+		description?: string;
+		is_private?: boolean;
+		max_participants?: number | null;
+		participant_ids: string[];
+	}) => {
+		const token = localStorage.getItem('auth_token');
+		const response = await fetch('http://localhost:8004/rooms', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				...(token ? { Authorization: `Bearer ${token}` } : {}),
+			},
+			body: JSON.stringify(data),
+		});
+		if (!response.ok) {
+			const errorData = await response.json();
+			throw new Error(errorData.detail || 'Failed to create room');
+		}
+		return response.json();
+	},
 };

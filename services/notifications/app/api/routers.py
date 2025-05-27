@@ -23,8 +23,8 @@ from starlette.status import (
 from ..core.config import get_settings
 from ..core.notification_manager import NotificationManager
 from ..db.models import (
-    NotificationType, 
-    NotificationResponse, 
+    NotificationType,
+    NotificationResponse,
     NotificationRequest,
     ErrorResponse,
     SuccessResponse
@@ -47,15 +47,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         payload = jwt.decode(
             token, secret_key, algorithms=[settings.JWT_ALGORITHM]
         )
-        
+
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
+
         return user_id
     except jwt.JWTError:
         raise HTTPException(
@@ -128,8 +128,8 @@ async def create_user_notification(
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
     """
-    Create a user notification. 
-    
+    Create a user notification.
+
     Parameters:
     - **user_id**: ID of the user whose status is being updated
     - **notification_update**: New notification information
@@ -138,28 +138,36 @@ async def create_user_notification(
     - **NotificationResponse**: Created notification information
     """
     # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+
     if user_id != current_user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only update your own status"
         )
-    
+
     logger.info(f"Creating notification for user: {user_id}")
 
     try:
         # If user_id in the URL differs from the one in the request, ensure consistency
         if notification_update.recipient_id != user_id:
             notification_update.recipient_id = user_id
-            
+
         response = await notification_manager.create_notification(notification_update)
-        
+
         if not response:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
                 detail="Notification creation failed",
             )
+        return SuccessResponse(message="success")
+
         return {"message" : "success"}
-            
+
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
         raise HTTPException(
@@ -195,26 +203,36 @@ async def read_user_notification(
     - **NotificationResponse**: Updated notification information
     """
     # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+
+
     if user_id != current_user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only update your own status"
         )
-      
+
     logger.info(f"Updating notification {notification_id} for user: {user_id}")
 
     try:
         # Call the manager to mark notification as read
         success = await notification_manager.mark_notification_as_read(notification_id, user_id)
-        
+
         if not success:
             raise HTTPException(
                 status_code=404,
                 detail="Notification not found or already read"
             )
-            
+
+        return SuccessResponse(message="success")
+
+
         return "success"
-        
+
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
         raise HTTPException(
@@ -248,20 +266,30 @@ async def update_all_user_notifications(
     - **SuccessResponse**: Success message
     """
     # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+
+
     if user_id != current_user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="You can only update your own status"
         )
-    
+
     logger.info(f"Updating all notifications for user: {user_id}")
 
     try:
         # Call the manager to mark notification as read
         success = await notification_manager.mark_all_notifications_as_read(user_id)
-            
+
+        return SuccessResponse(message="success")
+
+
         return "success"
-        
+
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
         raise HTTPException(
@@ -295,6 +323,13 @@ async def delete_read_notifications(
     - **NotificationResponse**: Updated notification information
     """
     # Check if the user is trying to update their own status
+    # if user_id != current_user:
+    #     raise HTTPException(
+    #         status_code=HTTP_403_FORBIDDEN,
+    #         detail="You can only update your own status"
+    #     )
+
+
     if user_id != current_user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
@@ -306,15 +341,230 @@ async def delete_read_notifications(
     try:
         # Call the manager to mark notification as read
         deleted_count = await notification_manager.delete_read_notifications(user_id)
-            
+
+        return SuccessResponse(message="Successfully deleted {deleted_count} notifications")
+
+
         return f"Successfully deleted {deleted_count} notifications"
-        
+
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail="Failed to update notification",
         )
+
+# @router.post(
+#     "/notify/register/{user_id}",
+#     response_model=StatusResponse,
+#     responses={
+#         400: {"model": ErrorResponse, "description": "Bad request"},
+#         401: {"model": ErrorResponse, "description": "Unauthorized"}
+#     },
+# )
+# async def register_user_status(
+#     user_id: str,
+#     current_user: str = Depends(get_current_user),
+#     presence_manager: PresenceManager = Depends(get_presence_manager),
+# ):
+#     """
+#     Register a new user's status
+
+#     Parameters:
+#     - **user_id**: ID of the user whose status is being updated
+
+#     Returns:
+#     - **StatusResponse**: New status information
+#     """
+#     if user_id != current_user:
+#         raise HTTPException(
+#             status_code=HTTP_403_FORBIDDEN,
+#             detail="You can only register your own status"
+#         )
+
+#     # Update status
+#     success = await presence_manager.set_new_user_status(
+#         user_id
+#     )
+#     if not success:
+#         raise HTTPException(
+#             status_code=HTTP_404_NOT_FOUND,
+#             detail="User not found or status update failed",
+#         )
+
+#     # Get updated status
+#     status_data = await presence_manager.get_user_status(user_id)
+
+#     # Create response
+#     return StatusResponse(
+#         user_id=user_id,
+#         status=status_data.get("status", "offline"),
+#         last_seen=status_data.get("last_seen")
+#     )
+
+# # TODO: Will we need a notification version of this?
+
+# # @router.get(
+# #     "/notify/friends/{user_id}",
+# #     response_model=FriendStatusesResponse,
+# #     responses={
+# #         401: {"model": ErrorResponse, "description": "Unauthorized"},
+# #         403: {"model": ErrorResponse, "description": "Forbidden"},
+# #         404: {"model": ErrorResponse, "description": "User not found"},
+# #     },
+# # )
+# # async def get_friend_statuses(
+# #     user_id: str,
+# #     current_user: str = Depends(get_current_user),
+# #     presence_manager: PresenceManager = Depends(get_presence_manager),
+# # ):
+# #     """
+# #     Get the status of all friends of a user
+
+# #     Parameters:
+# #     - **user_id**: ID of the user whose friends' statuses are being requested
+
+# #     Returns:
+# #     - **FriendStatusesResponse**: Status information for all friends
+# #     """
+# #     # Check if the user is requesting their own friends' statuses
+# #     if user_id != current_user:
+# #         raise HTTPException(
+# #             status_code=HTTP_403_FORBIDDEN,
+# #             detail="You can only view your own friends' statuses",
+# #         )
+
+# #     # Get friend IDs
+# #     friend_ids = await presence_manager._get_friend_ids(user_id)
+
+# #     # Get status for each friend
+# #     statuses = {}
+# #     for friend_id in friend_ids:
+# #         status_data = await presence_manager.get_user_status(friend_id)
+# #         statuses[friend_id] = StatusResponse(
+# #             user_id=friend_id,
+# #             status=status_data.get("status", "offline"),
+# #             last_seen=status_data.get("last_seen"),
+# #         )
+
+# #     return FriendStatusesResponse(statuses=statuses)
+
+
+# @router.websocket("/ws/status/subscribe")
+# async def status_updates_websocket(
+#     websocket: WebSocket,
+#     token: str = Query(...),
+#     presence_manager: PresenceManager = Depends(get_presence_manager),
+# ):
+#     """
+#     WebSocket endpoint to subscribe to status updates for multiple users
+
+#     Connect with a valid JWT token and send a JSON message with user_ids to
+#     subscribe to
+#     """
+#     # Authenticate the user
+#     try:
+#         payload = jwt.decode(
+#             token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+#         )
+#         user_id = payload.get("sub")
+#         if user_id is None:
+#             await websocket.close(code=1008)  # Policy violation
+#             return
+#     except jwt.PyJWTError:
+#         await websocket.close(code=1008)  # Policy violation
+#         return
+
+#     await websocket.accept()
+
+#     try:
+#         # Wait for the subscription request
+#         data = await websocket.receive_json()
+#         user_ids = data.get("user_ids", [])
+
+#         if not user_ids:
+#             await websocket.send_json({
+#                 "type": "error",
+#                 "message": "No user IDs provided for subscription"
+#             })
+#             return
+
+#         # Send initial status for all requested users
+#         initial_statuses = {}
+#         for subscription_user_id in user_ids:
+#             status_data = await presence_manager.get_user_status(subscription_user_id)
+#             initial_statuses[subscription_user_id] = {
+#                 "status": status_data.get("status", "offline"),
+#                 "last_seen": status_data.get("last_seen"),
+#             }
+
+#         await websocket.send_json(
+#             {"type": "initial_statuses", "statuses": initial_statuses}
+#         )
+
+#         # TODO: Set up subscriptions in the presence manager
+#         # This would typically involve registering the websocket as a listener
+#         # for status updates from the specified users
+
+#         # For now, we'll simply confirm the subscription
+#         await websocket.send_json(
+#             {"type": "subscription_confirmed", "subscribed_to": user_ids}
+#         )
+
+#         # Keep the connection open and handle updates
+#         while True:
+#             # Wait for any client messages
+#             data = await websocket.receive_text()
+
+#             # If we receive a ping, send a pong
+#             if data == "ping":
+#                 await websocket.send_text("pong")
+
+#     except WebSocketDisconnect:
+#         logger.info(f"WebSocket client disconnected: {user_id}")
+#         # TODO: Clean up subscriptions
+#     except Exception as e:
+#         logger.error(f"Error in status updates websocket: {e}")
+#         await websocket.close(code=1011)  # Internal error
+
+
+# @router.post(
+#     "/notify/subscribe",
+#     response_model=SubscriptionResponse,
+#     responses={
+#         401: {"model": ErrorResponse, "description": "Unauthorized"},
+#         400: {"model": ErrorResponse, "description": "Bad request"},
+#     },
+# )
+# async def subscribe_to_status_updates(
+#     subscription: SubscriptionRequest,
+#     current_user: str = Depends(get_current_user),
+#     presence_manager: PresenceManager = Depends(get_presence_manager),
+# ):
+#     """
+#     Subscribe to status updates for multiple users (HTTP fallback)
+
+#     This is a placeholder for services that can't use WebSockets.
+#     You would typically poll /status/friends/{user_id} to get updates.
+
+#     Parameters:
+#     - **subscription**: Subscription request with user IDs to monitor
+
+#     Returns:
+#     - **SubscriptionResponse**: Confirmation of subscription
+#     """
+#     # This is a placeholder for services that can't use WebSockets
+#     # In a real implementation, this would set up a subscription and
+#     # clients would poll for updates
+
+#     if len(subscription.user_ids) > 0:
+#         return SubscriptionResponse(
+#             success=True, subscribed_users=subscription.user_ids
+#         )
+#     else:
+#         return SubscriptionResponse(
+#             success=False, subscribed_users=[], message="No user IDs provided"
+#         )
 
 
 @router.get("/notify", summary="API Info")
@@ -337,6 +587,6 @@ async def api_info():
             "PUT /api/notify/{user_id}": "Mark a notification as read",
             "PUT /api/notify/all/{user_id}": "Mark all notifications as read",
             "DELETE /api/notify/{user_id}": "Delete read notifications",
-            
+
         },
     }

@@ -2,15 +2,17 @@
 Notification manager for handling user Connection state.
 """
 
-import logging
-from typing import Any, List, Optional
-from datetime import datetime
 import json
+import logging
+from datetime import datetime
+from typing import Any, List, Optional
+
 import asyncpg  # type: ignore
 
 from services.shared.utils.retry import CircuitBreaker, with_retry
+
 from ..db.models import Connection
-from ..db.schemas import ConnectionSchema, ConnectionCreate, ConnectionUpdate
+from ..db.schemas import ConnectionCreate, ConnectionUpdate
 from .connections_rabbitmq import ConnectionsRabbitMQClient
 
 # configure logging
@@ -23,7 +25,7 @@ class ConnectionManager:
     def __init__(
         self,
         config: dict[str, Any],
-        rabbitmq_client: ConnectionsRabbitMQClient
+        rabbitmq_client: ConnectionsRabbitMQClient,
     ):
         """Initialize the notification manager.
 
@@ -37,7 +39,7 @@ class ConnectionManager:
 
         # Initialize RabbitMQ client
         self.rabbitmq = rabbitmq_client
-        
+
         self.db_cb = CircuitBreaker(
             "postgres", failure_threshold=3, reset_timeout=30.0
         )
@@ -58,7 +60,9 @@ class ConnectionManager:
                     max_delay=60.0,
                     circuit_breaker=self.db_cb,
                 )
-            await self.rabbitmq.register_consumers(self._process_connection_message)
+            await self.rabbitmq.register_consumers(
+                self._process_connection_message
+            )
             self._initialized = True
             logger.info("Connection manager initialized successfully")
 
@@ -118,7 +122,9 @@ class ConnectionManager:
 
         return empty_connections
 
-    async def _get_user_connections(self, user_id: str) -> list[Connection] | None:
+    async def _get_user_connections(
+        self, user_id: str
+    ) -> list[Connection] | None:
         """Get a user's connections from database."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
@@ -246,7 +252,7 @@ class ConnectionManager:
                 query1 = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id, friend_id) 
+                    ON CONFLICT (user_id, friend_id)
                     DO UPDATE SET status = $3, updated_at = NOW()
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
@@ -262,7 +268,7 @@ class ConnectionManager:
                 query2 = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id, friend_id) 
+                    ON CONFLICT (user_id, friend_id)
                     DO UPDATE SET status = $3, updated_at = NOW()
                     RETURNING id
                 """
@@ -343,7 +349,9 @@ class ConnectionManager:
             logger.error(f"Failed to update connection: {e}")
             return None
 
-    async def get_connection(self, user_id: str, friend_id: str) -> Connection | None:
+    async def get_connection(
+        self, user_id: str, friend_id: str
+    ) -> Connection | None:
         """Get a specific connection between user and friend."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
@@ -358,7 +366,7 @@ class ConnectionManager:
                     OR (user_id = $2 AND friend_id = $1)
                 """
                 row = await conn.fetchrow(query, user_id, friend_id)
-                
+
                 if row:
                     return Connection(
                         id=row["id"],
@@ -366,7 +374,7 @@ class ConnectionManager:
                         friend_id=row["friend_id"],
                         status=row["status"],
                         created_at=row["created_at"],
-                        updated_at=row["updated_at"]
+                        updated_at=row["updated_at"],
                     )
                 return None
         except Exception as e:
@@ -395,22 +403,25 @@ class ConnectionManager:
             else:
                 routing_key = f"connection.{notification_type}"
                 event_type = notification_type
-            
+
             if not correlation_id:
                 import uuid
+
                 correlation_id = str(uuid.uuid4())
-            
+
             # Prepare message
-            message = json.dumps({
-                "event_type": event_type,
-                "recipient_id": recipient_id,
-                "sender_id": sender_id,
-                "reference_id": str(reference_id),
-                "notification_type": notification_type,
-                "content_preview": content_preview,
-                "timestamp": datetime.now().isoformat(),
-            })
-            
+            message = json.dumps(
+                {
+                    "event_type": event_type,
+                    "recipient_id": recipient_id,
+                    "sender_id": sender_id,
+                    "reference_id": str(reference_id),
+                    "notification_type": notification_type,
+                    "content_preview": content_preview,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
             # Publish friend request event using correct parameters
             await self.rabbitmq.publish_friend_request(
                 recipient_id=recipient_id,
@@ -418,10 +429,12 @@ class ConnectionManager:
                 connection_id=correlation_id,
                 message=message,
                 routing_key=routing_key,
-                reply_to=reply_to
+                reply_to=reply_to,
             )
-            
-            logger.info(f"Published {notification_type} notification for recipient {recipient_id}")
+
+            logger.info(
+                f"Published {notification_type} notification for recipient {recipient_id}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to publish notification event: {e}")
@@ -432,7 +445,7 @@ class ConnectionManager:
         try:
             body = json.loads(message.body.decode())
             logger.info(f"Processing connection update: {body}")
-            
+
             await message.ack()
         except Exception as e:
             logger.error(f"Error processing connection update: {e}")

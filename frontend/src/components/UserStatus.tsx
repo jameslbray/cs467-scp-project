@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect } from "react";
-import { useUserStatus } from "../hooks/useUserStatus";
-import type { StatusType } from "../types";
-import { ChevronDownIcon } from "@heroicons/react/24/outline";
-import { useSocketContext } from "../contexts/socket/socketContext";
-import { useAuth } from "../contexts/auth/authContext";
-import type { UserStatusType } from "../types/userStatusType";
+import { ChevronDownIcon } from '@heroicons/react/24/outline';
+import React, { useEffect, useRef, useState } from 'react';
+import { useAuth } from '../contexts/auth/authContext';
+import { useSocketContext } from '../contexts/socket/socketContext';
+import { useUserStatus } from '../hooks/useUserStatus';
+import type { ErrorResponse, StatusType, StatusUpdateResponse } from '../types';
+import type { UserStatusType } from '../types/userStatusType';
 
 type UserStatusProps = {
 	friends: UserStatusType[];
@@ -22,7 +22,7 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 	// Debug function to add messages
 	const addDebugInfo = (message: string) => {
 		console.log(`[UserStatus Debug] ${message}`);
-		setDebugInfo(prev => [...prev.slice(-4), `${new Date().toLocaleTimeString()}: ${message}`]);
+		setDebugInfo((prev) => [...prev.slice(-4), `${new Date().toLocaleTimeString()}: ${message}`]);
 	};
 
 	const handleStatusChange = async (newStatus: StatusType) => {
@@ -33,12 +33,12 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 
 		setIsUpdating(true);
 		addDebugInfo(`Attempting to change status to: ${newStatus}`);
-		
+
 		try {
 			// Emit the standardized event name
 			addDebugInfo(`Emitting presence:status:update event`);
 			socket.emit('presence:status:update', { status: newStatus });
-			
+
 			// Wait for success/error response with timeout
 			const responsePromise = new Promise<void>((resolve, reject) => {
 				const timeout = setTimeout(() => {
@@ -47,17 +47,17 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 					reject(new Error('Timeout waiting for response'));
 				}, 10000);
 
-				const successHandler = (data: any) => {
+				const successHandler = (data: StatusUpdateResponse) => {
 					addDebugInfo(`Success response received: ${JSON.stringify(data)}`);
 					updateStatus(newStatus);
 					cleanup();
 					resolve();
 				};
 
-				const errorHandler = (data: any) => {
+				const errorHandler = (data: ErrorResponse) => {
 					addDebugInfo(`Error response received: ${JSON.stringify(data)}`);
 					cleanup();
-					reject(new Error(data.error || 'Status update failed'));
+					reject(new Error(data.message || 'Status update failed'));
 				};
 
 				const cleanup = () => {
@@ -73,7 +73,6 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 			await responsePromise;
 			setIsOpen(false);
 			addDebugInfo('Status update completed successfully');
-			
 		} catch (error) {
 			addDebugInfo(`Error updating status: ${error}`);
 			console.error('Error updating status:', error);
@@ -102,15 +101,15 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 		addDebugInfo('Setting up socket event listeners');
 
 		// Listen for friend status changes
-		const handleFriendStatusChanged = (data: any) => {
+		const handleFriendStatusChanged = (data: UserStatusType) => {
 			addDebugInfo(`Friend status changed: ${JSON.stringify(data)}`);
 		};
 
-		const handleFriendStatusesSuccess = (data: any) => {
+		const handleFriendStatusesSuccess = (data: UserStatusType[]) => {
 			addDebugInfo(`Friend statuses received: ${JSON.stringify(data)}`);
 		};
 
-		const handleFriendStatusesError = (data: any) => {
+		const handleFriendStatusesError = (data: { message: string }) => {
 			addDebugInfo(`Friend statuses error: ${JSON.stringify(data)}`);
 		};
 
@@ -121,7 +120,7 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 
 		// Debug: Log all events
 		const originalEmit = socket.emit;
-		socket.emit = function(event, ...args) {
+		socket.emit = function (event, ...args) {
 			addDebugInfo(`Emitting event: ${event} with args: ${JSON.stringify(args)}`);
 			return originalEmit.apply(this, [event, ...args]);
 		};
@@ -130,9 +129,9 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 		if (user?.id && socket) {
 			addDebugInfo(`Requesting initial friend statuses for user ${user.id}`);
 			setTimeout(() => {
-				socket.emit('presence:friend:statuses', { 
+				socket.emit('presence:friend:statuses', {
 					user_id: user.id,
-					friend_ids: friends.map(friend => friend.user_id) 
+					friend_ids: friends.map((friend) => friend.user_id),
 				});
 			}, 1000); // Delay to ensure connection is stable
 		}
@@ -144,7 +143,7 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 			socket.off('presence:friend:statuses:success', handleFriendStatusesSuccess);
 			socket.off('presence:friend:statuses:error', handleFriendStatusesError);
 		};
-	}, [socket, isConnected, user?.id]);
+	}, [socket, isConnected, user?.id, friends]);
 
 	// Log socket connection status changes
 	useEffect(() => {
@@ -184,40 +183,42 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 	};
 
 	return (
-		<div className="relative" ref={dropdownRef}>
+		<div className='relative' ref={dropdownRef}>
 			<button
 				onClick={() => setIsOpen(!isOpen)}
-				className="flex items-center text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 px-3 py-2 rounded-md focus:outline-none"
+				className='flex items-center text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 px-3 py-2 rounded-md focus:outline-none'
 				aria-expanded={isOpen}
 				disabled={isLoading || isUpdating || !!error}
 			>
 				<div className={`h-2 w-2 rounded-full mr-2 ${getStatusColor(status)}`} />
-				<span className="mr-1">
+				<span className='mr-1'>
 					{isLoading
-						? "Loading..."
+						? 'Loading...'
 						: isUpdating
-						? "Updating..."
+						? 'Updating...'
 						: error
-							? "Error"
-							: `Status: ${getStatusText(status)}`
-					}
+						? 'Error'
+						: `Status: ${getStatusText(status)}`}
 				</span>
-				<ChevronDownIcon className={`w-4 h-4 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} />
+				<ChevronDownIcon
+					className={`w-4 h-4 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
+				/>
 			</button>
 
 			{isOpen && !isLoading && !isUpdating && !error && (
-				<div className="absolute left-0 mt-2 py-2 w-64 bg-white dark:bg-gray-800 rounded-md shadow-lg z-10 border border-gray-200 dark:border-gray-700">
+				<div className='absolute left-0 mt-2 py-2 w-64 bg-white dark:bg-gray-800 rounded-md shadow-lg z-10 border border-gray-200 dark:border-gray-700'>
 					{/* Status Options */}
-					<div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
-						<h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Status Options</h3>
+					<div className='px-4 py-2 border-b border-gray-200 dark:border-gray-700'>
+						<h3 className='text-sm font-medium text-gray-700 dark:text-gray-300'>Status Options</h3>
 					</div>
 					{['online', 'away', 'busy', 'offline'].map((statusOption) => (
 						<button
 							key={statusOption}
-							className={`w-full text-left px-4 py-2 text-sm ${status === statusOption
-								? 'text-primary-600 dark:text-primary-400 font-medium bg-gray-100 dark:bg-gray-700'
-								: 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-								} flex items-center`}
+							className={`w-full text-left px-4 py-2 text-sm ${
+								status === statusOption
+									? 'text-primary-600 dark:text-primary-400 font-medium bg-gray-100 dark:bg-gray-700'
+									: 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+							} flex items-center`}
 							onClick={() => handleStatusChange(statusOption as StatusType)}
 							disabled={isUpdating}
 						>
@@ -225,22 +226,26 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 							{getStatusText(statusOption)}
 						</button>
 					))}
-					
+
 					{/* Debug Section */}
-					<div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700">
-						<h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Debug Info</h3>
+					<div className='px-4 py-2 border-t border-gray-200 dark:border-gray-700'>
+						<h3 className='text-xs font-medium text-gray-500 dark:text-gray-400 mb-2'>
+							Debug Info
+						</h3>
 						<button
 							onClick={handleGetFriendStatuses}
-							className="w-full text-left px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded mb-2"
+							className='w-full text-left px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded mb-2'
 						>
 							Test Friend Statuses Request
 						</button>
-						<div className="text-xs text-gray-500 dark:text-gray-400 max-h-20 overflow-y-auto">
+						<div className='text-xs text-gray-500 dark:text-gray-400 max-h-20 overflow-y-auto'>
 							{debugInfo.map((info, index) => (
-								<div key={index} className="truncate">{info}</div>
+								<div key={index} className='truncate'>
+									{info}
+								</div>
 							))}
 						</div>
-						<div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+						<div className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
 							Socket: {isConnected ? '✅ Connected' : '❌ Disconnected'}
 						</div>
 					</div>

@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
+from argon2 import PasswordHasher
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -13,12 +14,21 @@ from services.db_init.app.models import (
 
 logger = logging.getLogger(__name__)
 
+ph = PasswordHasher(
+    time_cost=3,
+    memory_cost=65536,
+    parallelism=4,
+)
+
 
 def seed_initial_data_if_not_exists(engine: Engine) -> bool:
     """Seed initial data if it does not already exist."""
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
     try:
+        # Use hardcoded UUIDs for test users
+        TEST_USER1_ID = "11111111-1111-1111-1111-111111111111"
+        TEST_USER2_ID = "22222222-2222-2222-2222-222222222222"
         test_user = db.query(User).filter(User.username == "test_user").first()
         test_user2 = (
             db.query(User).filter(User.username == "test_user2").first()
@@ -26,9 +36,10 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
         if not test_user:
             logger.info("Creating test user 1...")
             test_user = User(
+                id=TEST_USER1_ID,
                 username="test_user",
                 email="test@example.com",
-                hashed_password="$argon2id$v=19$m=65536,t=3,p=4$GUMIQSjF+L+XslaqVSql1A$YRxMqFsROQsIl0cZjA0zZp7oUZbE7UCqqnGqRgb6c7M",
+                hashed_password=ph.hash("password"),
                 profile_picture_url="https://example.com/test.jpg",
             )
             db.add(test_user)
@@ -44,9 +55,10 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
         if not test_user2:
             logger.info("Creating test user 2...")
             test_user2 = User(
+                id=TEST_USER2_ID,
                 username="test_user2",
                 email="test2@example.com",
-                hashed_password="$argon2id$v=19$m=65536,t=3,p=4$GUMIQSjF+L+XslaqVSql1A$YRxMqFsROQsIl0cZjA0zZp7oUZbE7UCqqnGqRgb6c7M",
+                hashed_password=ph.hash("password"),
                 profile_picture_url="https://example.com/test2.jpg",
             )
             db.add(test_user2)
