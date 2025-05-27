@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -107,13 +106,6 @@ def seed_initial_data_if_not_exists(engine: Engine) -> bool:
                 )
                 db.add(test_connection2)
                 db.commit()
-            # Write test user IDs and usernames to a shared file for MongoDB seeding
-            test_users = [
-                {"id": TEST_USER1_ID, "username": "test_user"},
-                {"id": TEST_USER2_ID, "username": "test_user2"},
-            ]
-            with open("/tmp/test_users.json", "w") as f:
-                json.dump(test_users, f)
         test_token = "test-reset-token-123"
         expiry = datetime.now(UTC) + timedelta(hours=1)
         existing_reset = (
