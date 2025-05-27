@@ -133,20 +133,12 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 
       if (response.ok) {
         const connections = await response.json();
-        console.log('All connections:', connections);
-        console.log('Current user ID:', user.id);
 
-        // Filter for pending requests where current user is the RECIPIENT
-        // This means friend_id === current_user_id AND status === 'pending'
-        const pending = connections.filter((conn: Connection) => {
-          const isRecipient = conn.friend_id === user.id;
-          const isPending = conn.status === 'pending';
-          console.log(`Connection ${conn.user_id} -> status: ${conn.status} -> ${conn.friend_id}, isRecipient: ${isRecipient}, isPending: ${isPending}`);
-          return isRecipient && isPending;
-        });
-
-        console.log('Filtered pending requests:', pending);
-        setPendingRequests(pending);
+        // Incoming requests (where current user is recipient)
+        const incoming = connections.filter((conn: Connection) =>
+          conn.friend_id === user.id && conn.status === 'pending'
+        );
+        setPendingRequests(incoming);
       }
     } catch (error) {
       console.error('Failed to fetch pending requests:', error);
@@ -211,8 +203,10 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
       });
 
       if (response.ok) {
-        // Refresh connections after sending request
+        //  fetch connections for completeness
         fetchUserConnections();
+        fetchPendingRequests();
+
         if (onConnectionChange) onConnectionChange();
       }
     } catch (error) {
@@ -302,10 +296,10 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
     }
 
     if (status === 'pending') {
-      // Check if current user sent or received the request
-      if (connection?.user_id === user?.id) {
+      // Explicit check for the exact direction of the request
+      if (connection?.user_id === user?.id && connection?.friend_id === userId) {
         return <span className="text-yellow-500 text-xs">Request Sent</span>;
-      } else {
+      } else if (connection?.friend_id === user?.id && connection?.user_id === userId) {
         return <span className="text-yellow-500 text-xs">Request Received</span>;
       }
     }

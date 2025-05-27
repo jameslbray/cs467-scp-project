@@ -14,48 +14,36 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 	const { status, isLoading, error, updateStatus } = useUserStatus();
 	const [isOpen, setIsOpen] = useState(false);
 	const [isUpdating, setIsUpdating] = useState(false);
-	const [debugInfo, setDebugInfo] = useState<string[]>([]);
 	const dropdownRef = useRef<HTMLDivElement>(null);
 	const { socket, isConnected } = useSocketContext();
 	const { user } = useAuth();
 
-	// Debug function to add messages
-	const addDebugInfo = (message: string) => {
-		console.log(`[UserStatus Debug] ${message}`);
-		setDebugInfo((prev) => [...prev.slice(-4), `${new Date().toLocaleTimeString()}: ${message}`]);
-	};
-
 	const handleStatusChange = async (newStatus: StatusType) => {
 		if (!socket || !isConnected) {
-			addDebugInfo('Socket not connected');
 			return;
 		}
 
 		setIsUpdating(true);
-		addDebugInfo(`Attempting to change status to: ${newStatus}`);
 
 		try {
 			// Emit the standardized event name
-			addDebugInfo(`Emitting presence:status:update event`);
 			socket.emit('presence:status:update', { status: newStatus });
 
 			// Wait for success/error response with timeout
 			const responsePromise = new Promise<void>((resolve, reject) => {
 				const timeout = setTimeout(() => {
-					addDebugInfo('Response timeout after 10 seconds');
 					cleanup();
 					reject(new Error('Timeout waiting for response'));
 				}, 10000);
 
 				const successHandler = (data: StatusUpdateResponse) => {
-					addDebugInfo(`Success response received: ${JSON.stringify(data)}`);
+					console.log('Status update success:', data);
 					updateStatus(newStatus);
 					cleanup();
 					resolve();
 				};
 
 				const errorHandler = (data: ErrorResponse) => {
-					addDebugInfo(`Error response received: ${JSON.stringify(data)}`);
 					cleanup();
 					reject(new Error(data.message || 'Status update failed'));
 				};
@@ -72,45 +60,38 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 
 			await responsePromise;
 			setIsOpen(false);
-			addDebugInfo('Status update completed successfully');
 		} catch (error) {
-			addDebugInfo(`Error updating status: ${error}`);
 			console.error('Error updating status:', error);
 		} finally {
 			setIsUpdating(false);
 		}
 	};
 
-	const handleGetFriendStatuses = () => {
-		if (!socket || !isConnected) {
-			addDebugInfo('Socket not connected for friend statuses');
-			return;
-		}
-
-		addDebugInfo('Requesting friend statuses');
-		socket.emit('presence:friend:statuses');
-	};
-
 	// Set up socket event listeners
 	useEffect(() => {
 		if (!socket || !isConnected) {
-			addDebugInfo('Socket not available for event listeners');
 			return;
 		}
 
-		addDebugInfo('Setting up socket event listeners');
-
 		// Listen for friend status changes
 		const handleFriendStatusChanged = (data: UserStatusType) => {
-			addDebugInfo(`Friend status changed: ${JSON.stringify(data)}`);
+
+			// Update the local state or perform any necessary actions
+			console.log('Friend status changed:', data);
+			// You can update a state here if needed, e.g.:
+			// setFriends((prev) => ({ ...prev, [data.user_id]: data }));
 		};
 
 		const handleFriendStatusesSuccess = (data: UserStatusType[]) => {
-			addDebugInfo(`Friend statuses received: ${JSON.stringify(data)}`);
+			console.log('Friend statuses received:', data);
+			// You can update a state here if needed, e.g.:
+			// setFriends(data);
+			// Or perform any other actions with the received data
 		};
 
 		const handleFriendStatusesError = (data: { message: string }) => {
-			addDebugInfo(`Friend statuses error: ${JSON.stringify(data)}`);
+			console.error('Error fetching friend statuses:', data.message);
+			// Handle the error appropriately, e.g. show a notification or log it
 		};
 
 		// Register event listeners
@@ -121,13 +102,11 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 		// Debug: Log all events
 		const originalEmit = socket.emit;
 		socket.emit = function (event, ...args) {
-			addDebugInfo(`Emitting event: ${event} with args: ${JSON.stringify(args)}`);
 			return originalEmit.apply(this, [event, ...args]);
 		};
 
 		// Request initial friend statuses when component mounts
 		if (user?.id && socket) {
-			addDebugInfo(`Requesting initial friend statuses for user ${user.id}`);
 			setTimeout(() => {
 				socket.emit('presence:friend:statuses', {
 					user_id: user.id,
@@ -138,17 +117,12 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 
 		// Cleanup event listeners
 		return () => {
-			addDebugInfo('Cleaning up socket event listeners');
 			socket.off('presence:friend:status:changed', handleFriendStatusChanged);
 			socket.off('presence:friend:statuses:success', handleFriendStatusesSuccess);
 			socket.off('presence:friend:statuses:error', handleFriendStatusesError);
 		};
 	}, [socket, isConnected, user?.id, friends]);
 
-	// Log socket connection status changes
-	useEffect(() => {
-		addDebugInfo(`Socket connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
-	}, [isConnected]);
 
 	// Close dropdown when clicking outside
 	useEffect(() => {
@@ -226,29 +200,6 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 							{getStatusText(statusOption)}
 						</button>
 					))}
-
-					{/* Debug Section */}
-					<div className='px-4 py-2 border-t border-gray-200 dark:border-gray-700'>
-						<h3 className='text-xs font-medium text-gray-500 dark:text-gray-400 mb-2'>
-							Debug Info
-						</h3>
-						<button
-							onClick={handleGetFriendStatuses}
-							className='w-full text-left px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded mb-2'
-						>
-							Test Friend Statuses Request
-						</button>
-						<div className='text-xs text-gray-500 dark:text-gray-400 max-h-20 overflow-y-auto'>
-							{debugInfo.map((info, index) => (
-								<div key={index} className='truncate'>
-									{info}
-								</div>
-							))}
-						</div>
-						<div className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-							Socket: {isConnected ? '✅ Connected' : '❌ Disconnected'}
-						</div>
-					</div>
 				</div>
 			)}
 		</div>

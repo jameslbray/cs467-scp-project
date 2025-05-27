@@ -82,7 +82,7 @@ class ConnectionsRabbitMQClient:
             
             # Declare queue for connection notifications
             await self.rabbitmq.declare_queue(
-                "connection_notifications",
+                "notifications",
                 durable=True
             )
 
@@ -90,13 +90,13 @@ class ConnectionsRabbitMQClient:
             await self.rabbitmq.bind_queue(
                 "connections",
                 "connections",
-                "connection.#"  # All connection update events
+                "user.#"  # All connection update events
             )
             
             await self.rabbitmq.bind_queue(
-                "connection_notifications", 
                 "notifications",
-                "connection.#"  # All connection notification events
+                "notifications",
+                "user.#"  # All connection notifications
             )
             
             logger.info("Connected to RabbitMQ for connection events")
@@ -126,41 +126,34 @@ class ConnectionsRabbitMQClient:
 
     async def publish_friend_request(
         self,
-        recipient_id: str,
-        sender_id: str,
-        connection_id: str,
-        message: Optional[str] = None,
-        routing_key: Optional[str] = None,
-        reply_to: Optional[str] = None,
+        message: str,
+        routing_key: str,
+        reply_to: Optional[str],
     ) -> bool:
         """Publish a friend request notification event."""
         try:
             if not self._initialized:
                 await self.initialize()
-                
-            message = json.dumps({
-                "event_type": "friend_request",
-                "recipient_id": recipient_id,
-                "sender_id": sender_id,
-                "reference_id": str(connection_id),
-                "notification_type": "friend_request",
-                "content_preview": f"{sender_id} sent you a friend request",
-                "timestamp": datetime.now().isoformat(),
-            })
             
             if routing_key is None:
-                routing_key = "connections.friend_request"
-            if reply_to is None:
-                reply_to = "connection_notifications"
-                
-            await self.rabbitmq.publish_message(
-                exchange="connections",
-                routing_key=routing_key,
-                message=message,
-                reply_to=reply_to
-            )
+                routing_key = "user.friend_request"
+            # if reply_to is None:
+            #     reply_to = "connection_notifications"
             
-            logger.info(f"Published friend request notification for recipient {recipient_id}")
+            if reply_to is not None:
+                await self.rabbitmq.publish_message(
+                    exchange="connections",
+                    routing_key=routing_key,
+                    message=message,
+                    reply_to=reply_to
+                )
+            else:
+                await self.rabbitmq.publish_message(
+                    exchange="connections",
+                    routing_key=routing_key,
+                    message=message
+                )
+            
             return True
         except Exception as e:
             logger.error(f"Failed to publish friend request notification: {e}")
@@ -179,6 +172,7 @@ class ConnectionsRabbitMQClient:
                 await self.initialize()
                 
             message = json.dumps({
+                "source": "connections",
                 "event_type": "friend_accepted",
                 "recipient_id": recipient_id,
                 "sender_id": sender_id,
@@ -189,8 +183,8 @@ class ConnectionsRabbitMQClient:
             })
             
             await self.rabbitmq.publish_message(
-                exchange="connectios",
-                routing_key="connections.friend_accepted",
+                exchange="connections",
+                routing_key="user.friend_accepted",
                 message=message
             )
             

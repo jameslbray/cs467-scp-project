@@ -395,13 +395,10 @@ class ConnectionManager:
         try:
             # Determine the correct routing key based on notification type
             if notification_type == "friend_request":
-                routing_key = "connection.friend_request"
                 event_type = "friend_request"
             elif notification_type == "friend_accepted":
-                routing_key = "connection.friend_accepted"
                 event_type = "friend_accepted"
             else:
-                routing_key = f"connection.{notification_type}"
                 event_type = notification_type
 
             if not correlation_id:
@@ -409,9 +406,12 @@ class ConnectionManager:
 
                 correlation_id = str(uuid.uuid4())
 
+            routing_key = f"user.{recipient_id}"
+            
             # Prepare message
             message = json.dumps(
                 {
+                    "source": "connections",
                     "event_type": event_type,
                     "recipient_id": recipient_id,
                     "sender_id": sender_id,
@@ -424,9 +424,6 @@ class ConnectionManager:
 
             # Publish friend request event using correct parameters
             await self.rabbitmq.publish_friend_request(
-                recipient_id=recipient_id,
-                sender_id=sender_id,
-                connection_id=correlation_id,
                 message=message,
                 routing_key=routing_key,
                 reply_to=reply_to,

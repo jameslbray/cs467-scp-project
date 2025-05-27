@@ -20,7 +20,7 @@ import type { UserStatusType } from '../types/userStatusType';
 
 const ChatPage: React.FC = () => {
 	const { user, isLoading: authLoading } = useAuth();
-	const { isConnected, socket } = useSocketContext();
+	const { isConnected } = useSocketContext();
 	const [friends, setFriends] = useState<Record<string, UserStatusType>>({});
 	const [friendCount, setFriendCount] = useState(0);
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -44,12 +44,13 @@ const ChatPage: React.FC = () => {
 	});
 
 	// Listen for new notification events
-	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, () => {
+	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, (notification) => {
 		setHasNewNotification(true);
+		console.log("Received notification:", notification);
 
 		// Optional: Add sound notification
 		try {
-			const notificationSound = new Audio('/notification-sound.mp3');
+			const notificationSound = new Audio('../assets/notification-sound.mp3');
 			notificationSound.play().catch((e) => console.log('Auto-play prevented:', e));
 		} catch (e) {
 			console.log('Audio notification not supported', e);
@@ -66,15 +67,15 @@ const ChatPage: React.FC = () => {
 		setFriendCount(Object.keys(friends).length);
 	}, [friends]);
 
-	useEffect(() => {
-		if (isConnected && user) {
-			// Request friend statuses from server
-			if (socket) {
-				console.log('Requesting friend statuses...');
-				socket.emit(ServerEvents.FRIEND_STATUSES);
-			}
-		}
-	}, [isConnected, user, socket]);
+	// useEffect(() => {
+	// 	if (isConnected && user) {
+	// 		// Request friend statuses from server
+	// 		if (socket) {
+	// 			console.log('Requesting friend statuses...');
+	// 			socket.emit(ServerEvents.FRIEND_STATUSES);
+	// 		}
+	// 	}
+	// }, [isConnected, user, socket]);
 
 	// Select 'general' room by default when rooms are loaded
 	useEffect(() => {

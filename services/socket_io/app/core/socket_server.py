@@ -10,7 +10,7 @@ from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 from .config import get_socket_io_config
-from .events import AuthEvents, EventType, PresenceEvents, create_event
+from .events import AuthEvents, EventType, create_event
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ class SocketServer:
 
         # Register auth event handlers
         self.auth_events = AuthEvents(self.sio, self.rabbitmq)
-        self.presence_events = PresenceEvents(self.sio, self.rabbitmq)
+        # self.presence_events = PresenceEvents(self.sio, self.rabbitmq)
 
     async def initialize(self) -> bool:
         """Initialize the Socket.IO server and its dependencies."""
@@ -102,6 +102,7 @@ class SocketServer:
 
         # Declare queues
         await self.rabbitmq.declare_queue("presence", durable=True)
+        await self.rabbitmq.declare_queue("socket_io_notifications", durable=True)
 
         # Bind queue to presence exchange for status updates
         await self.rabbitmq.bind_queue(
@@ -116,13 +117,16 @@ class SocketServer:
 
         # Bind queue to notifications exchange
         await self.rabbitmq.bind_queue(
+            "socket_io_notifications",
             "notifications",
-            "notifications",
-            "user.#",  # Use topic pattern to catch all user notifications
+            "user.#",
         )
 
         # Start consuming notification events
-        await self.rabbitmq.consume("notifications", self._handle_notification)
+        await self.rabbitmq.consume(
+            "socket_io_notifications",
+            self._handle_notification,
+        )
 
         # Start consuming presence updates
         await self.rabbitmq.consume("presence", self._handle_presence_update)
@@ -165,12 +169,24 @@ class SocketServer:
                 )
                 await self.sio.disconnect(sid)
                 return
-
+        
             user_id = response["user"]["id"]
             username = response["user"].get("username", "Unknown User")
             self.sid_to_username[sid] = username
             self.register_user(sid, user_id)
             logger.info(f"User {user_id} connected with sid {sid}")
+            
+            # Optionally, publish presence update via RabbitMQ
+            try:
+                await with_retry(
+                    lambda: self._publish_presence_update(user_id, "online"),
+                    max_attempts=3,
+                    circuit_breaker=self.rabbitmq_cb,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to publish presence update for {user_id}: {e}"
+                )
 
             # Join the user to the "general" room by default
             await self.join_room(sid, "general")
@@ -267,9 +283,6 @@ class SocketServer:
                 circuit_breaker=self.rabbitmq_cb,
             )
 
-            # TODO: Frontend UserStatus is expecting
-            # a success response with the status
-            # Send success response back to client
             await self.sio.emit(
                 "presence:status:update:success",
                 {"status": data.get("status", "offline")},
@@ -595,9 +608,9 @@ class SocketServer:
     async def _handle_notification(self, message):
         """Handle notification messages from RabbitMQ."""
         try:
+            logger.info("Received notification from RabbitMQ")
             body = json.loads(message.body.decode())
-            notification_data = body.get("notification", {})
-            recipient_id = notification_data.get("recipient_id")
+            recipient_id = body.get("recipient_id")
 
             if not recipient_id:
                 logger.warning("Notification received without recipient_id")
@@ -605,11 +618,11 @@ class SocketServer:
                 return
 
             # Find the socket ID for the recipient
-            recipient_sid = self.get_sid_from_user_id(recipient_id)
-            if recipient_sid:
+            sid = self.get_sid_from_user_id(recipient_id)
+            if sid:
                 # Emit the notification to the client
                 await self.sio.emit(
-                    "notification:new", notification_data, room=recipient_sid
+                    "notification:new", body, room=sid
                 )
                 logger.info(f"Emitted notification to user {recipient_id}")
             else:

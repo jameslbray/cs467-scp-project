@@ -90,28 +90,28 @@ class NotificationRabbitMQClient:
 
             # Declare queues for different types of notifications
             await self.rabbitmq.declare_queue(
-                "notifications",
+                "notifications_queue",
                 durable=True
             )
             
             await self.rabbitmq.declare_queue(
-                "connections",
+                "connections_queue",
                 durable=True
             )
 
             # Bind queues to exchanges with routing keys
             # General notifications for all users
             await self.rabbitmq.bind_queue(
+                "notifications_queue",
                 "notifications",
-                "notifications",
-                "broadcast.#"  # All broadcast messages
+                "user.#"  # All broadcast messages
             )
 
             # Connection events (friend requests, etc)
             await self.rabbitmq.bind_queue(
+                "connections_queue",
                 "connections",
-                "connections",
-                "connections.#"  # All connection-related events
+                "user.#"  # All connection-related events
             )
 
             logger.info("Connected to RabbitMQ for notification events")
@@ -121,7 +121,7 @@ class NotificationRabbitMQClient:
 
     async def register_consumers(
         self, 
-        notifications_handler: Callable, 
+        # notifications_handler: Callable, 
         connection_handler: Callable,
     ) -> None:
         """Register consumer handlers for different queues."""
@@ -130,12 +130,12 @@ class NotificationRabbitMQClient:
                 await self.initialize()
                 
             # Start consuming messages with provided handlers
+            # await self.rabbitmq.consume(
+            #     "notifications",
+            #     notifications_handler
+            # )
             await self.rabbitmq.consume(
-                "notifications",
-                notifications_handler
-            )
-            await self.rabbitmq.consume(
-                "connections",
+                "connections_queue",
                 connection_handler
             )
 
@@ -158,25 +158,20 @@ class NotificationRabbitMQClient:
                 await self.initialize()
                 
             # Create the notification payload
-            notification = {
+            message = json.dumps({
+                "source": "notifications",
                 "recipient_id": recipient_id,
                 "sender_id": sender_id,
                 "reference_id": str(reference_id),
                 "notification_type": notification_type,
                 "content_preview": content_preview,
                 "timestamp": datetime.now().isoformat(),
-                "notification_id": str(ObjectId()),
                 "read": False
-            }
-            
-            # Wrap in the expected format for socket_server.py
-            message = json.dumps({
-                "notification": notification
             })
             
             await self.rabbitmq.publish_message(
                 exchange="notifications",
-                routing_key="notifications",
+                routing_key=f"user.{recipient_id}",
                 message=message
             )
             
@@ -199,27 +194,21 @@ class NotificationRabbitMQClient:
                 await self.initialize()
                 
             # Create the notification payload
-            notification = {
+            message = json.dumps({
+                "source": "notifications",
                 "event_type": "friend_request",
                 "recipient_id": recipient_id,
                 "sender_id": sender_id,
                 "reference_id": str(connection_id),
                 "content_preview": f"{sender_name} sent you a friend request",
                 "timestamp": datetime.now().isoformat(),
-                # Add notification_id field for frontend tracking
-                "notification_id": str(ObjectId()),
                 "read": False,
                 "notification_type": "friend_request"
-            }
-            
-            # Wrap in the expected format
-            message = json.dumps({
-                "notification": notification
             })
             
             await self.rabbitmq.publish_message(
-                exchange="connections",
-                routing_key=f"connections.friend_request",
+                exchange="notifications",
+                routing_key=f"user.{recipient_id}",
                 message=message
             )
             
