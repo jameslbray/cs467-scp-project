@@ -51,6 +51,11 @@ class UserCreate(User):
 
     password: str
 
+class UserUpdate(BaseModel):
+    """Schema for modifying a user"""
+
+    email: EmailStr
+    profile_picture_url: str
 
 class UserSchema(User):
     """Schema for user responses, including relationships"""
