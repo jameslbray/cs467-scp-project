@@ -6,13 +6,14 @@ import json
 import logging
 from datetime import datetime
 from typing import Any, List, Optional
+from pydantic.json import pydantic_encoder
 
 import asyncpg  # type: ignore
 
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
-from ..db.models import Connection
-from ..db.schemas import ConnectionCreate, ConnectionUpdate
+# from ..db.models import Connection
+from ..db.schemas import ConnectionCreate, ConnectionUpdate, Connection
 from .connections_rabbitmq import ConnectionsRabbitMQClient
 
 # configure logging
@@ -439,11 +440,112 @@ class ConnectionManager:
 
     async def _process_connection_message(self, message) -> None:
         """Process a connection update message from RabbitMQ."""
-        try:
+        try:            
             body = json.loads(message.body.decode())
+            
+            if "source" in body and body["source"] == "connections":
+                logger.warning("Invalid message source, ignoring")
+                await message.ack()
+                return
+            
             logger.info(f"Processing connection update: {body}")
+            
+            if "event_type" not in body:
+                logger.error("Missing event_type in message")
+                await message.nack(requeue=False)
+                return
+            event_type = body["event_type"]
+            
+            if event_type == "connection:friend_request":
+                recipient_id = body.get("recipient_id")
+                sender_id = body.get("sender_id")
+                reference_id = body.get("reference_id")
+                content_preview = body.get("content_preview", "")
+                
+                if not recipient_id or not sender_id or not reference_id:
+                    logger.error("Missing required fields for friend request")
+                    await message.nack(requeue=False)
+                    return
+                
+                # await 
+                
+                # Publish friend request notification
+                await self.publish_notification_event(
+                    recipient_id=recipient_id,
+                    sender_id=sender_id,
+                    reference_id=reference_id,
+                    notification_type="friend_request",
+                    content_preview=content_preview,
+                )
+            elif event_type == "connection:friend_accepted":
+                recipient_id = body.get("recipient_id")
+                sender_id = body.get("sender_id")
+                reference_id = body.get("reference_id")
+                content_preview = body.get("content_preview", "")
+                
+                if not recipient_id or not sender_id or not reference_id:
+                    logger.error("Missing required fields for friend accepted")
+                    await message.nack(requeue=False)
+                    return
+                
+                # Publish friend accepted notification
+                await self.publish_notification_event(
+                    recipient_id=recipient_id,
+                    sender_id=sender_id,
+                    reference_id=reference_id,
+                    notification_type="friend_accepted",
+                    content_preview=content_preview,
+                )
+            elif event_type == "connections:get_friends":
+                user_id = body.get("user_id")
+                
+                if not user_id:
+                    logger.error("Missing user_id for get_friends event")
+                    await message.nack(requeue=False)
+                    return
+                
+                # Fetch user's connections
+                connections = await self.get_user_connections(user_id)
+                if connections is None:
+                    logger.error(f"Failed to fetch connections for user {user_id}")
+                    await message.nack(requeue=False)
+                    return
+                
+                # #  Convert connections to dicts for serialization
+                # connection_dicts = []
+                # for conn in connections:
+                #     conn_dict = conn.model_dump()
+                #     # Convert UUID objects to strings
+                #     conn_dict["id"] = str(conn_dict["id"]) if conn_dict["id"] else None
+                #     conn_dict["user_id"] = str(conn_dict["user_id"])
+                #     conn_dict["friend_id"] = str(conn_dict["friend_id"])
+                #     # Convert datetime objects to ISO format strings
+                #     conn_dict["created_at"] = conn_dict["created_at"].isoformat() if conn_dict["created_at"] else None
+                #     conn_dict["updated_at"] = conn_dict["updated_at"].isoformat() if conn_dict["updated_at"] else None
+                #     connection_dicts.append(conn_dict)
+                    
+                # Publish the connections back to the requester
+                response_message = json.dumps({
+                    "source": "connections",
+                    "event_type": "friends_list",
+                    "user_id": user_id,
+                    "friends": connections
+                }, default=pydantic_encoder)
+                
+                await message.ack()
+                
+                await self.rabbitmq.publish_friends_list(
+                    routing_key=message.reply_to,
+                    message=response_message,
+                    correlation_id=message.correlation_id
+                )
+            else:
+                logger.error(f"Unknown event type: {event_type}")
+                await message.nack(requeue=False)
+                return
 
             await message.ack()
+
         except Exception as e:
             logger.error(f"Error processing connection update: {e}")
             await message.nack(requeue=False)

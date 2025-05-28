@@ -6,5 +6,7 @@ export enum ServerEvents {
   FRIEND_STATUS_CHANGED = 'presence:friend:status:changed',
   UPDATE_STATUS = 'presence:update_status',
   NEW_NOTIFICATION = "notification:new",
-  NOTIFICATIONS_UPDATE = "notifications:update"
+  NOTIFICATIONS_UPDATE = "notifications:update",
+  GET_FRIENDS = 'connections:get_friends',
+  GET_FRIENDS_SUCCESS = 'connections:get_friends:success',
 } 

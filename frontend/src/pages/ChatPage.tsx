@@ -14,14 +14,21 @@ import { useSocketContext } from '../contexts/socket/socketContext';
 import { useSocketEvent } from '../contexts/socket/useSocket';
 import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
-import type { NotificationResponseType } from '../types/notificationType'; // Add this import
+import type { NotificationResponseType } from '../types/notificationType';
+import type { FriendConnection } from '../types/friendsTypes';
 import { ServerEvents } from '../types/serverEvents';
-import type { UserStatusType } from '../types/userStatusType';
+// import type { UserStatusType } from '../types/userStatusType';
+
+interface UpdateFriendsData {
+	user_id: string;
+	// Add other properties from FriendConnection if needed
+	// [key: string]: any;
+}
 
 const ChatPage: React.FC = () => {
 	const { user, isLoading: authLoading } = useAuth();
-	const { isConnected } = useSocketContext();
-	const [friends, setFriends] = useState<Record<string, UserStatusType>>({});
+	const { isConnected, socket } = useSocketContext();
+	const [friends, setFriends] = useState<Record<string, FriendConnection>>({});
 	const [friendCount, setFriendCount] = useState(0);
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 	const { rooms, loading: roomsLoading } = useFetchRooms();
@@ -29,19 +36,66 @@ const ChatPage: React.FC = () => {
 	const [hasNewNotification, setHasNewNotification] = useState(false);
 
 	// Listen for initial friend statuses
-	useSocketEvent<{ statuses: Record<string, UserStatusType> }>(
-		ServerEvents.FRIEND_STATUSES,
-		(data) => {
-			console.log('Received friend statuses:', data);
+	// useSocketEvent<{ statuses: Record<string, UserStatusType> }>(
+	// 	ServerEvents.FRIEND_STATUSES,
+	// 	(data) => {
+	// 		console.log('Received friend statuses:', data);
 
-			setFriends(data.statuses);
-		}
-	);
+	// 		setFriends(data.statuses);
+	// 	}
+	// );
 
 	// Listen for individual friend status changes
-	useSocketEvent<UserStatusType>(ServerEvents.FRIEND_STATUS_CHANGED, (data) => {
-		setFriends((prev) => ({ ...prev, [data.user_id]: data }));
+	useSocketEvent<FriendConnection[]>(ServerEvents.GET_FRIENDS_SUCCESS, (data) => {
+		console.log('Received friends list:', data);
+		setFriends((prev: Record<string, FriendConnection>) => {
+			const updatedFriends: Record<string, FriendConnection> = { ...prev };
+
+			// Check if data is an array
+			if (Array.isArray(data)) {
+				data.forEach((friend: UpdateFriendsData) => {
+					if (friend && friend.user_id) {
+						updatedFriends[friend.user_id] = friend as FriendConnection;
+					}
+				});
+			}
+			// Check if data is an object with friends property
+			else if (
+				data &&
+				typeof data === 'object' &&
+				'friends' in data &&
+				Array.isArray((data as { friends: FriendConnection[] }).friends)
+			) {
+				(data as { friends: UpdateFriendsData[] }).friends.forEach((friend: UpdateFriendsData) => {
+					if (friend && friend.user_id) {
+						updatedFriends[friend.user_id] = friend as FriendConnection;
+					}
+				});
+			}
+			// Check if data is a single connection object
+			else if (
+				data &&
+				typeof data === 'object' &&
+				'user_id' in data &&
+				typeof (data as { user_id: unknown }).user_id === 'string'
+			) {
+				const friend = data as FriendConnection;
+				updatedFriends[friend.user_id] = friend;
+			}
+
+			return updatedFriends;
+		});
 	});
+
+	// const updateFriends = (data: FriendConnection[]): void => {
+	// 	setFriends((prev: Record<string, FriendConnection>) => {
+	// 		const updatedFriends: Record<string, FriendConnection> = { ...prev };
+	// 		data.forEach((friend: FriendConnection) => {
+	// 			updatedFriends[friend.user_id] = friend as FriendConnection;
+	// 		});
+	// 		return updatedFriends;
+	// 	});
+	// };
 
 	// Listen for new notification events
 	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, (notification) => {
@@ -67,15 +121,17 @@ const ChatPage: React.FC = () => {
 		setFriendCount(Object.keys(friends).length);
 	}, [friends]);
 
-	// useEffect(() => {
-	// 	if (isConnected && user) {
-	// 		// Request friend statuses from server
-	// 		if (socket) {
-	// 			console.log('Requesting friend statuses...');
-	// 			socket.emit(ServerEvents.FRIEND_STATUSES);
-	// 		}
-	// 	}
-	// }, [isConnected, user, socket]);
+	useEffect(() => {
+		if (isConnected && user) {
+			// Request friend list from server
+			if (socket) {
+				console.log('Requesting friends list...');
+				socket.emit(ServerEvents.GET_FRIENDS, {
+					userId: user.id
+				});
+			};
+		}
+	}, [isConnected, user, socket]);
 
 	// Select 'general' room by default when rooms are loaded
 	useEffect(() => {

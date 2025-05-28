@@ -5,9 +5,10 @@ import { useSocketContext } from '../contexts/socket/socketContext';
 import { useUserStatus } from '../hooks/useUserStatus';
 import type { ErrorResponse, StatusType, StatusUpdateResponse } from '../types';
 import type { UserStatusType } from '../types/userStatusType';
+import { FriendConnection } from '../types/friendsTypes';
 
 type UserStatusProps = {
-	friends: UserStatusType[];
+	friends: FriendConnection[];
 };
 
 const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
@@ -105,15 +106,15 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 			return originalEmit.apply(this, [event, ...args]);
 		};
 
-		// Request initial friend statuses when component mounts
-		if (user?.id && socket) {
-			setTimeout(() => {
-				socket.emit('presence:friend:statuses', {
-					user_id: user.id,
-					friend_ids: friends.map((friend) => friend.user_id),
-				});
-			}, 1000); // Delay to ensure connection is stable
-		}
+		// // Request initial friend statuses when component mounts
+		// if (user?.id && socket) {
+		// 	setTimeout(() => {
+		// 		socket.emit('presence:friend:statuses', {
+		// 			user_id: user.id,
+		// 			friend_ids: friends.map((friend) => friend.user_id),
+		// 		});
+		// 	}, 1000); // Delay to ensure connection is stable
+		// }
 
 		// Cleanup event listeners
 		return () => {

@@ -3,9 +3,8 @@ RabbitMQ client for notification service.
 """
 import logging
 import json
-from typing import Any, Callable, Dict, Optional
+from typing import Callable
 from datetime import datetime
-from bson import ObjectId
 
 from services.rabbitmq.core.client import RabbitMQClient as BaseRabbitMQClient
 from services.shared.utils.retry import CircuitBreaker, with_retry
@@ -104,7 +103,6 @@ class NotificationRabbitMQClient:
             await self.rabbitmq.bind_queue(
                 "notifications_queue",
                 "notifications",
-                "notifications",
                 "user.#"  # All broadcast messages
             )
 
@@ -122,7 +120,7 @@ class NotificationRabbitMQClient:
 
     async def register_consumers(
         self,
-        notifications_handler: Callable,
+        # notifications_handler: Callable,
         connection_handler: Callable,
     ) -> None:
         """Register consumer handlers for different queues."""
@@ -168,11 +166,6 @@ class NotificationRabbitMQClient:
                 "content_preview": content_preview,
                 "timestamp": datetime.now().isoformat(),
                 "read": False
-            }
-
-            # Wrap in the expected format for socket_server.py
-            message = json.dumps({
-                "notification": notification
             })
 
             await self.rabbitmq.publish_message(
@@ -210,11 +203,6 @@ class NotificationRabbitMQClient:
                 "timestamp": datetime.now().isoformat(),
                 "read": False,
                 "notification_type": "friend_request"
-            }
-
-            # Wrap in the expected format
-            message = json.dumps({
-                "notification": notification
             })
 
             await self.rabbitmq.publish_message(

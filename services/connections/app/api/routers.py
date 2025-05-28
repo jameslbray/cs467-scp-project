@@ -26,7 +26,7 @@ from starlette.status import (
 from services.connections.app.core.config import get_settings
 from services.connections.app.core.connection_manager import ConnectionManager
 from services.connections.app.db.schemas import (
-    ConnectionSchema as Connection,
+    Connection,
     ErrorResponse,
     ConnectionCreate,
     ConnectionUpdate

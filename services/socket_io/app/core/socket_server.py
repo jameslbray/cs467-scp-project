@@ -50,7 +50,13 @@ class SocketServer:
         self.sio.on("presence:friend:statuses", self._on_get_friend_statuses)
 
         self.sio.on("notifications:fetch", self._on_notifications_fetch)
+        # self.sio.on("notifications:fetch_all", self._on_notifications_fetch)
+        
+        self.sio.on(
+            "connections:get_friends", self.handle_get_friends
+        )
 
+        # Connections to General room, not specific to a user
         self.sio.on("get_connections", self._on_get_connections)
 
         # TODO: implement chat typing and chat read receipts functionality
@@ -125,6 +131,11 @@ class SocketServer:
         # Start consuming notification events
         await self.rabbitmq.consume(
             "socket_notifications", self._handle_notification
+        )
+        
+        # Start consuming connection events
+        await self.rabbitmq.consume(
+            "connections", self._handle_connections
         )
 
         # Start consuming presence updates
@@ -331,6 +342,7 @@ class SocketServer:
             )
 
     async def _on_get_connections(self, sid: str) -> None:
+        """ Handle request for active connections list."""
         connections = []
         for conn_sid, user_id in self.sid_to_user.items():
             rooms = list(self.sio.rooms(conn_sid))
@@ -489,7 +501,7 @@ class SocketServer:
             }
 
             await self.sio.emit(
-                "presence:friend:status:changed", presence_data
+                EventType.PRESENCE_FRIEND_STATUS_CHANGED, presence_data
             )
 
             await message.ack()
@@ -542,15 +554,28 @@ class SocketServer:
 
         try:
             # Use publish_and_wait for RPC-style communication
+            if data is None or "friend_ids" not in data or not data["friend_ids"]:
+                logger.error(
+                    f"Invalid data for friend statuses request: {data}"
+                )
+                await self.sio.emit(
+                    "presence:friend:statuses:error",
+                    {"error": "Invalid request data"},
+                    room=sid,
+                )
+                return
+            
             response = await self.rabbitmq.publish_and_wait(
                 exchange="presence",
-                routing_key="friend.statuses",
+                routing_key="friends.statuses",
                 message={
                     "user_id": user_id,
-                    "friend_ids": (data or {}).get("friend_ids", []),
+                    "friend_ids": data["friend_ids"],
+                    "source": "socket_io",
+                    "event_type": EventType.PRESENCE_FRIEND_STATUSES,
                 },
                 correlation_id=sid,
-                timeout=10.0,  # Increased timeout
+                timeout=10.0,
             )
 
             logger.info(f"Received friend statuses response: {response}")
@@ -609,10 +634,9 @@ class SocketServer:
         try:
             logger.info("Received notification from RabbitMQ")
             body = json.loads(message.body.decode())
-            notification_data = body.get("notification", {})
-            recipient_id = notification_data.get("recipient_id")
+            recipient_id = body.get("recipient_id")
 
-            logger.info(f"Received notification: {notification_data}")
+            logger.info(f"Received notification: {body}")
 
             if not recipient_id:
                 logger.warning("Notification received without recipient_id")
@@ -676,3 +700,78 @@ class SocketServer:
             await self.sio.emit(
                 "notifications:fetch:error", {"error": str(e)}, room=sid
             )
+
+    async def handle_get_friends(self, sid: str, data: Optional[Dict[str, Any]] = None):
+        """Handle request for friends list."""
+        user_id = self.get_user_id_from_sid(sid)
+        logger.info(
+            f"Received get friends request from {sid}, user_id: {user_id}"
+        )
+        if not user_id:
+            logger.error(f"Get friends request from unauthenticated socket: {sid}")
+            await self.sio.emit(
+                "connections:get_friends:error",
+                {"error": "Not authenticated"},
+                room=sid,
+            )
+            return
+
+        try:
+            # Use publish_and_wait to get friends list
+            response = await self.rabbitmq.publish_and_wait(
+                exchange="connections",
+                routing_key="user.get_friends",
+                message={
+                    "user_id": user_id,
+                    "source": "socket_io",
+                    "event_type": EventType.CONNECTION_GET_FRIENDS,
+                    },
+                correlation_id=sid,
+                timeout=5.0,
+            )
+            logger.info(f"Received friends list response: {response}")
+
+            if response and "friends" in response:
+                await self.sio.emit(
+                    "connections:get_friends:success", response["friends"], room=sid
+                )
+            else:
+                await self.sio.emit(
+                    "connections:get_friends:error",
+                    {"error": "Failed to fetch friends"},
+                    room=sid,
+                )
+        except Exception as e:
+            logger.error(f"Failed to get friends list: {e}")
+            await self.sio.emit(
+                "connections:get_friends:error", {"error": str(e)}, room=sid
+            )
+    
+    async def _handle_connections(self, message):
+        """Handle connection-related messages from RabbitMQ."""
+        try:
+            body = json.loads(message.body.decode())
+            event_type = body.get("event_type")
+            user_id = body.get("user_id")
+            sid = self.get_sid_from_user_id(user_id)
+
+            if not sid:
+                logger.warning(f"No socket found for user {user_id}")
+                await message.ack()
+                return
+
+            if event_type == EventType.CONNECTION_GET_FRIENDS.value:
+                # Handle get friends request
+                friends = body.get("friends", [])
+                await self.sio.emit(
+                    "connections:get_friends:success",
+                    {"friends": friends},
+                    room=sid,
+                )
+            else:
+                logger.warning(f"Unknown connection event type: {event_type}")
+
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error handling connection message: {e}")
+            await message.nack(requeue=False)

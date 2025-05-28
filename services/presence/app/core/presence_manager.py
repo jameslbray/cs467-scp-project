@@ -153,24 +153,24 @@ class PresenceManager:
         """Process a presence message from RabbitMQ."""
         try:
             body = json.loads(message.body.decode())
-            message_type = body.get("type")
+            event_type = body.get("event_type")
 
-            logger.info(f"Processing presence message: {message_type}")
+            logger.info(f"Processing presence message: {event_type}")
 
-            if message_type == "presence:status:update":
+            if event_type == "presence:status:update":
                 await self._handle_status_update(body, message)
-            elif message_type == "presence:status:query":
+            elif event_type == "presence:status:query":
                 await self._handle_status_query(body, message)
-            else:
+            elif event_type == "presence:friend:statuses":
                 # Handle friend statuses request (from socket server)
                 user_id = body.get("user_id")
                 if user_id:
                     await self._handle_friend_statuses_request(body, message)
-                else:
-                    logger.warning(
-                        f"Unknown presence message type: {message_type}"
-                    )
-                    await message.ack()
+            else:
+                logger.warning(
+                    f"Unknown presence message type: {event_type}"
+                )
+                await message.ack()
 
         except Exception as e:
             logger.error(f"Error processing presence message: {e}")

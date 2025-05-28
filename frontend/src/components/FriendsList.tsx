@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
-import { UserStatusType } from '../types/userStatusType';
+// import { UserStatusType } from '../types/userStatusType';
 import { FriendConnection } from '../types/friendsTypes'; 
 import { fetchAcceptedFriends, enrichConnectionsWithUsernames } from '../services/friendsAPI';
 import { getFriendId, getFriendDisplayName, filterOnlineFriends } from '../utils/friendsUtils';
 import { useFriendStatuses } from '../hooks/useFriendStatuses';
 
 interface FriendsListProps {
-  friends: Record<string, UserStatusType>;
+  friends: Record<string, FriendConnection>;
   friendCount: number;
 }
 
