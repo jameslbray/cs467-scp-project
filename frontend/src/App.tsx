@@ -11,6 +11,7 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import EditProfilePage from './pages/EditProfilePage';
 
 // Define types for our context and props
 export interface User {
@@ -38,6 +39,7 @@ const App: React.FC = () => {
 								<Route path='/register' element={<RegisterPage />} />
 								<Route path='/forgot-password' element={<ForgotPasswordPage />} />
 								<Route path='/reset-password' element={<ResetPasswordPage />} />
+								<Route path='/edit-profile' element={<EditProfilePage />} />
 								{/* Protected routes */}
 								<Route element={<AuthenticatedLayout />}>
 									<Route path='/chat' element={<ChatPage />} />
