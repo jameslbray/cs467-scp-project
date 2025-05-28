@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/auth/authContext';
 import { useUserStatus } from '../hooks/useUserStatus';
 import { StatusType } from '../types';
+import EditProfile from './EditProfile';
 
 const statusOptions = [
 	{ value: StatusType.ONLINE, label: 'Online', color: 'bg-green-500' },
@@ -26,10 +27,11 @@ const getStatusColor = (status: StatusType) => {
 };
 
 const UserProfileMenu: React.FC = () => {
-	const { user, logout } = useAuth();
+	const { user, logout, token } = useAuth();
 	const { status, updateStatus, isLoading: statusLoading } = useUserStatus();
 	const [open, setOpen] = useState(false);
 	const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+	const [editProfileOpen, setEditProfileOpen] = useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
 
 	// Close dropdown when clicking outside
@@ -55,9 +57,9 @@ const UserProfileMenu: React.FC = () => {
 				aria-expanded={open}
 			>
 				<span className='relative w-8 h-8 flex items-center justify-center'>
-					{user.profile_picture_url ? (
+					{user.profile_picture ? (
 						<img
-							src={user.profile_picture_url}
+							src={user.profile_picture}
 							alt={user.username}
 							className='w-8 h-8 rounded-full object-cover border border-gray-300 dark:border-gray-600'
 						/>
@@ -146,9 +148,13 @@ const UserProfileMenu: React.FC = () => {
 					</div>
 				</div>
 				<div className='py-2 px-4'>
-					<span className='block text-gray-700 dark:text-gray-300 text-sm'>
-						Settings coming soon...
-					</span>
+					<button
+						className='block w-full text-left text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded px-2 py-1 transition'
+						onClick={() => setEditProfileOpen(true)}
+						type='button'
+					>
+						Edit Profile
+					</button>
 				</div>
 				<div className='py-2 px-4 border-t border-gray-100 dark:border-gray-700'>
 					<button
@@ -159,6 +165,24 @@ const UserProfileMenu: React.FC = () => {
 					</button>
 				</div>
 			</div>
+			{editProfileOpen && (
+				<div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40'>
+					<div className='bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md relative'>
+						<button
+							className='absolute top-2 right-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xl font-bold'
+							onClick={() => setEditProfileOpen(false)}
+							aria-label='Close edit profile'
+							type='button'
+						>
+							&times;
+						</button>
+						<h3 className='text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100'>
+							Edit Profile
+						</h3>
+						{token && <EditProfile token={token} />}
+					</div>
+				</div>
+			)}
 		</div>
 	);
 };

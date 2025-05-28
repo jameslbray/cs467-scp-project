@@ -5,7 +5,7 @@ import UserProfileMenu from '../components/UserProfileMenu';
 import { useAuth } from '../contexts/auth/authContext';
 
 const AuthenticatedLayout: React.FC = () => {
-	const { isAuthenticated, isLoading, logout } = useAuth();
+	const { isAuthenticated, isLoading } = useAuth();
 
 	if (isLoading) {
 		return (

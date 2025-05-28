@@ -13,18 +13,6 @@ import RegisterPage from './pages/RegisterPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import EditProfilePage from './pages/EditProfilePage';
 
-// Define types for our context and props
-export interface User {
-	id: string;
-	username: string;
-	profilePicture?: string;
-}
-
-export interface UserStatusIntf {
-	user_id: string;
-	status: 'online' | 'away' | 'offline';
-	last_changed: string;
-}
 
 const App: React.FC = () => {
 	return (

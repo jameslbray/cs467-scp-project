@@ -241,7 +241,7 @@ class ConnectionManager:
             return None
 
         try:
-            logger.debug(
+            logger.info(
                 f"Creating connection: {connection.user_id} -> {connection.friend_id}"
             )
             async with self.postgres_client.acquire() as conn:
