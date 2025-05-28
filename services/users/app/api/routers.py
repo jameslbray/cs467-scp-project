@@ -143,11 +143,12 @@ async def register_user(
     )
 
     # Get room ID for user
-    room_id = await rabbitmq_client.publish_message(
+    response = await rabbitmq_client.rabbitmq_client.publish_and_wait(
         exchange="chat",
         routing_key="room.get_id_by_name",
-        message=json.dumps({"name": "general"}),
+        message={"action": "get_room_id_by_name", "name": "General"},
     )
+    room_id = response.get("room_id")
 
     if room_id:
         logger.info(f"Room ID for user {db_user.id}: {room_id}")

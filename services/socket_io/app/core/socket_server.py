@@ -94,14 +94,15 @@ class SocketServer:
             raise Exception("Failed to connect to RabbitMQ")
 
         # Declare exchanges
-        await self.rabbitmq.declare_exchange("chat", "direct")
+        await self.rabbitmq.declare_exchange("chat", "topic")
         await self.rabbitmq.declare_exchange("presence", "direct")
         await self.rabbitmq.declare_exchange("notifications", "topic")
-        await self.rabbitmq.declare_exchange("auth", "direct")
+        await self.rabbitmq.declare_exchange("auth", "topic")
         await self.rabbitmq.declare_exchange("connections", "topic")
 
         # Declare queues
         await self.rabbitmq.declare_queue("presence", durable=True)
+        await self.rabbitmq.declare_queue("socket_notifications", durable=True)
 
         # Bind queue to presence exchange for status updates
         await self.rabbitmq.bind_queue(
@@ -116,13 +117,15 @@ class SocketServer:
 
         # Bind queue to notifications exchange
         await self.rabbitmq.bind_queue(
-            "notifications",
+            "socket_notifications",
             "notifications",
             "user.#",  # Use topic pattern to catch all user notifications
         )
 
         # Start consuming notification events
-        await self.rabbitmq.consume("notifications", self._handle_notification)
+        await self.rabbitmq.consume(
+            "socket_notifications", self._handle_notification
+        )
 
         # Start consuming presence updates
         await self.rabbitmq.consume("presence", self._handle_presence_update)
@@ -598,6 +601,8 @@ class SocketServer:
             body = json.loads(message.body.decode())
             notification_data = body.get("notification", {})
             recipient_id = notification_data.get("recipient_id")
+
+            logger.info(f"Received notification: {notification_data}")
 
             if not recipient_id:
                 logger.warning("Notification received without recipient_id")
