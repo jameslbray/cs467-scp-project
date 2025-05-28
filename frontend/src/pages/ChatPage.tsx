@@ -8,7 +8,6 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import NotificationBell from '../components/NotificationsList';
 import RoomList from '../components/RoomList';
 import SearchUsers from '../components/SearchUsers';
-import UserStatus from '../components/UserStatus';
 import { useAuth } from '../contexts';
 import { useSocketContext } from '../contexts/socket/socketContext';
 import { useSocketEvent } from '../contexts/socket/useSocket';
@@ -105,7 +104,7 @@ const ChatPage: React.FC = () => {
 				<div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
 					<div className='flex justify-between items-center h-16'>
 						<div className='flex items-center'>
-							<UserStatus friends={Object.values(friends)} />
+							{/* <UserStatus friends={Object.values(friends)} /> */}
 						</div>
 						<div className='flex items-center space-x-4'>
 							{/* Notifications */}
