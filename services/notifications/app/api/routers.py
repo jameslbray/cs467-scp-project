@@ -164,9 +164,8 @@ async def create_user_notification(
                 status_code=HTTP_404_NOT_FOUND,
                 detail="Notification creation failed",
             )
+        
         return SuccessResponse(message="success")
-
-        return {"message" : "success"}
 
     except Exception as e:
         logger.error(f"Failed to update notification: {e}")

@@ -45,6 +45,7 @@ class ServiceConnector:
                         f"Received event with no handler: {event_type}")
 
             # Register service with the Socket.IO server
+            # ! TODO: FIX 
             await self.sio.emit("register_service", {"service_name": self.service_name})
 
         except Exception as e:
