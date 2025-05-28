@@ -733,7 +733,7 @@ class SocketServer:
 
             if response and "friends" in response:
                 await self.sio.emit(
-                    "connections:get_friends:success", response["friends"], room=sid
+                    "connections:get_friends:success", response['friends'], room=sid
                 )
             else:
                 await self.sio.emit(

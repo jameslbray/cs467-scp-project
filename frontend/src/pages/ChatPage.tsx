@@ -17,33 +17,19 @@ import { useFetchRooms } from '../hooks/useFetchRooms';
 import type { NotificationResponseType } from '../types/notificationType';
 import type { FriendConnection } from '../types/friendsTypes';
 import { ServerEvents } from '../types/serverEvents';
-// import type { UserStatusType } from '../types/userStatusType';
+import { enrichConnectionsWithUsernames } from '../services/friendsAPI';
+import { getFriendId } from '../utils/friendsUtils';
 
-interface UpdateFriendsData {
-	user_id: string;
-	// Add other properties from FriendConnection if needed
-	// [key: string]: any;
-}
 
 const ChatPage: React.FC = () => {
 	const { user, isLoading: authLoading } = useAuth();
 	const { isConnected, socket } = useSocketContext();
 	const [friends, setFriends] = useState<Record<string, FriendConnection>>({});
-	const [friendCount, setFriendCount] = useState(0);
+	const [enrichedFriends, setEnrichedFriends] = useState<Record<string, FriendConnection>>({});
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 	const { rooms, loading: roomsLoading } = useFetchRooms();
 	// Add state for new notification indicator
 	const [hasNewNotification, setHasNewNotification] = useState(false);
-
-	// Listen for initial friend statuses
-	// useSocketEvent<{ statuses: Record<string, UserStatusType> }>(
-	// 	ServerEvents.FRIEND_STATUSES,
-	// 	(data) => {
-	// 		console.log('Received friend statuses:', data);
-
-	// 		setFriends(data.statuses);
-	// 	}
-	// );
 
 	// Listen for individual friend status changes
 	useSocketEvent<FriendConnection[]>(ServerEvents.GET_FRIENDS_SUCCESS, (data) => {
@@ -53,49 +39,19 @@ const ChatPage: React.FC = () => {
 
 			// Check if data is an array
 			if (Array.isArray(data)) {
-				data.forEach((friend: UpdateFriendsData) => {
+				data.forEach((friend: FriendConnection) => {
 					if (friend && friend.user_id) {
-						updatedFriends[friend.user_id] = friend as FriendConnection;
+						if (user && user.id) {
+							const friendId = getFriendId(friend, user.id);
+							updatedFriends[friendId] = friend as FriendConnection;
+						}
 					}
 				});
 			}
-			// Check if data is an object with friends property
-			else if (
-				data &&
-				typeof data === 'object' &&
-				'friends' in data &&
-				Array.isArray((data as { friends: FriendConnection[] }).friends)
-			) {
-				(data as { friends: UpdateFriendsData[] }).friends.forEach((friend: UpdateFriendsData) => {
-					if (friend && friend.user_id) {
-						updatedFriends[friend.user_id] = friend as FriendConnection;
-					}
-				});
-			}
-			// Check if data is a single connection object
-			else if (
-				data &&
-				typeof data === 'object' &&
-				'user_id' in data &&
-				typeof (data as { user_id: unknown }).user_id === 'string'
-			) {
-				const friend = data as FriendConnection;
-				updatedFriends[friend.user_id] = friend;
-			}
-
 			return updatedFriends;
 		});
 	});
 
-	// const updateFriends = (data: FriendConnection[]): void => {
-	// 	setFriends((prev: Record<string, FriendConnection>) => {
-	// 		const updatedFriends: Record<string, FriendConnection> = { ...prev };
-	// 		data.forEach((friend: FriendConnection) => {
-	// 			updatedFriends[friend.user_id] = friend as FriendConnection;
-	// 		});
-	// 		return updatedFriends;
-	// 	});
-	// };
 
 	// Listen for new notification events
 	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, (notification) => {
@@ -118,8 +74,26 @@ const ChatPage: React.FC = () => {
 
 	// Update friend count when friends change
 	useEffect(() => {
-		setFriendCount(Object.keys(friends).length);
-	}, [friends]);
+		const enrich = async () => {
+			if (user?.id && Object.keys(friends).length > 0) { // Check if friends exist
+				try {
+					const enriched = await enrichConnectionsWithUsernames(friends, user.id);
+					setEnrichedFriends(enriched);
+				} catch (error) {
+					console.error("Error enriching friends data:", error);
+					// Don't clear existing data on error
+				}
+			} else if (user?.id && Object.keys(friends).length === 0) {
+				// If friends is empty but user exists, set enrichedFriends to empty too
+				setEnrichedFriends({});
+			}
+		};
+
+		// Controller to handle component unmount during async operation
+		const controller = new AbortController();
+		enrich();
+		return () => controller.abort();
+	}, [friends, user?.id]);
 
 	useEffect(() => {
 		if (isConnected && user) {
@@ -142,6 +116,15 @@ const ChatPage: React.FC = () => {
 			}
 		}
 	}, [rooms, roomsLoading, selectedRoom]);
+
+	// Debugging: Log friends and enrichedFriends changes
+	useEffect(() => {
+		console.log("Friends changed:", Object.keys(friends).length);
+	}, [friends]);
+
+	useEffect(() => {
+		console.log("Enriched friends changed:", Object.keys(enrichedFriends).length);
+	}, [enrichedFriends]);
 
 	if (authLoading || !isConnected) {
 		return <LoadingSpinner message='Connecting...' />;
@@ -182,7 +165,7 @@ const ChatPage: React.FC = () => {
 							/>
 
 							{/* Friends List */}
-							<FriendsList friends={friends} friendCount={friendCount} />
+							<FriendsList friends={enrichedFriends} />
 						</div>
 					</div>
 				</div>

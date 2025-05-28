@@ -161,34 +161,22 @@ class ConnectionsRabbitMQClient:
             
     async def publish_friend_accepted(
         self,
-        recipient_id: str,
-        sender_id: str,
-        connection_id: str,
-        accepter_name: str,
+        exchange: str,
+        message: str,
+        routing_key: str,
     ) -> bool:
         """Publish a friend acceptance notification event."""
         try:
             if not self._initialized:
                 await self.initialize()
-                
-            message = json.dumps({
-                "source": "connections",
-                "event_type": "friend_accepted",
-                "recipient_id": recipient_id,
-                "sender_id": sender_id,
-                "reference_id": str(connection_id),
-                "notification_type": "friend_accepted",
-                "content_preview": f"{accepter_name} accepted your friend request",
-                "timestamp": datetime.now().isoformat(),
-            })
-            
+
             await self.rabbitmq.publish_message(
-                exchange="connections",
-                routing_key="user.friend_accepted",
+                exchange=exchange,
+                routing_key=routing_key,
                 message=message
             )
             
-            logger.info(f"Published friend acceptance notification for recipient {recipient_id}")
+            logger.info(f"Published friend acceptance notification")
             return True
         except Exception as e:
             logger.error(f"Failed to publish friend acceptance notification: {e}")

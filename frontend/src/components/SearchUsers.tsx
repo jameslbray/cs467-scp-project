@@ -105,12 +105,12 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
           'Authorization': `Bearer ${token}`
         }
       });
-
       if (response.ok) {
         const connections = await response.json();
-        // Filter for accepted connections where this user is the friend
+        // Filter for accepted connections where this user is EITHER the initiator OR the recipient
         const accepted = connections.filter((conn: Connection) =>
-          conn.status === 'accepted' && conn.friend_id === user.id
+          conn.status === 'accepted' &&
+          (conn.user_id === user.id || conn.friend_id === user.id)
         );
         setUserConnections(accepted);
       }

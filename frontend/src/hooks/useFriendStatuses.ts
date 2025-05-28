@@ -2,22 +2,23 @@ import { useState, useMemo } from 'react';
 import { StatusAPI } from '../services/statusAPI';
 import { FriendConnection } from '../types/friendsTypes';
 import { getFriendId } from '../utils/friendsUtils';
+import { useEffect, useCallback } from 'react';
 
 export const useFriendStatuses = (
-  friends: FriendConnection[],
+  friends: Record<string, FriendConnection>,
   currentUserId: string | undefined,
-  token: string | null
+  token: string | null,
+  setIsLoading: (loading: boolean) => void
 ) => {
   const [friendStatuses, setFriendStatuses] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(false);
 
   // Fetch all friend statuses
-  const fetchAllFriendStatuses = async () => {
-    if (!currentUserId || !token || friends.length === 0) return;
+  const fetchAllFriendStatuses = useCallback(async () => {
+    if (!currentUserId || !token || Object.keys(friends).length === 0) return;
 
     setIsLoading(true);
     try {
-      const friendIds = friends.map(conn => 
+      const friendIds = Object.values(friends).map(conn =>
         getFriendId(conn, currentUserId)
       );
 
@@ -42,7 +43,7 @@ export const useFriendStatuses = (
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUserId, token, friends, setIsLoading]);
 
   // Get a specific user's status
   const getUserStatus = async (userId: string): Promise<string> => {
@@ -70,18 +71,33 @@ export const useFriendStatuses = (
         return 'offline';
       }
     }
-    
+
     return 'offline';
   };
 
-  const onlineFriendsCount = useMemo(() => 
-    Object.values(friendStatuses).filter(status => status === 'online').length, 
+  const onlineFriendsCount = useMemo(() =>
+    Object.values(friendStatuses).filter(status => status === 'online').length,
     [friendStatuses]
   );
 
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (Object.keys(friends).length > 0 && currentUserId) {
+      const fetchStatuses = async () => {
+        if (isMounted) {
+          await fetchAllFriendStatuses();
+        }
+      };
+      fetchStatuses();
+    }
+
+    return () => { isMounted = false; };
+  }, [friends, currentUserId, token, fetchAllFriendStatuses]);
+
   return {
     friendStatuses,
-    isLoading,
     fetchAllFriendStatuses,
     getUserStatus,
     onlineFriendsCount

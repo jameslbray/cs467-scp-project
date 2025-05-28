@@ -51,15 +51,15 @@ export const fetchAcceptedFriends = async (userId: string, token: string): Promi
 };
 
 export const enrichConnectionsWithUsernames = async (
-  connections: FriendConnection[], 
+  connections: Record<string, FriendConnection>, 
   currentUserId: string
-): Promise<FriendConnection[]> => {
+): Promise<Record<string, FriendConnection>> => {
   try {
     // Deduplicate and extract unique friend IDs
     const friendIds = new Set<string>();
     const uniqueConnections = new Map<string, FriendConnection>();
 
-    connections.forEach(conn => {
+    Object.values(connections).forEach(conn => {
       const friendId = conn.user_id === currentUserId ? conn.friend_id : conn.user_id;
 
       // Only process each friend once
@@ -82,15 +82,17 @@ export const enrichConnectionsWithUsernames = async (
       (users as { id: string; username: string }[]).map(user => [user.id, user])
     );
 
-    // Create enriched connections array
-    return Array.from(uniqueConnections.values()).map(conn => {
-      const enriched: FriendConnection = {
+    // Create enriched connections object
+    const enrichedConnections: Record<string, FriendConnection> = {};
+    Array.from(uniqueConnections.values()).forEach(conn => {
+      const friendId = conn.user_id === currentUserId ? conn.friend_id : conn.user_id;
+      enrichedConnections[friendId] = {
         ...conn,
         userUsername: userMap.get(conn.user_id)?.username,
         friendUsername: userMap.get(conn.friend_id)?.username
       };
-      return enriched;
     });
+    return enrichedConnections;
   } catch (error) {
     console.error('Error enriching connections with usernames:', error);
     return connections; // Return original connections if enrichment fails

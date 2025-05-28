@@ -13,7 +13,8 @@ import asyncpg  # type: ignore
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 # from ..db.models import Connection
-from ..db.schemas import ConnectionCreate, ConnectionUpdate, Connection
+from ..db.schemas import ConnectionCreate, ConnectionUpdate, Connection, ConnectionStatus
+
 from .connections_rabbitmq import ConnectionsRabbitMQClient
 
 # configure logging
@@ -132,17 +133,26 @@ class ConnectionManager:
             return None
 
         try:
-            logger.debug(f"Searching for connections of user_id: {user_id}")
+            logger.info(f"Searching for connections of user_id: {user_id}")
 
             async with self.postgres_client.acquire() as conn:
                 await conn.execute("SET search_path TO connections, public")
 
                 # Only get one direction of each relationship to avoid duplicates
                 query = """
-                    SELECT DISTINCT ON (LEAST(user_id, friend_id), GREATEST(user_id, friend_id))
-                        * FROM connections.connections
-                    WHERE (user_id = $1 OR friend_id = $1)
-                    ORDER BY LEAST(user_id, friend_id), GREATEST(user_id, friend_id), created_at DESC
+                    SELECT 
+                        c.id,
+                        -- If the current user is user_id, then friend_id is their friend
+                        -- Otherwise, user_id is their friend
+                        CASE WHEN c.user_id = $1 THEN c.friend_id ELSE c.user_id END AS other_user_id,
+                        c.user_id,
+                        c.friend_id,
+                        c.status,
+                        c.created_at,
+                        c.updated_at
+                    FROM connections.connections c
+                    WHERE 
+                        (c.user_id = $1 OR c.friend_id = $1)
                 """
                 rows = await conn.fetch(query, user_id)
 
@@ -424,11 +434,18 @@ class ConnectionManager:
             )
 
             # Publish friend request event using correct parameters
-            await self.rabbitmq.publish_friend_request(
-                message=message,
-                routing_key=routing_key,
-                reply_to=reply_to,
-            )
+            if notification_type == "friend_request":
+                await self.rabbitmq.publish_friend_request(  # Use specific method for requests
+                    message=message,
+                    routing_key=routing_key, 
+                    reply_to=reply_to or "connection_notifications"
+                )
+            else:  # For friend_accepted and other types
+                await self.rabbitmq.publish_friend_accepted(
+                    exchange="connections",
+                    message=message,
+                    routing_key=routing_key,
+                )
 
             logger.info(
                 f"Published {notification_type} notification for recipient {recipient_id}"
@@ -448,7 +465,7 @@ class ConnectionManager:
                 await message.ack()
                 return
             
-            logger.info(f"Processing connection update: {body}")
+            logger.info(f"Processing connection message: {body}")
             
             if "event_type" not in body:
                 logger.error("Missing event_type in message")
@@ -467,7 +484,18 @@ class ConnectionManager:
                     await message.nack(requeue=False)
                     return
                 
-                # await 
+                # Add friend request to database
+                created_connection = await self.create_connection(
+                    ConnectionCreate(
+                        user_id=recipient_id,
+                        friend_id=sender_id,
+                        status=ConnectionStatus.PENDING
+                    )
+                )
+                if not created_connection:
+                    logger.error(f"Failed to create connection for {recipient_id} -> {sender_id}")
+                    await message.nack(requeue=False)
+                    return
                 
                 # Publish friend request notification
                 await self.publish_notification_event(
@@ -485,6 +513,22 @@ class ConnectionManager:
                 
                 if not recipient_id or not sender_id or not reference_id:
                     logger.error("Missing required fields for friend accepted")
+                    await message.nack(requeue=False)
+                    return
+                
+                # Update connection status to accepted
+                updated_connection = await self.update_connection(
+                    ConnectionUpdate(
+                        id=body.get("id"),
+                        user_id=recipient_id,
+                        friend_id=sender_id,
+                        status=ConnectionStatus.ACCEPTED,
+                        updated_at=datetime.now(),
+                        created_at=body.get("created_at", datetime.now())
+                    )
+                )
+                if not updated_connection:
+                    logger.error(f"Failed to update connection for {recipient_id} -> {sender_id}")
                     await message.nack(requeue=False)
                     return
                 
@@ -531,9 +575,7 @@ class ConnectionManager:
                     "user_id": user_id,
                     "friends": connections
                 }, default=pydantic_encoder)
-                
-                await message.ack()
-                
+                                
                 await self.rabbitmq.publish_friends_list(
                     routing_key=message.reply_to,
                     message=response_message,
