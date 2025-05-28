@@ -94,15 +94,15 @@ class SocketServer:
             raise Exception("Failed to connect to RabbitMQ")
 
         # Declare exchanges
-        await self.rabbitmq.declare_exchange("chat", "direct")
+        await self.rabbitmq.declare_exchange("chat", "topic")
         await self.rabbitmq.declare_exchange("presence", "direct")
         await self.rabbitmq.declare_exchange("notifications", "topic")
-        await self.rabbitmq.declare_exchange("auth", "direct")
+        await self.rabbitmq.declare_exchange("auth", "topic")
         await self.rabbitmq.declare_exchange("connections", "topic")
 
         # Declare queues
         await self.rabbitmq.declare_queue("presence", durable=True)
-        await self.rabbitmq.declare_queue("socket_io_notifications", durable=True)
+        await self.rabbitmq.declare_queue("socket_notifications", durable=True)
 
         # Bind queue to presence exchange for status updates
         await self.rabbitmq.bind_queue(
@@ -117,15 +117,14 @@ class SocketServer:
 
         # Bind queue to notifications exchange
         await self.rabbitmq.bind_queue(
-            "socket_io_notifications",
+            "socket_notifications",
             "notifications",
-            "user.#",
+            "user.#",  # Use topic pattern to catch all user notifications
         )
 
         # Start consuming notification events
         await self.rabbitmq.consume(
-            "socket_io_notifications",
-            self._handle_notification,
+            "socket_notifications", self._handle_notification
         )
 
         # Start consuming presence updates
@@ -610,7 +609,10 @@ class SocketServer:
         try:
             logger.info("Received notification from RabbitMQ")
             body = json.loads(message.body.decode())
-            recipient_id = body.get("recipient_id")
+            notification_data = body.get("notification", {})
+            recipient_id = notification_data.get("recipient_id")
+
+            logger.info(f"Received notification: {notification_data}")
 
             if not recipient_id:
                 logger.warning("Notification received without recipient_id")

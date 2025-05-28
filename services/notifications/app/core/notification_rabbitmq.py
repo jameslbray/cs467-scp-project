@@ -19,7 +19,7 @@ class NotificationRabbitMQClient:
     def __init__(self):
         """Initialize the RabbitMQ client."""
         self.rabbitmq = BaseRabbitMQClient()
-        
+
         # Initialize circuit breaker
         self.circuit_breaker = CircuitBreaker(
             "rabbitmq",
@@ -60,7 +60,7 @@ class NotificationRabbitMQClient:
             raise Exception("Failed to connect to RabbitMQ")
 
         await self._connect()
-        
+
         logger.info("RabbitMQ connection and exchanges initialized")
         return True
 
@@ -93,7 +93,7 @@ class NotificationRabbitMQClient:
                 "notifications_queue",
                 durable=True
             )
-            
+
             await self.rabbitmq.declare_queue(
                 "connections_queue",
                 durable=True
@@ -103,6 +103,7 @@ class NotificationRabbitMQClient:
             # General notifications for all users
             await self.rabbitmq.bind_queue(
                 "notifications_queue",
+                "notifications",
                 "notifications",
                 "user.#"  # All broadcast messages
             )
@@ -120,15 +121,15 @@ class NotificationRabbitMQClient:
             raise
 
     async def register_consumers(
-        self, 
-        # notifications_handler: Callable, 
+        self,
+        notifications_handler: Callable,
         connection_handler: Callable,
     ) -> None:
         """Register consumer handlers for different queues."""
         try:
             if not self._initialized:
                 await self.initialize()
-                
+
             # Start consuming messages with provided handlers
             # await self.rabbitmq.consume(
             #     "notifications",
@@ -156,7 +157,7 @@ class NotificationRabbitMQClient:
         try:
             if not self._initialized:
                 await self.initialize()
-                
+
             # Create the notification payload
             message = json.dumps({
                 "source": "notifications",
@@ -167,14 +168,19 @@ class NotificationRabbitMQClient:
                 "content_preview": content_preview,
                 "timestamp": datetime.now().isoformat(),
                 "read": False
+            }
+
+            # Wrap in the expected format for socket_server.py
+            message = json.dumps({
+                "notification": notification
             })
-            
+
             await self.rabbitmq.publish_message(
                 exchange="notifications",
                 routing_key=f"user.{recipient_id}",
                 message=message
             )
-            
+
             logger.info(f"Published notification for recipient {recipient_id}")
             return True
         except Exception as e:
@@ -192,7 +198,7 @@ class NotificationRabbitMQClient:
         try:
             if not self._initialized:
                 await self.initialize()
-                
+
             # Create the notification payload
             message = json.dumps({
                 "source": "notifications",
@@ -204,14 +210,19 @@ class NotificationRabbitMQClient:
                 "timestamp": datetime.now().isoformat(),
                 "read": False,
                 "notification_type": "friend_request"
+            }
+
+            # Wrap in the expected format
+            message = json.dumps({
+                "notification": notification
             })
-            
+
             await self.rabbitmq.publish_message(
                 exchange="notifications",
                 routing_key=f"user.{recipient_id}",
                 message=message
             )
-            
+
             logger.info(f"Published friend request notification for recipient {recipient_id}")
             return True
         except Exception as e:
