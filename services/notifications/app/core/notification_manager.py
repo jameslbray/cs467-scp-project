@@ -62,8 +62,8 @@ class NotificationManager:
         try:
             # Register message handlers
             await self.rabbitmq_client.register_consumers(
-                self._process_notification,
-                self._process_connection,
+                # self._process_notification,
+                self._process_connection
             )
             logger.info("RabbitMQ client initialized and message handlers registered")
 
@@ -233,11 +233,14 @@ class NotificationManager:
             logger.error(f"Failed to get user notifications: {e}")
             return None
 
-    async def create_notification(self, notification: NotificationRequest) -> list[NotificationResponse]:
+    async def create_notification(
+        self,
+        notification: NotificationRequest
+    ) -> None:
         """Create a new notification."""
         if not self.mongo_client:
             logger.warning("MongoDB not available")
-            return []
+            return
 
         try:
             # Convert API request to database model
@@ -260,7 +263,7 @@ class NotificationManager:
                 sender_id=notification.sender_id,
                 reference_id=notification.reference_id,
                 notification_type=notification.notification_type,
-                content_preview=notification.content_preview
+                content_preview=notification.content_preview,
             )
 
             logger.info(f"Published notification to RabbitMQ: {notification}")
@@ -270,7 +273,7 @@ class NotificationManager:
 
         except Exception as e:
             logger.error(f"Failed to create notification: {e}")
-            return []
+            return
 
     async def mark_notification_as_read(self, notification_id: str, user_id: str) -> bool:
         """Mark a notification as read.
@@ -414,7 +417,7 @@ class NotificationManager:
             sender_id,
             reference_id,
             notification_type,
-            content_preview
+            content_preview,
         )
 
     async def publish_friend_request_notification(
@@ -437,7 +440,6 @@ class NotificationManager:
         recipient_id: str,
         sender_id: str,
         connection_id: str,
-        sender_name: str,
     ) -> bool:
         """Create a friend request notification directly in the database."""
         try:
@@ -464,43 +466,45 @@ class NotificationManager:
         try:
             # Parse the message body
             body = json.loads(message.body.decode())
+            if "source" in body and body["source"] == "notifications":
+                # Ignore notifications from our own service
+                await message.ack()
+                logger.info("Ignoring notification from own service")
+                return
+            
             logger.info(f"Received general notification: {body}")
 
             # Extract notification fields
-            recipient_ids = body.get("recipient_ids", [])
-            sender_id = body.get("sender_id", "system")
+            recipient_id = body.get("recipient_id")
+            sender_id = body.get("sender_id")
             reference_id = body.get("reference_id", "")
-            content_preview = body.get("content_preview", "System notification")
+            content_preview = body.get("content_preview", "New message received")
             notification_type = body.get("notification_type", "system")
             timestamp = body.get("timestamp", datetime.now().isoformat())
 
             # Validate required fields
-            if not recipient_ids:
+            if not recipient_id:
                 logger.error(f"Missing required recipient_ids in notification: {body}")
                 await message.nack(requeue=False)  # Don't requeue malformed messages
                 return
 
             # Create notification for all specified recipients
-            success_count = 0
-            for recipient_id in recipient_ids:
-                try:
-                    notification_request = NotificationRequest(
-                        recipient_id=recipient_id,
-                        sender_id=sender_id,
-                        reference_id=reference_id,
-                        content_preview=content_preview,
-                        notification_type=notification_type,
-                        timestamp=timestamp,
-                        status=DeliveryType.UNDELIVERED,
-                        error=None,
-                    )
-                    await self.create_notification(notification_request)
-                    success_count += 1
-                except Exception as inner_e:
-                    # Log error but continue with other recipients
-                    logger.error(f"Failed to create notification for recipient {recipient_id}: {inner_e}")
+            notification_request = NotificationRequest(
+                recipient_id=recipient_id,
+                sender_id=sender_id,
+                reference_id=reference_id,
+                content_preview=content_preview,
+                notification_type=notification_type,
+                timestamp=timestamp,
+                status=DeliveryType.UNDELIVERED,
+                error=None,
+            )
+            await self.create_notification(notification_request)
+        except Exception as inner_e:
+            # Log error but continue with other recipients
+            logger.error(f"Failed to create notification for recipient {recipient_id}: {inner_e}")
 
-            logger.info(f"Created {success_count} of {len(recipient_ids)} notifications")
+            logger.info(f"Created {recipient_id} notification")
             await message.ack()
 
         except json.JSONDecodeError as e:
@@ -582,7 +586,7 @@ class NotificationManager:
             # Extract common fields
             recipient_id = body.get("recipient_id")
             sender_id = body.get("sender_id")
-            reference_id = body.get("reference_id", "")
+            reference_id = body.get("reference_id")
             timestamp = body.get("timestamp", datetime.now().isoformat())
 
             # Validate required fields
@@ -601,7 +605,7 @@ class NotificationManager:
                     sender_id=sender_id,
                     reference_id=reference_id,
                     content_preview=body.get("content_preview", "You received a new friend request"),
-                    notification_type="friend_request",
+                    notification_type=NotificationType.FRIEND_REQUEST,
                     timestamp=timestamp,
                     status=DeliveryType.UNDELIVERED,
                     error=None,
@@ -616,7 +620,7 @@ class NotificationManager:
                     sender_id=sender_id,
                     reference_id=reference_id,
                     content_preview=body.get("content_preview", "Your friend request was accepted"),
-                    notification_type="friend_accepted",
+                    notification_type=NotificationType.FRIEND_ACCEPTED,
                     timestamp=timestamp,
                     status=DeliveryType.UNDELIVERED,
                     error=None,
@@ -684,7 +688,7 @@ class NotificationManager:
                 sender_id=sender_id,
                 reference_id=message_id,
                 content_preview=content_preview,
-                notification_type="new_message",
+                notification_type=NotificationType.NEW_MESSAGE,
                 timestamp=timestamp,
                 status=DeliveryType.UNDELIVERED,
                 error=None,

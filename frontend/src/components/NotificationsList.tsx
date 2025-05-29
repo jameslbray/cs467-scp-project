@@ -11,8 +11,8 @@ import { formatRelativeTime } from "../utils/dateUtils";
 import { markNotificationAsRead } from "../services/notificationsAPI";
 import { fetchNotifications, deleteNotification, markAllNotificationsAsRead } from "../services/notificationsAPI";
 import { useAuth } from "../contexts/auth/authContext";
-import { useSocketEvent } from "../contexts/socket/useSocket"; // Add this import
-import { ServerEvents } from "../types/serverEvents"; // Add this import
+import { useSocketEvent } from "../contexts/socket/useSocket";
+import { ServerEvents } from "../types/serverEvents";
 
 interface NotificationBellProps {
   className?: string;

@@ -1,5 +1,5 @@
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
 import { userApi } from '../services/api';
 
@@ -14,6 +14,8 @@ interface Connection {
 	user_id: string;
 	friend_id: string;
 	status: 'pending' | 'accepted' | 'rejected' | 'blocked';
+	created_at?: string;
+	updated_at?: string;
 }
 
 interface SearchUsersProps {
@@ -42,93 +44,32 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				setIsOpen(false);
 			}
 		}
-
 		document.addEventListener('mousedown', handleClickOutside);
 		return () => {
 			document.removeEventListener('mousedown', handleClickOutside);
 		};
 	}, []);
 
-	const fetchUserConnections = useCallback(async () => {
-		if (!user?.id || !token) return;
-		console.log('Fetching user connections for user:', user.id);
-		try {
-			const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
-			});
-
-			if (response.ok) {
-				const connections = await response.json();
-				// Filter for accepted connections where this user is the friend
-				const accepted = connections.filter(
-					(conn: Connection) => conn.status === 'accepted' && conn.friend_id === user.id
-				);
-				setUserConnections(accepted);
-			}
-		} catch (error) {
-			console.error('Failed to fetch user connections:', error);
-		}
-	}, [user?.id, token]);
-
-	const fetchPendingRequests = useCallback(async () => {
-		if (!user?.id || !token) return;
-		console.log('Fetching pending requests for user:', user.id);
-
-		try {
-			const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
-			});
-
-			if (response.ok) {
-				const connections = await response.json();
-				console.log('All connections:', connections);
-				console.log('Current user ID:', user.id);
-
-				// Filter for pending requests where current user is the RECIPIENT
-				// This means friend_id === current_user_id AND status === 'pending'
-				const pending = connections.filter((conn: Connection) => {
-					const isRecipient = conn.friend_id === user.id;
-					const isPending = conn.status === 'pending';
-					console.log(
-						`Connection ${conn.user_id} -> status: ${conn.status} -> ${conn.friend_id}, isRecipient: ${isRecipient}, isPending: ${isPending}`
-					);
-					return isRecipient && isPending;
-				});
-
-				console.log('Filtered pending requests:', pending);
-				setPendingRequests(pending);
-			}
-		} catch (error) {
-			console.error('Failed to fetch pending requests:', error);
-		}
-	}, [user?.id, token]);
-
-
+	// Get pending friend requests and user connections when component mounts
 	useEffect(() => {
 		if (user) {
 			fetchUserConnections();
 			fetchPendingRequests();
 		}
-	}, [fetchPendingRequests, fetchUserConnections, user]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [user]);
 
 	useEffect(() => {
 		const fetchUsernames = async () => {
 			if (pendingRequests.length === 0) return;
-
 			// Collect all user IDs that need username lookup
 			const userIds = new Set<string>();
 			pendingRequests.forEach((req) => {
 				userIds.add(req.user_id);
 				userIds.add(req.friend_id);
 			});
-
 			// Remove current user's ID
 			if (user?.id) userIds.delete(user.id);
-
 			// Fetch user details
 			try {
 				const users = await userApi.getUsersByIds(Array.from(userIds));
@@ -142,9 +83,9 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				console.error('Failed to fetch user details:', error);
 			}
 		};
-
 		fetchUsernames();
-	}, [pendingRequests, user?.id]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [pendingRequests]);
 
 	// Focus input when dropdown is opened
 	useEffect(() => {
@@ -153,10 +94,54 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 		}
 	}, [isOpen]);
 
+	// Fetch user connections
+	const fetchUserConnections = async () => {
+		if (!user?.id || !token) return;
+		try {
+			const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			});
+			if (response.ok) {
+				const connections = await response.json();
+				// Store ALL connections where this user is involved (not just accepted)
+				setUserConnections(
+					connections.filter(
+						(conn: Connection) => conn.user_id === user.id || conn.friend_id === user.id
+					)
+				);
+			}
+		} catch (error) {
+			console.error('Failed to fetch user connections:', error);
+		}
+	};
+
+	// Fetch pending requests
+	const fetchPendingRequests = async () => {
+		if (!user?.id || !token) return;
+		try {
+			const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			});
+			if (response.ok) {
+				const connections = await response.json();
+				// Only incoming requests: friend_id === user.id && status === 'pending'
+				const incoming = connections.filter(
+					(conn: Connection) => conn.friend_id === user.id && conn.status === 'pending'
+				);
+				setPendingRequests(incoming);
+			}
+		} catch (error) {
+			console.error('Failed to fetch pending requests:', error);
+		}
+	};
+
 	// Search for users
 	const searchUsers = async () => {
 		if (!searchTerm.trim() || !token) return;
-		console.log('Searching users with term:', searchTerm);
 		setIsLoading(true);
 		try {
 			// Make API call to search users by username
@@ -168,7 +153,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 					},
 				}
 			);
-
 			if (response.ok) {
 				const users = await response.json();
 				// Filter out the current user
@@ -194,9 +178,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	// Send a friend request
 	const sendFriendRequest = async (friendId: string) => {
 		if (!user?.id || !token) return;
-		console.log('Sending friend request from', user.id, 'to', friendId);
 		if (getConnectionStatus(friendId) === 'pending') {
-			console.warn('Friend request already pending');
 			return;
 		}
 		try {
@@ -212,10 +194,9 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 					status: 'pending',
 				}),
 			});
-
 			if (response.ok) {
-				// Refresh connections after sending request
 				fetchUserConnections();
+				fetchPendingRequests();
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
@@ -226,7 +207,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	// Accept a friend request
 	const acceptRequest = async (connection: Connection) => {
 		if (!user?.id || !token) return;
-
 		try {
 			const response = await fetch(`${CONNECT_API_URL}/api/connect`, {
 				method: 'PUT',
@@ -235,14 +215,12 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify({
-					user_id: user.id,
-					friend_id: connection.user_id,
+					user_id: connection.user_id, // sender
+					friend_id: user.id, // recipient
 					status: 'accepted',
 				}),
 			});
-
 			if (response.ok) {
-				// Refresh requests and connections
 				fetchPendingRequests();
 				fetchUserConnections();
 				if (onConnectionChange) onConnectionChange();
@@ -255,7 +233,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	// Reject a friend request
 	const rejectRequest = async (connection: Connection) => {
 		if (!user?.id || !token) return;
-
 		try {
 			const response = await fetch(`${CONNECT_API_URL}/api/connect`, {
 				method: 'PUT',
@@ -264,14 +241,12 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify({
-					user_id: user.id,
-					friend_id: connection.user_id,
+					user_id: connection.user_id, // sender
+					friend_id: user.id, // recipient
 					status: 'rejected',
 				}),
 			});
-
 			if (response.ok) {
-				// Refresh requests
 				fetchPendingRequests();
 				if (onConnectionChange) onConnectionChange();
 			}
@@ -281,49 +256,71 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	};
 
 	const getConnectionStatus = (userId: string): string | null => {
-		// Check ALL connections for this user
-		const connection = [...userConnections, ...pendingRequests].find(
+		// Find all connections between the current user and userId
+		const connections = [...userConnections, ...pendingRequests].filter(
 			(conn) =>
 				(conn.user_id === user?.id && conn.friend_id === userId) ||
 				(conn.user_id === userId && conn.friend_id === user?.id)
 		);
-
-		return connection ? connection.status : null;
+		if (connections.length === 0) return null;
+		// Sort by created_at descending and pick the latest
+		const latest = connections.slice().sort((a, b) => {
+			const aTime = new Date(a.created_at ?? 0).getTime();
+			const bTime = new Date(b.created_at ?? 0).getTime();
+			return bTime - aTime;
+		})[0];
+		if (!latest) return null;
+		return latest.status;
 	};
 
 	// Render connection button based on status
 	const renderConnectionButton = (userId: string) => {
-		const status = getConnectionStatus(userId);
-
-		// Find the actual connection to determine direction
-		const connection = [...userConnections, ...pendingRequests].find(
+		const connections = [...userConnections, ...pendingRequests].filter(
 			(conn) =>
 				(conn.user_id === user?.id && conn.friend_id === userId) ||
 				(conn.user_id === userId && conn.friend_id === user?.id)
 		);
-
-		if (status === 'accepted') {
+		if (connections.length === 0) {
+			return (
+				<button
+					onClick={() => sendFriendRequest(userId)}
+					className='text-xs bg-primary-500 hover:bg-primary-600 text-white px-2 py-1 rounded'
+				>
+					Connect
+				</button>
+			);
+		}
+		const latest = connections.slice().sort((a, b) => {
+			const aTime = new Date(a.created_at ?? 0).getTime();
+			const bTime = new Date(b.created_at ?? 0).getTime();
+			return bTime - aTime;
+		})[0];
+		if (!latest) {
+			return (
+				<button
+					onClick={() => sendFriendRequest(userId)}
+					className='text-xs bg-primary-500 hover:bg-primary-600 text-white px-2 py-1 rounded'
+				>
+					Connect
+				</button>
+			);
+		}
+		if (latest.status === 'accepted') {
 			return <span className='text-green-500 text-xs'>Connected</span>;
 		}
-
-		if (status === 'pending') {
-			// Check if current user sent or received the request
-			if (connection?.user_id === user?.id) {
+		if (latest.status === 'pending') {
+			if (latest.user_id === user?.id && latest.friend_id === userId) {
 				return <span className='text-yellow-500 text-xs'>Request Sent</span>;
-			} else {
+			} else if (latest.user_id === userId && latest.friend_id === user?.id) {
 				return <span className='text-yellow-500 text-xs'>Request Received</span>;
 			}
 		}
-
-		if (status === 'rejected') {
+		if (latest.status === 'rejected') {
 			return <span className='text-red-500 text-xs'>Rejected</span>;
 		}
-
-		if (status === 'blocked') {
+		if (latest.status === 'blocked') {
 			return null;
 		}
-
-		// No connection exists
 		return (
 			<button
 				onClick={() => sendFriendRequest(userId)}
@@ -455,7 +452,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 									const senderUsername =
 										searchResults.find((u) => u.id === request.user_id)?.username ||
 										request.user_id;
-
 									return (
 										<div
 											key={request.id || `${request.user_id}-${request.friend_id}`}

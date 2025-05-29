@@ -15,7 +15,7 @@ class ConnectionStatus(str, Enum):
     BLOCKED = "blocked"
 
 
-class ConnectionSchema(BaseModel):
+class Connection(BaseModel):
     id: Optional[uuid.UUID] = Field(
         None, description="Unique identifier for the connection"
     )
@@ -29,8 +29,8 @@ class ConnectionSchema(BaseModel):
         default=ConnectionStatus.PENDING,
         description="Status of the connection",
     )
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(default_factory=datetime.now)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.now)
 
     model_config = {"from_attributes": True}
 

@@ -32,6 +32,10 @@ class EventType(str, Enum):
     PRESENCE_FRIEND_STATUSES = "presence:friend:statuses"
     PRESENCE_FRIEND_STATUS_CHANGED = "presence:friend:status:changed"
 
+    # Connection events
+    # CONNECTION_FRIEND_STATUSES = "connection:friend:statuses"
+    CONNECTION_GET_FRIENDS = "connections:get_friends"
+
     # Notification events
     NOTIFICATIONS = "notifications"
 
