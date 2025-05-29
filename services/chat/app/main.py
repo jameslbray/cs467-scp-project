@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from typing import List
+import json
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -243,4 +244,15 @@ async def create_room(
     room["created_by"] = str(user.id)
     room_obj = RoomCreate(**room)
     created_room = await repo.create(room_obj)
+    await rabbitmq_client.publish_notification(
+        json.dumps(
+            {
+                "type": "room_created",
+                "room_id": created_room.id,
+                "room_name": created_room.name,
+                "room_created_by": created_room.created_by,
+                "room_participant_ids": created_room.participant_ids,
+            }
+        )
+    )
     return created_room

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import DarkModeToggle from '../components/DarkModeToggle';
 import FriendsList from '../components/FriendsList';
@@ -10,16 +10,16 @@ import { useAuth } from '../contexts/auth/authContext';
 import { useSocketContext } from '../contexts/socket/socketContext';
 import { useSocketEvent } from '../contexts/socket/useSocket';
 import { ServerEvents } from '../types/serverEvents';
-import type { UserStatusType } from '../types/userStatusType';
+// import type { UserStatusType } from '../types/userStatusType';
+import type { FriendConnection } from '../types/friendsTypes';
 
 const AuthenticatedLayout: React.FC = () => {
 	const { isAuthenticated, isLoading } = useAuth();
 	useSocketContext();
-	const [friends, setFriends] = useState<Record<string, UserStatusType>>({});
-	const [friendCount, setFriendCount] = useState(0);
+	const [friends, setFriends] = useState<Record<string, FriendConnection>>({});
 
 	// Listen for initial friend statuses
-	useSocketEvent<{ statuses: Record<string, UserStatusType> }>(
+	useSocketEvent<{ statuses: Record<string, FriendConnection> }>(
 		ServerEvents.FRIEND_STATUSES,
 		(data) => {
 			setFriends(data.statuses);
@@ -27,13 +27,9 @@ const AuthenticatedLayout: React.FC = () => {
 	);
 
 	// Listen for individual friend status changes
-	useSocketEvent<UserStatusType>(ServerEvents.FRIEND_STATUS_CHANGED, (data) => {
+	useSocketEvent<FriendConnection>(ServerEvents.FRIEND_STATUS_CHANGED, (data) => {
 		setFriends((prev) => ({ ...prev, [data.user_id]: data }));
 	});
-
-	useEffect(() => {
-		setFriendCount(Object.keys(friends).length);
-	}, [friends]);
 
 	if (isLoading) {
 		return (
@@ -57,7 +53,7 @@ const AuthenticatedLayout: React.FC = () => {
 						<div className='flex items-center space-x-4'>
 							<NotificationBell />
 							<SearchUsers />
-							<FriendsList friends={friends} friendCount={friendCount} />
+							<FriendsList friends={friends} />
 							<DarkModeToggle />
 							<UserProfileMenu />
 						</div>

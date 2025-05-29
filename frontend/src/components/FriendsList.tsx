@@ -8,7 +8,7 @@ interface FriendsListProps {
 	friends: Record<string, FriendConnection>;
 }
 
-const FriendsList: React.FC<FriendsListProps> = ({ friends }) => {
+const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) => {
 	const { user, token } = useAuth();
 	const [isOpen, setIsOpen] = useState(false);
 	const [activeTab, setActiveTab] = useState<'online' | 'all'>('online');

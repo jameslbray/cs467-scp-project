@@ -24,6 +24,9 @@ class EventType(str, Enum):
     CHAT_MESSAGE = "chat:message"
     CHAT_TYPING = "chat:typing"
     CHAT_READ = "chat:read"
+    CHAT_ROOM_CREATED = "chat:room_created"
+    CHAT_MESSAGE_RECEIVED = "chat:message_received"
+
 
     # Presence events
     PRESENCE_STATUS_UPDATE = "presence:status:update"
