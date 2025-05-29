@@ -6,15 +6,18 @@ import json
 import logging
 from datetime import datetime
 from typing import Any, List, Optional
-from pydantic.json import pydantic_encoder
 
 import asyncpg  # type: ignore
-
+from pydantic.json import pydantic_encoder
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 # from ..db.models import Connection
-from ..db.schemas import ConnectionCreate, ConnectionUpdate, Connection, ConnectionStatus
-
+from ..db.schemas import (
+    Connection,
+    ConnectionCreate,
+    ConnectionStatus,
+    ConnectionUpdate,
+)
 from .connections_rabbitmq import ConnectionsRabbitMQClient
 
 # configure logging
@@ -175,6 +178,10 @@ class ConnectionManager:
                             f"Error converting row to connection: {e}"
                         )
 
+                logger.info(
+                    f"Found {len(connections)} connections for user {user_id}, {connections}"
+                )
+
                 return connections
 
         except ValueError as e:
@@ -246,7 +253,7 @@ class ConnectionManager:
     async def create_connection(
         self, connection: ConnectionCreate
     ) -> Connection | None:
-        """Create a new connection."""
+        """Create a new connection (single direction, pending)."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
@@ -256,52 +263,31 @@ class ConnectionManager:
                 f"Creating connection: {connection.user_id} -> {connection.friend_id}"
             )
             async with self.postgres_client.acquire() as conn:
-                # Execute the query directly on the connection
                 await conn.execute("SET search_path TO connections, public")
 
-                # First direction (user_id -> friend_id)
-                query1 = """
+                query = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
                     VALUES ($1, $2, $3)
                     ON CONFLICT (user_id, friend_id)
                     DO UPDATE SET status = $3, updated_at = NOW()
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
-                # Execute first query
-                result1 = await conn.fetchrow(
-                    query1,
+                result = await conn.fetchrow(
+                    query,
                     connection.user_id,
                     connection.friend_id,
                     connection.status,
                 )
 
-                # Second direction (friend_id -> user_id)
-                query2 = """
-                    INSERT INTO connections.connections (user_id, friend_id, status)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id, friend_id)
-                    DO UPDATE SET status = $3, updated_at = NOW()
-                    RETURNING id
-                """
-                # Execute second query
-                result2 = await conn.fetchrow(
-                    query2,
-                    connection.friend_id,
-                    connection.user_id,
-                    connection.status,
-                )
-
-                if result1 and result2:
-                    logger.info(
-                        f"Bidirectional connection created with ID: {result1['id']}"
-                    )
+                if result:
+                    logger.info(f"Connection created with ID: {result['id']}")
                     return Connection(
-                        id=result1["id"],
-                        user_id=result1["user_id"],
-                        friend_id=result1["friend_id"],
-                        status=result1["status"],
-                        created_at=result1["created_at"],
-                        updated_at=result1["updated_at"],
+                        id=result["id"],
+                        user_id=result["user_id"],
+                        friend_id=result["friend_id"],
+                        status=result["status"],
+                        created_at=result["created_at"],
+                        updated_at=result["updated_at"],
                     )
                 else:
                     logger.error("Failed to create connection")
@@ -314,7 +300,7 @@ class ConnectionManager:
     async def update_connection(
         self, connection: ConnectionUpdate
     ) -> Connection | None:
-        """Update an existing connection."""
+        """Update an existing connection. If accepting, create reverse direction if not exists. If rejecting, only update the original direction."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
@@ -322,17 +308,14 @@ class ConnectionManager:
         try:
             logger.debug(f"Updating connection for {connection.user_id}")
             async with self.postgres_client.acquire() as conn:
-                # Execute the query directly on the connection
                 await conn.execute("SET search_path TO connections, public")
 
                 query = """
                     UPDATE connections.connections
                     SET status = $1, updated_at = NOW()
                     WHERE (user_id = $2 AND friend_id = $3)
-                    OR (user_id = $3 AND friend_id = $2)
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
-                # Execute the query
                 result = await conn.fetchrow(
                     query,
                     connection.status,
@@ -340,21 +323,39 @@ class ConnectionManager:
                     connection.friend_id,
                 )
 
-                if result:
-                    logger.info(
-                        f"Connection updated with ID: {connection.user_id}"
-                    )
-                    return Connection(
-                        id=result["id"],
-                        user_id=result["user_id"],
-                        friend_id=result["friend_id"],
-                        status=result["status"],
-                        created_at=result["created_at"],
-                        updated_at=result["updated_at"],
-                    )
-                else:
+                if not result:
                     logger.error("Failed to update connection")
                     return None
+
+                # If status is ACCEPTED, create reverse direction if not exists
+                if connection.status == ConnectionStatus.ACCEPTED:
+                    reverse_query = """
+                        INSERT INTO connections.connections (user_id, friend_id, status)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (user_id, friend_id) DO NOTHING
+                        RETURNING id, user_id, friend_id, status, created_at, updated_at
+                    """
+                    reverse_result = await conn.fetchrow(
+                        reverse_query,
+                        connection.friend_id,
+                        connection.user_id,
+                        ConnectionStatus.ACCEPTED,
+                    )
+                    if reverse_result:
+                        logger.info(
+                            f"Reverse connection created: {reverse_result['id']}"
+                        )
+                # If status is REJECTED, do nothing else (no reverse direction)
+
+                logger.info(f"Connection updated with ID: {result['id']}")
+                return Connection(
+                    id=result["id"],
+                    user_id=result["user_id"],
+                    friend_id=result["friend_id"],
+                    status=result["status"],
+                    created_at=result["created_at"],
+                    updated_at=result["updated_at"],
+                )
 
         except Exception as e:
             logger.error(f"Failed to update connection: {e}")
@@ -438,7 +439,7 @@ class ConnectionManager:
                 await self.rabbitmq.publish_friend_request(  # Use specific method for requests
                     message=message,
                     routing_key=routing_key,
-                    reply_to=reply_to or "connection_notifications"
+                    reply_to=reply_to or "connection_notifications",
                 )
             else:  # For friend_accepted and other types
                 await self.rabbitmq.publish_friend_accepted(
@@ -489,11 +490,15 @@ class ConnectionManager:
                     ConnectionCreate(
                         user_id=sender_id,
                         friend_id=recipient_id,
-                        status=ConnectionStatus.PENDING
+                        status=ConnectionStatus.PENDING,
                     )
                 )
+                logger.info(f"Created connection: {created_connection}")
+
                 if not created_connection:
-                    logger.error(f"Failed to create connection for {recipient_id} -> {sender_id}")
+                    logger.error(
+                        f"Failed to create connection for {recipient_id} -> {sender_id}"
+                    )
                     await message.nack(requeue=False)
                     return
 
@@ -520,15 +525,17 @@ class ConnectionManager:
                 updated_connection = await self.update_connection(
                     ConnectionUpdate(
                         id=body.get("id"),
-                        user_id=recipient_id,
-                        friend_id=sender_id,
+                        user_id=sender_id,
+                        friend_id=recipient_id,
                         status=ConnectionStatus.ACCEPTED,
                         updated_at=datetime.now(),
-                        created_at=body.get("created_at", datetime.now())
+                        created_at=body.get("created_at", datetime.now()),
                     )
                 )
                 if not updated_connection:
-                    logger.error(f"Failed to update connection for {recipient_id} -> {sender_id}")
+                    logger.error(
+                        f"Failed to update connection for {recipient_id} -> {sender_id}"
+                    )
                     await message.nack(requeue=False)
                     return
 
@@ -551,7 +558,9 @@ class ConnectionManager:
                 # Fetch user's connections
                 connections = await self.get_user_connections(user_id)
                 if connections is None:
-                    logger.error(f"Failed to fetch connections for user {user_id}")
+                    logger.error(
+                        f"Failed to fetch connections for user {user_id}"
+                    )
                     await message.nack(requeue=False)
                     return
 
@@ -569,17 +578,20 @@ class ConnectionManager:
                 #     connection_dicts.append(conn_dict)
 
                 # Publish the connections back to the requester
-                response_message = json.dumps({
-                    "source": "connections",
-                    "event_type": "friends_list",
-                    "user_id": user_id,
-                    "friends": connections
-                }, default=pydantic_encoder)
+                response_message = json.dumps(
+                    {
+                        "source": "connections",
+                        "event_type": "friends_list",
+                        "user_id": user_id,
+                        "friends": connections,
+                    },
+                    default=pydantic_encoder,
+                )
 
                 await self.rabbitmq.publish_friends_list(
                     routing_key=message.reply_to,
                     message=response_message,
-                    correlation_id=message.correlation_id
+                    correlation_id=message.correlation_id,
                 )
             else:
                 logger.error(f"Unknown event type: {event_type}")

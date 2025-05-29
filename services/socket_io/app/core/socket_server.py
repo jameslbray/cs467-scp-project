@@ -51,7 +51,7 @@ class SocketServer:
 
         self.sio.on("notifications:fetch", self._on_notifications_fetch)
         # self.sio.on("notifications:fetch_all", self._on_notifications_fetch)
-        
+
         self.sio.on(
             "connections:get_friends", self.handle_get_friends
         )
@@ -132,7 +132,7 @@ class SocketServer:
         await self.rabbitmq.consume(
             "socket_notifications", self._handle_notification
         )
-        
+
         # Start consuming connection events
         await self.rabbitmq.consume(
             "connections", self._handle_connections
@@ -179,13 +179,13 @@ class SocketServer:
                 )
                 await self.sio.disconnect(sid)
                 return
-        
+
             user_id = response["user"]["id"]
             username = response["user"].get("username", "Unknown User")
             self.sid_to_username[sid] = username
             self.register_user(sid, user_id)
             logger.info(f"User {user_id} connected with sid {sid}")
-            
+
             # Optionally, publish presence update via RabbitMQ
             try:
                 await with_retry(
@@ -564,7 +564,7 @@ class SocketServer:
                     room=sid,
                 )
                 return
-            
+
             response = await self.rabbitmq.publish_and_wait(
                 exchange="presence",
                 routing_key="friends.statuses",
@@ -746,7 +746,7 @@ class SocketServer:
             await self.sio.emit(
                 "connections:get_friends:error", {"error": str(e)}, room=sid
             )
-    
+
     async def _handle_connections(self, message):
         """Handle connection-related messages from RabbitMQ."""
         try:

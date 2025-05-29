@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AddNotificationTest from '../components/AddNotificationTest';
 import ChatList from '../components/ChatList';
 import ConnectedUsers from '../components/ConnectedUsers';
@@ -14,12 +14,11 @@ import { useSocketContext } from '../contexts/socket/socketContext';
 import { useSocketEvent } from '../contexts/socket/useSocket';
 import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
-import type { NotificationResponseType } from '../types/notificationType';
-import type { FriendConnection } from '../types/friendsTypes';
-import { ServerEvents } from '../types/serverEvents';
 import { enrichConnectionsWithUsernames } from '../services/friendsAPI';
+import type { FriendConnection } from '../types/friendsTypes';
+import type { NotificationResponseType } from '../types/notificationType';
+import { ServerEvents } from '../types/serverEvents';
 import { getFriendId } from '../utils/friendsUtils';
-
 
 const ChatPage: React.FC = () => {
 	const { user, isLoading: authLoading } = useAuth();
@@ -30,10 +29,12 @@ const ChatPage: React.FC = () => {
 	const { rooms, loading: roomsLoading } = useFetchRooms();
 	// Add state for new notification indicator
 	const [hasNewNotification, setHasNewNotification] = useState(false);
+	const requestedFriendsRef = useRef(false);
 
 	// Listen for individual friend status changes
 	useSocketEvent<FriendConnection[]>(ServerEvents.GET_FRIENDS_SUCCESS, (data) => {
 		console.log('Received friends list:', data);
+		console.log('Type of data:', typeof data, 'Is array:', Array.isArray(data));
 		setFriends((prev: Record<string, FriendConnection>) => {
 			const updatedFriends: Record<string, FriendConnection> = { ...prev };
 
@@ -52,11 +53,10 @@ const ChatPage: React.FC = () => {
 		});
 	});
 
-
 	// Listen for new notification events
 	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, (notification) => {
 		setHasNewNotification(true);
-		console.log("Received notification:", notification);
+		console.log('Received notification:', notification);
 
 		// Optional: Add sound notification
 		try {
@@ -75,12 +75,13 @@ const ChatPage: React.FC = () => {
 	// Update friend count when friends change
 	useEffect(() => {
 		const enrich = async () => {
-			if (user?.id && Object.keys(friends).length > 0) { // Check if friends exist
+			if (user?.id && Object.keys(friends).length > 0) {
+				// Check if friends exist
 				try {
 					const enriched = await enrichConnectionsWithUsernames(friends, user.id);
 					setEnrichedFriends(enriched);
 				} catch (error) {
-					console.error("Error enriching friends data:", error);
+					console.error('Error enriching friends data:', error);
 					// Don't clear existing data on error
 				}
 			} else if (user?.id && Object.keys(friends).length === 0) {
@@ -96,14 +97,16 @@ const ChatPage: React.FC = () => {
 	}, [friends, user?.id]);
 
 	useEffect(() => {
-		if (isConnected && user) {
-			// Request friend list from server
-			if (socket) {
-				console.log('Requesting friends list...');
-				socket.emit(ServerEvents.GET_FRIENDS, {
-					userId: user.id
-				});
-			};
+		if (isConnected && user && socket && !requestedFriendsRef.current) {
+			console.log('User before requesting friends:', user);
+			console.log('Socket before requesting friends:', socket);
+			console.log('Requesting friends list...');
+			socket.emit(ServerEvents.GET_FRIENDS, { userId: user.id });
+			requestedFriendsRef.current = true;
+		}
+		// Reset the flag if disconnected (optional, for reconnection scenarios)
+		if (!isConnected) {
+			requestedFriendsRef.current = false;
 		}
 	}, [isConnected, user, socket]);
 
@@ -119,11 +122,11 @@ const ChatPage: React.FC = () => {
 
 	// Debugging: Log friends and enrichedFriends changes
 	useEffect(() => {
-		console.log("Friends changed:", Object.keys(friends).length);
+		console.log('Friends changed:', Object.keys(friends).length);
 	}, [friends]);
 
 	useEffect(() => {
-		console.log("Enriched friends changed:", Object.keys(enrichedFriends).length);
+		console.log('Enriched friends changed:', Object.keys(enrichedFriends).length);
 	}, [enrichedFriends]);
 
 	if (authLoading || !isConnected) {
