@@ -6,7 +6,6 @@ import secrets
 import shutil
 import sys
 from datetime import UTC, datetime, timedelta
-from typing import Optional
 
 from fastapi import (
     APIRouter,
@@ -19,11 +18,10 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
-from services.users.app.schemas import UserUpdate
+
 from services.users.app.core import security
 from services.users.app.core.config import Settings, get_settings
 from services.users.app.core.utils import (
@@ -38,6 +36,7 @@ from services.users.app.schemas import (
     PasswordResetRequest,
     Token,
     UserCreate,
+    UserUpdate,
 )
 from services.users.app.schemas import UserSchema as User
 
@@ -55,12 +54,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["users"])
 settings = get_settings()
-
-
-class UserUpdate(BaseModel):
-    display_name: Optional[str] = None
-    profile_picture_url: Optional[str] = None
-    email: Optional[str] = None
 
 
 @router.get("/")
@@ -485,10 +478,17 @@ async def update_user_profile(
     current_user: UserModel = Depends(security.get_current_user),
 ):
     if update.email and update.email != current_user.email:
-        existing_user = db.query(UserModel).filter(UserModel.email == update.email).first()
+        existing_user = (
+            db.query(UserModel).filter(UserModel.email == update.email).first()
+        )
         if existing_user and existing_user.id != current_user.id:
-            raise HTTPException(status_code=400, detail="Email already in use.")
+            raise HTTPException(
+                status_code=400, detail="Email already in use."
+            )
         current_user.email = update.email
+
+    if update.display_name is not None:
+        current_user.display_name = update.display_name
 
     if update.profile_picture_url is not None:
         current_user.profile_picture_url = update.profile_picture_url
@@ -497,5 +497,6 @@ async def update_user_profile(
     db.refresh(current_user)
 
     return current_user
+
 
 __all__ = ["router"]

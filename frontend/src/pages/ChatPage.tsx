@@ -1,11 +1,9 @@
+import { BellIcon } from '@heroicons/react/24/outline';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import AddNotificationTest from '../components/AddNotificationTest';
 import ChatList from '../components/ChatList';
-import ConnectedUsers from '../components/ConnectedUsers';
 import FriendsList from '../components/FriendsList';
 import LoadingSpinner from '../components/LoadingSpinner';
-import NotificationBell from '../components/NotificationsList';
 import RoomList from '../components/RoomList';
 import SearchUsers from '../components/SearchUsers';
 import UserStatus from '../components/UserStatus';
@@ -27,18 +25,13 @@ const ChatPage: React.FC = () => {
 	const [enrichedFriends, setEnrichedFriends] = useState<Record<string, FriendConnection>>({});
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 	const { rooms, loading: roomsLoading } = useFetchRooms();
-	// Add state for new notification indicator
 	const [hasNewNotification, setHasNewNotification] = useState(false);
 	const requestedFriendsRef = useRef(false);
 
 	// Listen for individual friend status changes
 	useSocketEvent<FriendConnection[]>(ServerEvents.GET_FRIENDS_SUCCESS, (data) => {
-		console.log('Received friends list:', data);
-		console.log('Type of data:', typeof data, 'Is array:', Array.isArray(data));
 		setFriends((prev: Record<string, FriendConnection>) => {
 			const updatedFriends: Record<string, FriendConnection> = { ...prev };
-
-			// Check if data is an array
 			if (Array.isArray(data)) {
 				data.forEach((friend: FriendConnection) => {
 					if (friend && friend.user_id) {
@@ -54,11 +47,8 @@ const ChatPage: React.FC = () => {
 	});
 
 	// Listen for new notification events
-	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, (notification) => {
+	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, () => {
 		setHasNewNotification(true);
-		console.log('Received notification:', notification);
-
-		// Optional: Add sound notification
 		try {
 			const notificationSound = new Audio('../assets/notification-sound.mp3');
 			notificationSound.play().catch((e) => console.log('Auto-play prevented:', e));
@@ -76,21 +66,16 @@ const ChatPage: React.FC = () => {
 	useEffect(() => {
 		const enrich = async () => {
 			if (user?.id && Object.keys(friends).length > 0) {
-				// Check if friends exist
 				try {
 					const enriched = await enrichConnectionsWithUsernames(friends, user.id);
 					setEnrichedFriends(enriched);
 				} catch (error) {
 					console.error('Error enriching friends data:', error);
-					// Don't clear existing data on error
 				}
 			} else if (user?.id && Object.keys(friends).length === 0) {
-				// If friends is empty but user exists, set enrichedFriends to empty too
 				setEnrichedFriends({});
 			}
 		};
-
-		// Controller to handle component unmount during async operation
 		const controller = new AbortController();
 		enrich();
 		return () => controller.abort();
@@ -98,13 +83,9 @@ const ChatPage: React.FC = () => {
 
 	useEffect(() => {
 		if (isConnected && user && socket && !requestedFriendsRef.current) {
-			console.log('User before requesting friends:', user);
-			console.log('Socket before requesting friends:', socket);
-			console.log('Requesting friends list...');
 			socket.emit(ServerEvents.GET_FRIENDS, { userId: user.id });
 			requestedFriendsRef.current = true;
 		}
-		// Reset the flag if disconnected (optional, for reconnection scenarios)
 		if (!isConnected) {
 			requestedFriendsRef.current = false;
 		}
@@ -119,15 +100,6 @@ const ChatPage: React.FC = () => {
 			}
 		}
 	}, [rooms, roomsLoading, selectedRoom]);
-
-	// Debugging: Log friends and enrichedFriends changes
-	useEffect(() => {
-		console.log('Friends changed:', Object.keys(friends).length);
-	}, [friends]);
-
-	useEffect(() => {
-		console.log('Enriched friends changed:', Object.keys(enrichedFriends).length);
-	}, [enrichedFriends]);
 
 	if (authLoading || !isConnected) {
 		return <LoadingSpinner message='Connecting...' />;
@@ -152,46 +124,51 @@ const ChatPage: React.FC = () => {
 						</div>
 						<div className='flex items-center space-x-4'>
 							{/* Notifications */}
-							<div
-								className={hasNewNotification ? 'animate-pulse' : ''}
+							<button
+								className={`relative focus:outline-none ${
+									hasNewNotification ? 'animate-pulse' : ''
+								}`}
 								onClick={handleNotificationBellClick}
+								aria-label='Notifications'
+								type='button'
 							>
-								<NotificationBell />
-							</div>
-
+								<BellIcon className='h-6 w-6 text-gray-700 dark:text-gray-300' />
+								{hasNewNotification && (
+									<span className='absolute top-0 right-0 block h-2 w-2 rounded-full ring-2 ring-white dark:ring-gray-800 bg-red-500'></span>
+								)}
+							</button>
 							{/* Search users */}
 							<SearchUsers
 								onConnectionChange={() => {
 									// Refresh friend list when connections change
-									// This could trigger a refetch if needed
 								}}
 							/>
-
 							{/* Friends List */}
 							<FriendsList friends={enrichedFriends} />
 						</div>
 					</div>
 				</div>
 			</header>
-
 			{/* Main content */}
 			<main className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8'>
-				<div className='grid grid-cols-1 lg:grid-cols-3 gap-8'>
+				<div className='grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-0'>
 					{/* Sidebar with status */}
 					<div className='lg:col-span-1'>
-						<RoomList onSelectRoom={setSelectedRoom} />
-						<ConnectedUsers />
-						<AddNotificationTest />
+						<div className='rounded-lg shadow-md'>
+							<RoomList onSelectRoom={setSelectedRoom} newChatButton />
+						</div>
 					</div>
 					{/* Chat panel */}
-					<div className='lg:col-span-2'>
-						{selectedRoom ? (
-							<ChatList roomId={selectedRoom._id} />
-						) : (
-							<div className='flex items-center justify-center h-full text-gray-500 dark:text-gray-400'>
-								Select a room to start chatting
-							</div>
-						)}
+					<div className='lg:col-span-2 min-h-0 flex flex-col'>
+						<div className='bg-white dark:bg-gray-800 rounded-lg shadow-md h-full flex flex-col min-h-0'>
+							{selectedRoom ? (
+								<ChatList roomId={selectedRoom._id} />
+							) : (
+								<div className='flex items-center justify-center h-full text-gray-500 dark:text-gray-400'>
+									Select a room to start chatting
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 			</main>

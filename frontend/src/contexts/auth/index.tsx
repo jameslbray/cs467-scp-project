@@ -1,6 +1,6 @@
 import type React from "react";
 import { type ReactNode, useEffect, useState } from "react";
-import type { User } from "../../App";
+import type { User } from "../../types/userType";
 import { authApi } from "../../services/api";
 import { AuthContext } from "./authContext";
 
