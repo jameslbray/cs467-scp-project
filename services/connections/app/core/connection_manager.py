@@ -564,19 +564,11 @@ class ConnectionManager:
                     await message.nack(requeue=False)
                     return
 
-                # #  Convert connections to dicts for serialization
-                # connection_dicts = []
-                # for conn in connections:
-                #     conn_dict = conn.model_dump()
-                #     # Convert UUID objects to strings
-                #     conn_dict["id"] = str(conn_dict["id"]) if conn_dict["id"] else None
-                #     conn_dict["user_id"] = str(conn_dict["user_id"])
-                #     conn_dict["friend_id"] = str(conn_dict["friend_id"])
-                #     # Convert datetime objects to ISO format strings
-                #     conn_dict["created_at"] = conn_dict["created_at"].isoformat() if conn_dict["created_at"] else None
-                #     conn_dict["updated_at"] = conn_dict["updated_at"].isoformat() if conn_dict["updated_at"] else None
-                #     connection_dicts.append(conn_dict)
-
+                # Filter connections to only include accepted friends
+                connections = [
+                    conn for conn in connections if conn.status == ConnectionStatus.ACCEPTED
+                ]
+                
                 # Publish the connections back to the requester
                 response_message = json.dumps(
                     {
