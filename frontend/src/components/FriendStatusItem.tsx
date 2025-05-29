@@ -1,8 +1,8 @@
-import type React from "react";
-import type { UserStatusIntf } from "../App";
+import type React from 'react';
+import type { UserStatusType } from '../types/userStatusType';
 
 interface FriendStatusItemProps {
-	status: UserStatusIntf;
+	status: UserStatusType;
 }
 
 const FriendStatusItem: React.FC<FriendStatusItemProps> = ({ status }) => {

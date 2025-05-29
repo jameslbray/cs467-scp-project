@@ -1,4 +1,5 @@
 // src/components/RoomList.tsx
+import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/solid';
 import React, { useState } from 'react';
 import { useAuth } from '../contexts';
 import { type Room, useFetchRooms } from '../hooks/useFetchRooms';
@@ -8,9 +9,10 @@ import type { FriendConnection } from '../types/friendsTypes';
 
 interface RoomListProps {
 	onSelectRoom: (room: Room) => void;
+	newChatButton?: boolean;
 }
 
-const RoomList: React.FC<RoomListProps> = ({ onSelectRoom }) => {
+const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 	const { rooms, loading, error } = useFetchRooms();
 	const { user, token } = useAuth();
 	const [showModal, setShowModal] = useState(false);
@@ -19,6 +21,7 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom }) => {
 	const [roomName, setRoomName] = useState('');
 	const [creating, setCreating] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
+	const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
 
 	const openModal = async () => {
 		if (!user?.id || !token) return;
@@ -66,29 +69,48 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom }) => {
 		}
 	};
 
+	const handleSelectRoom = (room: Room) => {
+		setActiveRoomId(room._id);
+		onSelectRoom(room);
+	};
+
 	if (loading) return <div>Loading rooms...</div>;
 	if (error) return <div>Error: {error}</div>;
 
 	return (
-		<div>
+		<div className='bg-white dark:bg-gray-800 rounded-lg shadow-md p-4'>
 			<button
 				onClick={openModal}
-				className='mb-2 w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700'
+				className='mb-4 w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2 rounded-lg font-semibold shadow hover:bg-blue-700 transition-colors'
 			>
-				+ Create Room
+				<ChatBubbleLeftRightIcon className='h-5 w-5' />
+				{newChatButton ? 'New Chat' : '+ Create Room'}
 			</button>
-			<ul>
+			<ul className='divide-y divide-gray-200 dark:divide-gray-700'>
 				{rooms.map((room) => (
 					<li key={room._id}>
-						<button type='button' onClick={() => onSelectRoom(room)}>
-							{room.name}
+						<button
+							type='button'
+							onClick={() => handleSelectRoom(room)}
+							className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-colors text-left
+								${
+									activeRoomId === room._id
+										? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold shadow'
+										: 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-100'
+								}`}
+							aria-current={activeRoomId === room._id ? 'true' : undefined}
+						>
+							<div className='flex items-center justify-center h-9 w-9 rounded-full bg-blue-500 text-white font-bold text-lg'>
+								{room.name.charAt(0).toUpperCase()}
+							</div>
+							<span className='truncate text-base'>{room.name}</span>
 						</button>
 					</li>
 				))}
 			</ul>
 			{showModal && (
 				<div className='fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50'>
-					<div className='bg-white p-6 rounded shadow-lg w-80'>
+					<div className='bg-white p-6 rounded-lg shadow-lg w-80'>
 						<h2 className='text-lg font-bold mb-2'>Create New Room</h2>
 						<form onSubmit={handleCreateRoom}>
 							<input
@@ -96,10 +118,10 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom }) => {
 								placeholder='Room name'
 								value={roomName}
 								onChange={(e) => setRoomName(e.target.value)}
-								className='w-full mb-2 px-2 py-1 border rounded'
+								className='w-full mb-2 px-2 py-1 border rounded-lg'
 							/>
 							<div className='mb-2'>
-								<div className='font-semibold mb-1'>Add friends:</div>
+								<div className='font-semibold'>Add friends:</div>
 								{friends.length === 0 ? (
 									<div className='text-gray-500 text-sm'>No friends available</div>
 								) : (
@@ -114,7 +136,7 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom }) => {
 															type='checkbox'
 															checked={selectedFriendIds.includes(friendId)}
 															onChange={() => handleFriendToggle(friendId)}
-															className='mr-2'
+															className='mr-2 rounded-lg'
 														/>
 														<span>{friendName}</span>
 													</label>
@@ -129,13 +151,13 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom }) => {
 								<button
 									type='button'
 									onClick={closeModal}
-									className='px-3 py-1 rounded bg-gray-200'
+									className='px-3 py-1 rounded-lg bg-gray-200'
 								>
 									Cancel
 								</button>
 								<button
 									type='submit'
-									className='px-3 py-1 rounded bg-blue-600 text-white'
+									className='px-3 py-1 rounded-lg bg-blue-600 text-white'
 									disabled={creating}
 								>
 									{creating ? 'Creating...' : 'Create'}

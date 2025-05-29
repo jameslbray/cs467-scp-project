@@ -44,7 +44,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				setIsOpen(false);
 			}
 		}
-
 		document.addEventListener('mousedown', handleClickOutside);
 		return () => {
 			document.removeEventListener('mousedown', handleClickOutside);
@@ -57,22 +56,20 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 			fetchUserConnections();
 			fetchPendingRequests();
 		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [user]);
 
 	useEffect(() => {
 		const fetchUsernames = async () => {
 			if (pendingRequests.length === 0) return;
-
 			// Collect all user IDs that need username lookup
 			const userIds = new Set<string>();
 			pendingRequests.forEach((req) => {
 				userIds.add(req.user_id);
 				userIds.add(req.friend_id);
 			});
-
 			// Remove current user's ID
 			if (user?.id) userIds.delete(user.id);
-
 			// Fetch user details
 			try {
 				const users = await userApi.getUsersByIds(Array.from(userIds));
@@ -86,8 +83,8 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				console.error('Failed to fetch user details:', error);
 			}
 		};
-
 		fetchUsernames();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [pendingRequests]);
 
 	// Focus input when dropdown is opened
@@ -100,7 +97,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	// Fetch user connections
 	const fetchUserConnections = async () => {
 		if (!user?.id || !token) return;
-		console.log('Fetching user connections for user:', user.id);
 		try {
 			const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
 				headers: {
@@ -146,7 +142,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	// Search for users
 	const searchUsers = async () => {
 		if (!searchTerm.trim() || !token) return;
-		console.log('Searching users with term:', searchTerm);
 		setIsLoading(true);
 		try {
 			// Make API call to search users by username
@@ -158,7 +153,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 					},
 				}
 			);
-
 			if (response.ok) {
 				const users = await response.json();
 				// Filter out the current user
@@ -184,9 +178,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	// Send a friend request
 	const sendFriendRequest = async (friendId: string) => {
 		if (!user?.id || !token) return;
-		console.log('Sending friend request from', user.id, 'to', friendId);
 		if (getConnectionStatus(friendId) === 'pending') {
-			console.warn('Friend request already pending');
 			return;
 		}
 		try {
@@ -202,12 +194,9 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 					status: 'pending',
 				}),
 			});
-
 			if (response.ok) {
-				//  fetch connections for completeness
 				fetchUserConnections();
 				fetchPendingRequests();
-
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
@@ -273,16 +262,13 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				(conn.user_id === user?.id && conn.friend_id === userId) ||
 				(conn.user_id === userId && conn.friend_id === user?.id)
 		);
-
 		if (connections.length === 0) return null;
-
 		// Sort by created_at descending and pick the latest
 		const latest = connections.slice().sort((a, b) => {
 			const aTime = new Date(a.created_at ?? 0).getTime();
 			const bTime = new Date(b.created_at ?? 0).getTime();
 			return bTime - aTime;
 		})[0];
-
 		if (!latest) return null;
 		return latest.status;
 	};
@@ -294,7 +280,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				(conn.user_id === user?.id && conn.friend_id === userId) ||
 				(conn.user_id === userId && conn.friend_id === user?.id)
 		);
-
 		if (connections.length === 0) {
 			return (
 				<button
@@ -305,13 +290,11 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				</button>
 			);
 		}
-
 		const latest = connections.slice().sort((a, b) => {
 			const aTime = new Date(a.created_at ?? 0).getTime();
 			const bTime = new Date(b.created_at ?? 0).getTime();
 			return bTime - aTime;
 		})[0];
-
 		if (!latest) {
 			return (
 				<button
@@ -322,7 +305,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				</button>
 			);
 		}
-
 		if (latest.status === 'accepted') {
 			return <span className='text-green-500 text-xs'>Connected</span>;
 		}
@@ -470,7 +452,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 									const senderUsername =
 										searchResults.find((u) => u.id === request.user_id)?.username ||
 										request.user_id;
-
 									return (
 										<div
 											key={request.id || `${request.user_id}-${request.friend_id}`}

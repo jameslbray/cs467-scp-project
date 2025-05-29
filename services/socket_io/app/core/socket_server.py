@@ -109,6 +109,7 @@ class SocketServer:
         # Declare queues
         await self.rabbitmq.declare_queue("presence", durable=True)
         await self.rabbitmq.declare_queue("socket_notifications", durable=True)
+        await self.rabbitmq.declare_queue("chat_notifications", durable=True)
 
         # Bind queue to presence exchange for status updates
         await self.rabbitmq.bind_queue(
@@ -128,6 +129,12 @@ class SocketServer:
             "user.#",  # Use topic pattern to catch all user notifications
         )
 
+        await self.rabbitmq.bind_queue(
+            "chat_notifications",
+            "chat",
+            "room.#",  # Use topic pattern to catch all room notifications
+        )
+
         # Start consuming notification events
         await self.rabbitmq.consume(
             "socket_notifications", self._handle_notification
@@ -140,6 +147,11 @@ class SocketServer:
 
         # Start consuming presence updates
         await self.rabbitmq.consume("presence", self._handle_presence_update)
+
+        # Start consuming chat notifications
+        await self.rabbitmq.consume(
+            "chat_notifications", self._handle_chat_notifications
+        )
 
         logger.info("RabbitMQ connection and exchanges initialized")
         return True
@@ -775,3 +787,78 @@ class SocketServer:
         except Exception as e:
             logger.error(f"Error handling connection message: {e}")
             await message.nack(requeue=False)
+
+    async def _handle_chat_notifications(self, message):
+        """Handle chat notifications from RabbitMQ."""
+        try:
+            body = json.loads(message.body.decode())
+            event_type = body.get("event_type")
+            user_id = body.get("user_id")
+            sid = self.get_sid_from_user_id(user_id)
+
+            if not sid:
+                logger.warning(f"No socket found for user {user_id}")
+                await message.ack()
+                return
+            
+            if event_type == EventType.CHAT_ROOM_CREATED.value:
+                # Handle room created notification
+                room_id = body.get("room_id")
+                room_name = body.get("room_name")
+                room_description = body.get("room_description")
+                room_created_by = body.get("room_created_by")
+                room_participant_ids = body.get("room_participant_ids")
+
+                for participant_id in room_participant_ids:
+                    if participant_id != room_created_by:
+                        await self.sio.emit(
+                            "chat:room_created",
+                            {
+                                "notification_id": str(uuid.uuid4()),
+                                "recipient_id": participant_id,
+                                "sender_id": room_created_by,
+                                "reference_id": room_id,
+                                "content_preview": "You've been added to a new room",
+                                "timestamp": datetime.now().isoformat(),
+                                "status": "delivered",
+                                "read": False,
+                                "notification_type": "message",
+                            },
+                            room=self.get_sid_from_user_id(participant_id),
+                        )
+            # elif event_type == EventType.CHAT_MESSAGE_RECEIVED.value:
+            #     # Handle message received notification
+            #     message_id = body.get("message_id")
+            #     message_content = body.get("message_content")
+            #     message_sender = body.get("message_sender")
+            #     message_timestamp = body.get("message_timestamp")
+                
+            #     await self.sio.emit(
+            #         "chat:message_received",
+            #         {
+            #             "message_id": message_id,
+            #             "message_content": message_content,
+            #         },
+            #     )
+                
+            else:
+                logger.warning(f"Unknown chat event type: {event_type}")
+                
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error handling chat notification: {e}")
+            await message.nack(requeue=False)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
