@@ -140,7 +140,7 @@ class ConnectionManager:
 
                 # Only get one direction of each relationship to avoid duplicates
                 query = """
-                    SELECT 
+                    SELECT
                         c.id,
                         -- If the current user is user_id, then friend_id is their friend
                         -- Otherwise, user_id is their friend
@@ -151,7 +151,7 @@ class ConnectionManager:
                         c.created_at,
                         c.updated_at
                     FROM connections.connections c
-                    WHERE 
+                    WHERE
                         (c.user_id = $1 OR c.friend_id = $1)
                 """
                 rows = await conn.fetch(query, user_id)
@@ -418,7 +418,7 @@ class ConnectionManager:
                 correlation_id = str(uuid.uuid4())
 
             routing_key = f"user.{recipient_id}"
-            
+
             # Prepare message
             message = json.dumps(
                 {
@@ -437,7 +437,7 @@ class ConnectionManager:
             if notification_type == "friend_request":
                 await self.rabbitmq.publish_friend_request(  # Use specific method for requests
                     message=message,
-                    routing_key=routing_key, 
+                    routing_key=routing_key,
                     reply_to=reply_to or "connection_notifications"
                 )
             else:  # For friend_accepted and other types
@@ -457,38 +457,38 @@ class ConnectionManager:
 
     async def _process_connection_message(self, message) -> None:
         """Process a connection update message from RabbitMQ."""
-        try:            
+        try:
             body = json.loads(message.body.decode())
-            
+
             if "source" in body and body["source"] == "connections":
                 logger.warning("Invalid message source, ignoring")
                 await message.ack()
                 return
-            
+
             logger.info(f"Processing connection message: {body}")
-            
+
             if "event_type" not in body:
                 logger.error("Missing event_type in message")
                 await message.nack(requeue=False)
                 return
             event_type = body["event_type"]
-            
+
             if event_type == "connection:friend_request":
                 recipient_id = body.get("recipient_id")
                 sender_id = body.get("sender_id")
                 reference_id = body.get("reference_id")
                 content_preview = body.get("content_preview", "")
-                
+
                 if not recipient_id or not sender_id or not reference_id:
                     logger.error("Missing required fields for friend request")
                     await message.nack(requeue=False)
                     return
-                
+
                 # Add friend request to database
                 created_connection = await self.create_connection(
                     ConnectionCreate(
-                        user_id=recipient_id,
-                        friend_id=sender_id,
+                        user_id=sender_id,
+                        friend_id=recipient_id,
                         status=ConnectionStatus.PENDING
                     )
                 )
@@ -496,7 +496,7 @@ class ConnectionManager:
                     logger.error(f"Failed to create connection for {recipient_id} -> {sender_id}")
                     await message.nack(requeue=False)
                     return
-                
+
                 # Publish friend request notification
                 await self.publish_notification_event(
                     recipient_id=recipient_id,
@@ -510,12 +510,12 @@ class ConnectionManager:
                 sender_id = body.get("sender_id")
                 reference_id = body.get("reference_id")
                 content_preview = body.get("content_preview", "")
-                
+
                 if not recipient_id or not sender_id or not reference_id:
                     logger.error("Missing required fields for friend accepted")
                     await message.nack(requeue=False)
                     return
-                
+
                 # Update connection status to accepted
                 updated_connection = await self.update_connection(
                     ConnectionUpdate(
@@ -531,7 +531,7 @@ class ConnectionManager:
                     logger.error(f"Failed to update connection for {recipient_id} -> {sender_id}")
                     await message.nack(requeue=False)
                     return
-                
+
                 # Publish friend accepted notification
                 await self.publish_notification_event(
                     recipient_id=recipient_id,
@@ -542,19 +542,19 @@ class ConnectionManager:
                 )
             elif event_type == "connections:get_friends":
                 user_id = body.get("user_id")
-                
+
                 if not user_id:
                     logger.error("Missing user_id for get_friends event")
                     await message.nack(requeue=False)
                     return
-                
+
                 # Fetch user's connections
                 connections = await self.get_user_connections(user_id)
                 if connections is None:
                     logger.error(f"Failed to fetch connections for user {user_id}")
                     await message.nack(requeue=False)
                     return
-                
+
                 # #  Convert connections to dicts for serialization
                 # connection_dicts = []
                 # for conn in connections:
@@ -567,7 +567,7 @@ class ConnectionManager:
                 #     conn_dict["created_at"] = conn_dict["created_at"].isoformat() if conn_dict["created_at"] else None
                 #     conn_dict["updated_at"] = conn_dict["updated_at"].isoformat() if conn_dict["updated_at"] else None
                 #     connection_dicts.append(conn_dict)
-                    
+
                 # Publish the connections back to the requester
                 response_message = json.dumps({
                     "source": "connections",
@@ -575,7 +575,7 @@ class ConnectionManager:
                     "user_id": user_id,
                     "friends": connections
                 }, default=pydantic_encoder)
-                                
+
                 await self.rabbitmq.publish_friends_list(
                     routing_key=message.reply_to,
                     message=response_message,
