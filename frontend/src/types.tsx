@@ -2,6 +2,7 @@
 export enum StatusType {
   ONLINE = "online",
   AWAY = "away",
+  BUSY = "busy",
   OFFLINE = "offline"
 }
 
