@@ -1,31 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
-import { UserStatusType } from '../types/userStatusType';
-import { FriendConnection } from '../types/friendsTypes'; 
-import { fetchAcceptedFriends, enrichConnectionsWithUsernames } from '../services/friendsAPI';
+// import { UserStatusType } from '../types/userStatusType';
+import { FriendConnection } from '../types/friendsTypes';
+// import { fetchAcceptedFriends, enrichConnectionsWithUsernames } from '../services/friendsAPI';
 import { getFriendId, getFriendDisplayName, filterOnlineFriends } from '../utils/friendsUtils';
 import { useFriendStatuses } from '../hooks/useFriendStatuses';
 
 interface FriendsListProps {
-  friends: Record<string, UserStatusType>;
-  friendCount: number;
+  friends: Record<string, FriendConnection>;
 }
 
-const FriendsList: React.FC<FriendsListProps> = ({ friends, friendCount }) => {
+const FriendsList: React.FC<FriendsListProps> = ({ friends }) => {
   const { user, token } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'online' | 'all'>('online');
-  const [allFriends, setAllFriends] = useState<FriendConnection[]>([]);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  
-  // Use our new custom hook
-  const { 
-    friendStatuses, 
-    isLoading: statusesLoading, 
+  const mounted = useRef<boolean>(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const {
+    friendStatuses,
     fetchAllFriendStatuses,
-    onlineFriendsCount 
-  } = useFriendStatuses(allFriends, user?.id, token);
+    onlineFriendsCount
+  } = useFriendStatuses(friends, user?.id, token, setLoading);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -41,36 +45,47 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, friendCount }) => {
     };
   }, []);
 
-  // Load connections with usernames
-  async function loadConnectionsWithUsernames() {
-    if (!user?.id || !token) return;
-    
-    setLoading(true);
-    try {
-      // Fetch accepted friends
-      const connections = await fetchAcceptedFriends(user.id, token);
-      
-      // Enrich connections with usernames
-      const enrichedConnections = await enrichConnectionsWithUsernames(connections, user.id);
-      
-      setAllFriends(enrichedConnections);
-    } catch (error) {
-      console.error('Error loading friends with usernames:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // // Load connections with usernames
+  // async function loadConnectionsWithUsernames() {
+  //   if (!user?.id || !token) return;
+
+  //   setLoading(true);
+  //   try {
+  //     // Fetch accepted friends
+  //     const connections = await fetchAcceptedFriends(user.id, token);
+
+  //     // Enrich connections with usernames
+  //     const enrichedConnections = await enrichConnectionsWithUsernames(connections, user.id);
+
+  //     setAllFriends(enrichedConnections);
+  //   } catch (error) {
+  //     console.error('Error loading friends with usernames:', error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // }
 
   // Fetch friends when dropdown opens or tab changes
   useEffect(() => {
-    if (isOpen && user?.id) {
-      loadConnectionsWithUsernames();
+    // Only fetch on mount or when dependencies meaningfully change
+    if (user?.id && (isOpen || Object.keys(friends).length > 0)) {
+      setLoading(true);
+      fetchAllFriendStatuses()
+        .finally(() => {
+          if (mounted.current) {
+            setLoading(false);
+          }
+        });
+    }
+  }, [isOpen, user?.id, friends, fetchAllFriendStatuses]);
+
+  // Render statuses on mount or when friends change
+  useEffect(() => {
+    if (user?.id) {
       fetchAllFriendStatuses();
     }
-  }, [isOpen, user?.id, token, activeTab]);
+  }, [user?.id, friends]);
 
-  const isLoadingAnything = loading || statusesLoading;
-  
   return (
     <div className='relative' ref={dropdownRef}>
       <button
@@ -79,7 +94,7 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, friendCount }) => {
         aria-expanded={isOpen}
       >
         <span className='mr-1'>
-          {onlineFriendsCount ? onlineFriendsCount : friendCount} {onlineFriendsCount === 1 ? 'friend' : 'friends'} online
+          {onlineFriendsCount} {onlineFriendsCount === 1 ? 'friend' : 'friends'} online
         </span>
         <svg
           className={`w-4 h-4 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
@@ -119,12 +134,12 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, friendCount }) => {
           {/* Online Friends Tab */}
           {activeTab === 'online' && (
             <div className='max-h-60 overflow-y-auto'>
-              {isLoadingAnything ? (
+              {loading ? (
                 <div className='py-4 px-4 text-center'>
                   <div className='animate-spin h-5 w-5 mx-auto border-t-2 border-b-2 border-primary-500 rounded-full'></div>
                 </div>
               ) : user?.id ? (
-                renderFriendsList(filterOnlineFriends(allFriends, user.id, friendStatuses))
+                renderFriendsList(filterOnlineFriends(friends, user.id, friendStatuses))
               ) : (
                 <div className='px-4 py-2 text-sm text-gray-500 dark:text-gray-400 italic'>
                   No friends online
@@ -136,12 +151,12 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, friendCount }) => {
           {/* All Friends Tab */}
           {activeTab === 'all' && (
             <div className='max-h-60 overflow-y-auto'>
-              {isLoadingAnything ? (
+              {loading ? (
                 <div className='py-4 px-4 text-center'>
                   <div className='animate-spin h-5 w-5 mx-auto border-t-2 border-b-2 border-primary-500 rounded-full'></div>
                 </div>
               ) : (
-                renderFriendsList(allFriends)
+                renderFriendsList(friends)
               )}
             </div>
           )}
@@ -149,23 +164,23 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, friendCount }) => {
       )}
     </div>
   );
-  
+
   // Helper function to render the friends list
-  function renderFriendsList(connections: FriendConnection[]) {
+  function renderFriendsList(connections: Record<string, FriendConnection>) {
     if (!user?.id) return null;
-    
-    if (connections.length === 0) {
+
+    if (Object.values(connections).length === 0) {
       return (
         <div className='px-4 py-2 text-sm text-gray-500 dark:text-gray-400 italic'>
           {activeTab === 'online' ? 'No friends online' : 'No friends found'}
         </div>
       );
     }
-    
-    return connections.map((connection) => {
+
+    return Object.values(connections).map((connection) => {
       const friendId = getFriendId(connection, user.id);
       const status = friendStatuses[friendId] || 'offline';
-      const displayName = getFriendDisplayName(connection, friendId, friends);
+      const displayName = getFriendDisplayName(connection, friendId);
 
       return (
         <div

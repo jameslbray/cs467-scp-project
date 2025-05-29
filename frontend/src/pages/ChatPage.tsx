@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AddNotificationTest from '../components/AddNotificationTest';
 import ChatList from '../components/ChatList';
 import ConnectedUsers from '../components/ConnectedUsers';
@@ -14,42 +14,53 @@ import { useSocketContext } from '../contexts/socket/socketContext';
 import { useSocketEvent } from '../contexts/socket/useSocket';
 import type { Room } from '../hooks/useFetchRooms';
 import { useFetchRooms } from '../hooks/useFetchRooms';
-import type { NotificationResponseType } from '../types/notificationType'; // Add this import
+import { enrichConnectionsWithUsernames } from '../services/friendsAPI';
+import type { FriendConnection } from '../types/friendsTypes';
+import type { NotificationResponseType } from '../types/notificationType';
 import { ServerEvents } from '../types/serverEvents';
-import type { UserStatusType } from '../types/userStatusType';
+import { getFriendId } from '../utils/friendsUtils';
 
 const ChatPage: React.FC = () => {
 	const { user, isLoading: authLoading } = useAuth();
 	const { isConnected, socket } = useSocketContext();
-	const [friends, setFriends] = useState<Record<string, UserStatusType>>({});
-	const [friendCount, setFriendCount] = useState(0);
+	const [friends, setFriends] = useState<Record<string, FriendConnection>>({});
+	const [enrichedFriends, setEnrichedFriends] = useState<Record<string, FriendConnection>>({});
 	const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 	const { rooms, loading: roomsLoading } = useFetchRooms();
 	// Add state for new notification indicator
 	const [hasNewNotification, setHasNewNotification] = useState(false);
-
-	// Listen for initial friend statuses
-	useSocketEvent<{ statuses: Record<string, UserStatusType> }>(
-		ServerEvents.FRIEND_STATUSES,
-		(data) => {
-			console.log('Received friend statuses:', data);
-
-			setFriends(data.statuses);
-		}
-	);
+	const requestedFriendsRef = useRef(false);
 
 	// Listen for individual friend status changes
-	useSocketEvent<UserStatusType>(ServerEvents.FRIEND_STATUS_CHANGED, (data) => {
-		setFriends((prev) => ({ ...prev, [data.user_id]: data }));
+	useSocketEvent<FriendConnection[]>(ServerEvents.GET_FRIENDS_SUCCESS, (data) => {
+		console.log('Received friends list:', data);
+		console.log('Type of data:', typeof data, 'Is array:', Array.isArray(data));
+		setFriends((prev: Record<string, FriendConnection>) => {
+			const updatedFriends: Record<string, FriendConnection> = { ...prev };
+
+			// Check if data is an array
+			if (Array.isArray(data)) {
+				data.forEach((friend: FriendConnection) => {
+					if (friend && friend.user_id) {
+						if (user && user.id) {
+							const friendId = getFriendId(friend, user.id);
+							updatedFriends[friendId] = friend as FriendConnection;
+						}
+					}
+				});
+			}
+			return updatedFriends;
+		});
 	});
 
 	// Listen for new notification events
-	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, () => {
+	useSocketEvent<NotificationResponseType>(ServerEvents.NEW_NOTIFICATION, (notification) => {
 		setHasNewNotification(true);
+		console.log('Received notification:', notification);
 
 		// Optional: Add sound notification
 		try {
-			const notificationSound = new Audio('/notification-sound.mp3');
+			const notificationSound = new Audio('../assets/notification-sound.mp3');
 			notificationSound.play().catch((e) => console.log('Auto-play prevented:', e));
 		} catch (e) {
 			console.log('Audio notification not supported', e);
@@ -63,16 +74,39 @@ const ChatPage: React.FC = () => {
 
 	// Update friend count when friends change
 	useEffect(() => {
-		setFriendCount(Object.keys(friends).length);
-	}, [friends]);
+		const enrich = async () => {
+			if (user?.id && Object.keys(friends).length > 0) {
+				// Check if friends exist
+				try {
+					const enriched = await enrichConnectionsWithUsernames(friends, user.id);
+					setEnrichedFriends(enriched);
+				} catch (error) {
+					console.error('Error enriching friends data:', error);
+					// Don't clear existing data on error
+				}
+			} else if (user?.id && Object.keys(friends).length === 0) {
+				// If friends is empty but user exists, set enrichedFriends to empty too
+				setEnrichedFriends({});
+			}
+		};
+
+		// Controller to handle component unmount during async operation
+		const controller = new AbortController();
+		enrich();
+		return () => controller.abort();
+	}, [friends, user?.id]);
 
 	useEffect(() => {
-		if (isConnected && user) {
-			// Request friend statuses from server
-			if (socket) {
-				console.log('Requesting friend statuses...');
-				socket.emit(ServerEvents.FRIEND_STATUSES);
-			}
+		if (isConnected && user && socket && !requestedFriendsRef.current) {
+			console.log('User before requesting friends:', user);
+			console.log('Socket before requesting friends:', socket);
+			console.log('Requesting friends list...');
+			socket.emit(ServerEvents.GET_FRIENDS, { userId: user.id });
+			requestedFriendsRef.current = true;
+		}
+		// Reset the flag if disconnected (optional, for reconnection scenarios)
+		if (!isConnected) {
+			requestedFriendsRef.current = false;
 		}
 	}, [isConnected, user, socket]);
 
@@ -85,6 +119,15 @@ const ChatPage: React.FC = () => {
 			}
 		}
 	}, [rooms, roomsLoading, selectedRoom]);
+
+	// Debugging: Log friends and enrichedFriends changes
+	useEffect(() => {
+		console.log('Friends changed:', Object.keys(friends).length);
+	}, [friends]);
+
+	useEffect(() => {
+		console.log('Enriched friends changed:', Object.keys(enrichedFriends).length);
+	}, [enrichedFriends]);
 
 	if (authLoading || !isConnected) {
 		return <LoadingSpinner message='Connecting...' />;
@@ -125,7 +168,7 @@ const ChatPage: React.FC = () => {
 							/>
 
 							{/* Friends List */}
-							<FriendsList friends={friends} friendCount={friendCount} />
+							<FriendsList friends={enrichedFriends} />
 						</div>
 					</div>
 				</div>

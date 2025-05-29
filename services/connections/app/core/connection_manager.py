@@ -8,11 +8,16 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 import asyncpg  # type: ignore
-
+from pydantic.json import pydantic_encoder
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
-from ..db.models import Connection
-from ..db.schemas import ConnectionCreate, ConnectionUpdate
+# from ..db.models import Connection
+from ..db.schemas import (
+    Connection,
+    ConnectionCreate,
+    ConnectionStatus,
+    ConnectionUpdate,
+)
 from .connections_rabbitmq import ConnectionsRabbitMQClient
 
 # configure logging
@@ -131,17 +136,26 @@ class ConnectionManager:
             return None
 
         try:
-            logger.debug(f"Searching for connections of user_id: {user_id}")
+            logger.info(f"Searching for connections of user_id: {user_id}")
 
             async with self.postgres_client.acquire() as conn:
                 await conn.execute("SET search_path TO connections, public")
 
                 # Only get one direction of each relationship to avoid duplicates
                 query = """
-                    SELECT DISTINCT ON (LEAST(user_id, friend_id), GREATEST(user_id, friend_id))
-                        * FROM connections.connections
-                    WHERE (user_id = $1 OR friend_id = $1)
-                    ORDER BY LEAST(user_id, friend_id), GREATEST(user_id, friend_id), created_at DESC
+                    SELECT
+                        c.id,
+                        -- If the current user is user_id, then friend_id is their friend
+                        -- Otherwise, user_id is their friend
+                        CASE WHEN c.user_id = $1 THEN c.friend_id ELSE c.user_id END AS other_user_id,
+                        c.user_id,
+                        c.friend_id,
+                        c.status,
+                        c.created_at,
+                        c.updated_at
+                    FROM connections.connections c
+                    WHERE
+                        (c.user_id = $1 OR c.friend_id = $1)
                 """
                 rows = await conn.fetch(query, user_id)
 
@@ -163,6 +177,10 @@ class ConnectionManager:
                         logger.error(
                             f"Error converting row to connection: {e}"
                         )
+
+                logger.info(
+                    f"Found {len(connections)} connections for user {user_id}, {connections}"
+                )
 
                 return connections
 
@@ -235,7 +253,7 @@ class ConnectionManager:
     async def create_connection(
         self, connection: ConnectionCreate
     ) -> Connection | None:
-        """Create a new connection."""
+        """Create a new connection (single direction, pending)."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
@@ -245,52 +263,31 @@ class ConnectionManager:
                 f"Creating connection: {connection.user_id} -> {connection.friend_id}"
             )
             async with self.postgres_client.acquire() as conn:
-                # Execute the query directly on the connection
                 await conn.execute("SET search_path TO connections, public")
 
-                # First direction (user_id -> friend_id)
-                query1 = """
+                query = """
                     INSERT INTO connections.connections (user_id, friend_id, status)
                     VALUES ($1, $2, $3)
                     ON CONFLICT (user_id, friend_id)
                     DO UPDATE SET status = $3, updated_at = NOW()
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
-                # Execute first query
-                result1 = await conn.fetchrow(
-                    query1,
+                result = await conn.fetchrow(
+                    query,
                     connection.user_id,
                     connection.friend_id,
                     connection.status,
                 )
 
-                # Second direction (friend_id -> user_id)
-                query2 = """
-                    INSERT INTO connections.connections (user_id, friend_id, status)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id, friend_id)
-                    DO UPDATE SET status = $3, updated_at = NOW()
-                    RETURNING id
-                """
-                # Execute second query
-                result2 = await conn.fetchrow(
-                    query2,
-                    connection.friend_id,
-                    connection.user_id,
-                    connection.status,
-                )
-
-                if result1 and result2:
-                    logger.info(
-                        f"Bidirectional connection created with ID: {result1['id']}"
-                    )
+                if result:
+                    logger.info(f"Connection created with ID: {result['id']}")
                     return Connection(
-                        id=result1["id"],
-                        user_id=result1["user_id"],
-                        friend_id=result1["friend_id"],
-                        status=result1["status"],
-                        created_at=result1["created_at"],
-                        updated_at=result1["updated_at"],
+                        id=result["id"],
+                        user_id=result["user_id"],
+                        friend_id=result["friend_id"],
+                        status=result["status"],
+                        created_at=result["created_at"],
+                        updated_at=result["updated_at"],
                     )
                 else:
                     logger.error("Failed to create connection")
@@ -303,7 +300,7 @@ class ConnectionManager:
     async def update_connection(
         self, connection: ConnectionUpdate
     ) -> Connection | None:
-        """Update an existing connection."""
+        """Update an existing connection. If accepting, create reverse direction if not exists. If rejecting, only update the original direction."""
         if not self.postgres_client:
             logger.warning("Postgres not available")
             return None
@@ -311,17 +308,14 @@ class ConnectionManager:
         try:
             logger.debug(f"Updating connection for {connection.user_id}")
             async with self.postgres_client.acquire() as conn:
-                # Execute the query directly on the connection
                 await conn.execute("SET search_path TO connections, public")
 
                 query = """
                     UPDATE connections.connections
                     SET status = $1, updated_at = NOW()
                     WHERE (user_id = $2 AND friend_id = $3)
-                    OR (user_id = $3 AND friend_id = $2)
                     RETURNING id, user_id, friend_id, status, created_at, updated_at
                 """
-                # Execute the query
                 result = await conn.fetchrow(
                     query,
                     connection.status,
@@ -329,21 +323,39 @@ class ConnectionManager:
                     connection.friend_id,
                 )
 
-                if result:
-                    logger.info(
-                        f"Connection updated with ID: {connection.user_id}"
-                    )
-                    return Connection(
-                        id=result["id"],
-                        user_id=result["user_id"],
-                        friend_id=result["friend_id"],
-                        status=result["status"],
-                        created_at=result["created_at"],
-                        updated_at=result["updated_at"],
-                    )
-                else:
+                if not result:
                     logger.error("Failed to update connection")
                     return None
+
+                # If status is ACCEPTED, create reverse direction if not exists
+                if connection.status == ConnectionStatus.ACCEPTED:
+                    reverse_query = """
+                        INSERT INTO connections.connections (user_id, friend_id, status)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (user_id, friend_id) DO NOTHING
+                        RETURNING id, user_id, friend_id, status, created_at, updated_at
+                    """
+                    reverse_result = await conn.fetchrow(
+                        reverse_query,
+                        connection.friend_id,
+                        connection.user_id,
+                        ConnectionStatus.ACCEPTED,
+                    )
+                    if reverse_result:
+                        logger.info(
+                            f"Reverse connection created: {reverse_result['id']}"
+                        )
+                # If status is REJECTED, do nothing else (no reverse direction)
+
+                logger.info(f"Connection updated with ID: {result['id']}")
+                return Connection(
+                    id=result["id"],
+                    user_id=result["user_id"],
+                    friend_id=result["friend_id"],
+                    status=result["status"],
+                    created_at=result["created_at"],
+                    updated_at=result["updated_at"],
+                )
 
         except Exception as e:
             logger.error(f"Failed to update connection: {e}")
@@ -395,13 +407,10 @@ class ConnectionManager:
         try:
             # Determine the correct routing key based on notification type
             if notification_type == "friend_request":
-                routing_key = "connection.friend_request"
                 event_type = "friend_request"
             elif notification_type == "friend_accepted":
-                routing_key = "connection.friend_accepted"
                 event_type = "friend_accepted"
             else:
-                routing_key = f"connection.{notification_type}"
                 event_type = notification_type
 
             if not correlation_id:
@@ -409,9 +418,12 @@ class ConnectionManager:
 
                 correlation_id = str(uuid.uuid4())
 
+            routing_key = f"user.{recipient_id}"
+
             # Prepare message
             message = json.dumps(
                 {
+                    "source": "connections",
                     "event_type": event_type,
                     "recipient_id": recipient_id,
                     "sender_id": sender_id,
@@ -423,14 +435,18 @@ class ConnectionManager:
             )
 
             # Publish friend request event using correct parameters
-            await self.rabbitmq.publish_friend_request(
-                recipient_id=recipient_id,
-                sender_id=sender_id,
-                connection_id=correlation_id,
-                message=message,
-                routing_key=routing_key,
-                reply_to=reply_to,
-            )
+            if notification_type == "friend_request":
+                await self.rabbitmq.publish_friend_request(  # Use specific method for requests
+                    message=message,
+                    routing_key=routing_key,
+                    reply_to=reply_to or "connection_notifications",
+                )
+            else:  # For friend_accepted and other types
+                await self.rabbitmq.publish_friend_accepted(
+                    exchange="connections",
+                    message=message,
+                    routing_key=routing_key,
+                )
 
             logger.info(
                 f"Published {notification_type} notification for recipient {recipient_id}"
@@ -444,9 +460,138 @@ class ConnectionManager:
         """Process a connection update message from RabbitMQ."""
         try:
             body = json.loads(message.body.decode())
-            logger.info(f"Processing connection update: {body}")
+
+            if "source" in body and body["source"] == "connections":
+                logger.warning("Invalid message source, ignoring")
+                await message.ack()
+                return
+
+            logger.info(f"Processing connection message: {body}")
+
+            if "event_type" not in body:
+                logger.error("Missing event_type in message")
+                await message.nack(requeue=False)
+                return
+            event_type = body["event_type"]
+
+            if event_type == "connection:friend_request":
+                recipient_id = body.get("recipient_id")
+                sender_id = body.get("sender_id")
+                reference_id = body.get("reference_id")
+                content_preview = body.get("content_preview", "")
+
+                if not recipient_id or not sender_id or not reference_id:
+                    logger.error("Missing required fields for friend request")
+                    await message.nack(requeue=False)
+                    return
+
+                # Add friend request to database
+                created_connection = await self.create_connection(
+                    ConnectionCreate(
+                        user_id=sender_id,
+                        friend_id=recipient_id,
+                        status=ConnectionStatus.PENDING,
+                    )
+                )
+                logger.info(f"Created connection: {created_connection}")
+
+                if not created_connection:
+                    logger.error(
+                        f"Failed to create connection for {recipient_id} -> {sender_id}"
+                    )
+                    await message.nack(requeue=False)
+                    return
+
+                # Publish friend request notification
+                await self.publish_notification_event(
+                    recipient_id=recipient_id,
+                    sender_id=sender_id,
+                    reference_id=reference_id,
+                    notification_type="friend_request",
+                    content_preview=content_preview,
+                )
+            elif event_type == "connection:friend_accepted":
+                recipient_id = body.get("recipient_id")
+                sender_id = body.get("sender_id")
+                reference_id = body.get("reference_id")
+                content_preview = body.get("content_preview", "")
+
+                if not recipient_id or not sender_id or not reference_id:
+                    logger.error("Missing required fields for friend accepted")
+                    await message.nack(requeue=False)
+                    return
+
+                # Update connection status to accepted
+                updated_connection = await self.update_connection(
+                    ConnectionUpdate(
+                        id=body.get("id"),
+                        user_id=sender_id,
+                        friend_id=recipient_id,
+                        status=ConnectionStatus.ACCEPTED,
+                        updated_at=datetime.now(),
+                        created_at=body.get("created_at", datetime.now()),
+                    )
+                )
+                if not updated_connection:
+                    logger.error(
+                        f"Failed to update connection for {recipient_id} -> {sender_id}"
+                    )
+                    await message.nack(requeue=False)
+                    return
+
+                # Publish friend accepted notification
+                await self.publish_notification_event(
+                    recipient_id=recipient_id,
+                    sender_id=sender_id,
+                    reference_id=reference_id,
+                    notification_type="friend_accepted",
+                    content_preview=content_preview,
+                )
+            elif event_type == "connections:get_friends":
+                user_id = body.get("user_id")
+
+                if not user_id:
+                    logger.error("Missing user_id for get_friends event")
+                    await message.nack(requeue=False)
+                    return
+
+                # Fetch user's connections
+                connections = await self.get_user_connections(user_id)
+                if connections is None:
+                    logger.error(
+                        f"Failed to fetch connections for user {user_id}"
+                    )
+                    await message.nack(requeue=False)
+                    return
+
+                # Filter connections to only include accepted friends
+                connections = [
+                    conn for conn in connections if conn.status == ConnectionStatus.ACCEPTED
+                ]
+                
+                # Publish the connections back to the requester
+                response_message = json.dumps(
+                    {
+                        "source": "connections",
+                        "event_type": "friends_list",
+                        "user_id": user_id,
+                        "friends": connections,
+                    },
+                    default=pydantic_encoder,
+                )
+
+                await self.rabbitmq.publish_friends_list(
+                    routing_key=message.reply_to,
+                    message=response_message,
+                    correlation_id=message.correlation_id,
+                )
+            else:
+                logger.error(f"Unknown event type: {event_type}")
+                await message.nack(requeue=False)
+                return
 
             await message.ack()
+
         except Exception as e:
             logger.error(f"Error processing connection update: {e}")
             await message.nack(requeue=False)

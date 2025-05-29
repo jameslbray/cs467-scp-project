@@ -157,7 +157,7 @@ def create_event(event_type: EventType, source: str, **kwargs) -> Event:
             content=kwargs["content"],
             metadata=kwargs.get("metadata")
         )
-    elif event_type in {EventType.PRESENCE_UPDATE, EventType.PRESENCE_QUERY}:
+    elif event_type in {EventType.PRESENCE_STATUS_UPDATE, EventType.PRESENCE_STATUS_QUERY}:
         # PresenceEvent
         required = ["user_id", "status", "last_status_change"]
         for key in required:
@@ -174,9 +174,11 @@ def create_event(event_type: EventType, source: str, **kwargs) -> Event:
         )
     elif event_type == EventType.NOTIFICATION:
         # NotificationEvent
-        required = ["recipient_id", "sender_id", "reference_id",
+        required = [
+            "recipient_id", "sender_id", "reference_id",
             "content_preview", "status", "notification_type", "error",
-            "read"]
+            "read"
+        ]
         for key in required:
             if key not in kwargs:
                 raise ValueError(f"NotificationEvent requires '{key}'")
@@ -191,8 +193,7 @@ def create_event(event_type: EventType, source: str, **kwargs) -> Event:
             status=kwargs["status"],
             error=kwargs.get("error"),
             read=kwargs.get("read"),
-            notification_type=kwargs["notification_type"],
-            data=kwargs.get("data")
+            notification_type=kwargs["notification_type"]
         )
     elif event_type in {EventType.SYSTEM_ERROR, EventType.SYSTEM_INFO}:
         # SystemEvent

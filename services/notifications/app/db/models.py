@@ -32,6 +32,8 @@ class NotificationType(str, Enum):
     MESSAGE = "message"
     FRIEND_REQUEST = "friend_request"
     STATUS_UPDATE = "status_update"
+    FRIEND_ACCEPTED = "friend_accepted"
+    NEW_MESSAGE = "new_message"
 
 
 # 1. API REQUEST MODEL - Accepts string IDs from client
