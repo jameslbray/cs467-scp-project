@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import datetime
 
 from ..models.message import Message
 from ..models.room import Room
@@ -82,6 +83,16 @@ class ChatRepository(Repository[Room, RoomCreate, RoomCreate]):
         if db is None:
             raise RuntimeError("Database not initialized")
 
+        if not obj_in.name:
+            # generate a default name
+            if len(obj_in.participant_ids) == 2:
+                # For DMs, use participant IDs
+                participant_ids = obj_in.participant_ids
+                obj_in.name = f"dm-{participant_ids[0][:8]}-{participant_ids[1][:8]}"
+            else:
+                # For group chats
+                obj_in.name = f"Group-{datetime.now().strftime('%Y%m%d%H%M%S')}"        
+            
         now = self.get_current_time()
         room_id = self.generate_id()
 

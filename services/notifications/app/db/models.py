@@ -48,6 +48,20 @@ class NotificationRequest(BaseModel):
     error: Optional[str] = Field(default=None, description="Error message if any")
     notification_type: NotificationType = Field(default=NotificationType.MESSAGE, description="Type of notification")
     
+    # Convert to Dictionary
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert API request to dictionary for database storage."""
+        return {
+            "recipient_id": self.recipient_id,
+            "sender_id": self.sender_id,
+            "reference_id": self.reference_id,
+            "content_preview": self.content_preview,
+            "timestamp": self.timestamp,
+            "status": self.status.value,  # Store as string
+            "error": self.error,
+            "notification_type": self.notification_type.value,  # Store as string
+        }
+    
     # Convert to DB model
     def to_db_model(self) -> 'NotificationDB':
         """Convert API request to database model with UUID conversion."""
@@ -86,6 +100,21 @@ class NotificationDB(BaseModel):
     notification_type: NotificationType = Field(default=NotificationType.MESSAGE, description="Type")
     read: bool = Field(default=False, description="Whether notification has been read")
     
+    # Convert to Dictionary
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert API request to dictionary for database storage."""
+        return {
+            "notification_id": str(self.id) if self.id is not None else "",  # Use MongoDB _id as string or empty string
+            "recipient_id": self.recipient_id,
+            "sender_id": self.sender_id,
+            "reference_id": self.reference_id,
+            "content_preview": self.content_preview,
+            "timestamp": self.timestamp,
+            "status": self.status.value,  # Store as string
+            "error": self.error,
+            "notification_type": self.notification_type.value,  # Store as string
+        }
+    
     # Convert to MongoDB-compatible dictionary
     def to_mongo_dict(self) -> dict[str, Any]:
         """Convert to MongoDB document."""
@@ -100,7 +129,7 @@ class NotificationDB(BaseModel):
     def to_api_response(self) -> 'NotificationResponse':
         """Convert to API response model."""
         return NotificationResponse(
-            notification_id=self.id,  # Use MongoDB _id directly
+            notification_id=str(self.id) if self.id is not None else "",  # Use MongoDB _id as string or empty string
             recipient_id=str(self.recipient_id),
             sender_id=str(self.sender_id),
             reference_id=str(self.reference_id),

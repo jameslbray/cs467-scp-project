@@ -4,10 +4,6 @@ export enum StatusType {
 	AWAY = 'away',
 	OFFLINE = 'offline',
 	BUSY = 'busy',
-  ONLINE = "online",
-  AWAY = "away",
-  BUSY = "busy",
-  OFFLINE = "offline"
 }
 
 export interface FriendStatus {
