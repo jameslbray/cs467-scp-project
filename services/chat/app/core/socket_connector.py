@@ -81,6 +81,7 @@ class SocketManager:
             room_id=room_id,
             message_id=message_id,
             content=content,
+            room_name=event.get("name"),
         )
 
     async def _handle_chat_typing(self, event: ChatTypingEvent) -> None:
@@ -128,7 +129,7 @@ class SocketManager:
             recipient_id=recipient_id,
             message_id=message_id,
             content=content,
-        )
+            )
 
         return message_id
 

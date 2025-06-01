@@ -44,6 +44,7 @@ class SocketServer:
         self.sio.on("disconnect", self._on_disconnect)
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
+        self.sio.on("join", self._on_join_room)
 
         self.sio.on("presence:status:update", self._on_presence_status_update)
         self.sio.on("presence:status:query", self._on_presence_status_query)
@@ -241,7 +242,7 @@ class SocketServer:
             "is_edited": False,
         }
 
-        room = data.get("room", "general")
+        room = data.get("room_id", "general")
         await self.emit_to_room(
             room, EventType.CHAT_MESSAGE.value, dict(chat_message)
         )
@@ -931,3 +932,16 @@ class SocketServer:
         except Exception as e:
             logger.error(f"Error handling chat notification: {e}")
             await message.nack(requeue=False)
+    
+    async def _on_join_room(self, sid: str, data: Dict[str, Any]) -> None:
+        """Handle join room request."""
+        room = data.get("room")
+        if not room:
+            logger.error(f"Join room request missing 'room': {data}")
+            await self.sio.emit(
+                "join_room:error", {"error": "Room not specified"}, room=sid
+            )
+            return
+
+        await self.join_room(sid, room)
+        await self.sio.emit("join_room:success", {"room": room}, room=sid)

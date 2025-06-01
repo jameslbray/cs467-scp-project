@@ -64,7 +64,7 @@ const ChatPage: React.FC = () => {
 					<div className='lg:col-span-2 min-h-0 flex flex-col'>
 						<div className='bg-white dark:bg-gray-800 rounded-lg shadow-md h-full flex flex-col min-h-0'>
 							{selectedRoom ? (
-								<ChatList roomId={selectedRoom._id} />
+								<ChatList roomName={selectedRoom.name} roomId={selectedRoom._id} />
 							) : (
 								<div className='flex items-center justify-center h-full text-gray-500 dark:text-gray-400'>
 									Select a room to start chatting
