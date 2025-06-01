@@ -244,14 +244,16 @@ async def create_room(
     room["created_by"] = str(user.id)
     room_obj = RoomCreate(**room)
     created_room = await repo.create(room_obj)
+    logger.info(f"Room created: {created_room}")
     await rabbitmq_client.publish_notification(
         json.dumps(
             {
-                "type": "room_created",
+                "source": "chat",
+                "event_type": "room_created",
+                "recipient_ids": created_room.participant_ids,
                 "room_id": created_room.id,
-                "room_name": created_room.name,
-                "room_created_by": created_room.created_by,
-                "room_participant_ids": created_room.participant_ids,
+                "room_name": created_room.display_name,
+                "sender_id": created_room.created_by,
             }
         )
     )

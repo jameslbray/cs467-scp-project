@@ -255,7 +255,7 @@ export default function ChatInput({ roomId, senderId, onSend }: ChatInputProps) 
 						<LexicalEditorInner
 							roomId={roomId}
 							senderId={senderId}
-							onSend={onSend ?? (() => {})}
+							onSend={onSend ?? (() => { })}
 							contentEditableRef={contentEditableRef}
 							socket={socket}
 						/>

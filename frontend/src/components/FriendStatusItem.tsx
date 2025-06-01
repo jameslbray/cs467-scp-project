@@ -14,3 +14,4 @@ const FriendStatusItem: React.FC<FriendStatusItemProps> = ({ status }) => {
 };
 
 export default FriendStatusItem;
+

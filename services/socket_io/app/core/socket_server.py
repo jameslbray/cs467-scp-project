@@ -44,13 +44,13 @@ class SocketServer:
         self.sio.on("disconnect", self._on_disconnect)
         self.sio.on("error", self._on_error)
         self.sio.on("chat_message", self._on_chat_message)
+        self.sio.on("join", self._on_join_room)
 
         self.sio.on("presence:status:update", self._on_presence_status_update)
         self.sio.on("presence:status:query", self._on_presence_status_query)
         self.sio.on("presence:friend:statuses", self._on_get_friend_statuses)
 
         self.sio.on("notifications:fetch", self._on_notifications_fetch)
-        # self.sio.on("notifications:fetch_all", self._on_notifications_fetch)
 
         self.sio.on(
             "connections:get_friends", self.handle_get_friends
@@ -109,9 +109,10 @@ class SocketServer:
         # Declare queues
         await self.rabbitmq.declare_queue("presence", durable=True)
         await self.rabbitmq.declare_queue("socket_notifications", durable=True)
-        await self.rabbitmq.declare_queue("chat_notifications", durable=True)
 
         # Bind queue to presence exchange for status updates
+        await self.rabbitmq.declare_queue("socket_notifications", durable=True)
+
         await self.rabbitmq.bind_queue(
             "presence", "presence", "status.updates"
         )
@@ -121,23 +122,27 @@ class SocketServer:
         await self.rabbitmq.bind_queue(
             "presence", "presence", "friend.statuses"
         )
-
-        # Bind queue to notifications exchange
+        
+        # Bind to all notification sources
         await self.rabbitmq.bind_queue(
             "socket_notifications",
             "notifications",
-            "user.#",  # Use topic pattern to catch all user notifications
+            "user.#"  # All user notifications
         )
-
         await self.rabbitmq.bind_queue(
-            "chat_notifications",
+            "socket_notifications",
+            "connections", 
+            "user.#"  # All connection events
+        )
+        await self.rabbitmq.bind_queue(
+            "socket_notifications",
             "chat",
-            "room.#",  # Use topic pattern to catch all room notifications
+            "room.#"  # All chat room events
         )
 
         # Start consuming notification events
         await self.rabbitmq.consume(
-            "socket_notifications", self._handle_notification
+            "socket_notifications", self._handle_notifications
         )
 
         # Start consuming connection events
@@ -147,12 +152,7 @@ class SocketServer:
 
         # Start consuming presence updates
         await self.rabbitmq.consume("presence", self._handle_presence_update)
-
-        # Start consuming chat notifications
-        await self.rabbitmq.consume(
-            "chat_notifications", self._handle_chat_notifications
-        )
-
+        
         logger.info("RabbitMQ connection and exchanges initialized")
         return True
 
@@ -242,7 +242,7 @@ class SocketServer:
             "is_edited": False,
         }
 
-        room = data.get("room", "general")
+        room = data.get("room_id", "general")
         await self.emit_to_room(
             room, EventType.CHAT_MESSAGE.value, dict(chat_message)
         )
@@ -641,38 +641,6 @@ class SocketServer:
             logger.error(f"Error handling friend statuses response: {e}")
             await message.nack(requeue=False)
 
-    async def _handle_notification(self, message):
-        """Handle notification messages from RabbitMQ."""
-        try:
-            logger.info("Received notification from RabbitMQ")
-            body = json.loads(message.body.decode())
-            recipient_id = body.get("recipient_id")
-
-            logger.info(f"Received notification: {body}")
-
-            if not recipient_id:
-                logger.warning("Notification received without recipient_id")
-                await message.ack()
-                return
-
-            # Find the socket ID for the recipient
-            sid = self.get_sid_from_user_id(recipient_id)
-            if sid:
-                # Emit the notification to the client
-                await self.sio.emit(
-                    "notification:new", body, room=sid
-                )
-                logger.info(f"Emitted notification to user {recipient_id}")
-            else:
-                logger.info(
-                    f"User {recipient_id} not connected, notification not delivered"
-                )
-
-            await message.ack()
-        except Exception as e:
-            logger.error(f"Error handling notification from RabbitMQ: {e}")
-            await message.nack(requeue=False)
-
     async def _on_notifications_fetch(self, sid: str):
         """Handle request for all notifications."""
         user_id = self.get_user_id_from_sid(sid)
@@ -787,8 +755,127 @@ class SocketServer:
         except Exception as e:
             logger.error(f"Error handling connection message: {e}")
             await message.nack(requeue=False)
+    
+    async def _handle_notifications(self, message):
+        """Central hub for handling all notification types from RabbitMQ."""
+        try:
+            body = json.loads(message.body.decode())
+            logger.info(f"Received notification: {body}")
+            
+            # Extract common fields
+            source = body.get("source", "unknown")
+            event_type = body.get("event_type", "unknown")
+            
+            # Route to appropriate specialized handler based on source/type
+            if source == "chat" or event_type.startswith("room_"):
+                # Handle chat notifications (rooms, messages)
+                await self._handle_chat_notification(message, body)
+            
+            elif source == "connections" or event_type.startswith("friend_"):
+                # Handle connection notifications (friend requests, etc.)
+                await self._handle_connection_notification(message, body)
+                
+            # elif source == "presence" or event_type.startswith("presence:"):
+            #     # Handle presence notifications (online status)
+            #     await self._handle_presence_notification(message, body)
+                
+            else:
+                # Generic notification handling for everything else
+                await self._handle_generic_notification(message, body)
+                
+            # Message already acked by specialized handlers
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in notification: {e}")
+            await message.nack(requeue=False)
+        except Exception as e:
+            logger.error(f"Error handling notification: {e}")
+            await message.nack(requeue=False)
+            
+    async def _handle_generic_notification(self, message, body):
+        """Handle standard notifications to specific users."""
+        try:
+            recipient_id = body.get("recipient_id")
+            
+            if not recipient_id:
+                logger.warning(f"Notification missing recipient_id: {body}")
+                await message.ack()
+                return
+                
+            # Find recipient's socket connection
+            sid = self.get_sid_from_user_id(recipient_id)
+            if sid:
+                # Emit notification to recipient's socket
+                await self.sio.emit("notification:new", body, room=sid)
+                logger.info(f"Emitted notification to user {recipient_id}")
+            else:
+                logger.info(f"User {recipient_id} not connected, notification not delivered")
+                
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error processing generic notification: {e}")
+            await message.nack(requeue=False)
 
-    async def _handle_chat_notifications(self, message):
+    async def _handle_connection_notification(self, message, body):
+        """Handle connection-related notifications (friend requests, etc.)"""
+        try:
+            # Extract relevant fields
+            event_type = body.get("event_type")
+            recipient_id = body.get("recipient_id")
+            
+            if not recipient_id:
+                logger.warning(f"Connection notification missing recipient_id: {body}")
+                await message.ack()
+                return
+                
+            # Find recipient's socket
+            sid = self.get_sid_from_user_id(recipient_id)
+            if not sid:
+                logger.info(f"User {recipient_id} not connected, connection notification not delivered")
+                await message.ack()
+                return
+                
+            # Emit appropriate event based on connection type
+            if event_type == "friend_request":
+                await self.sio.emit("connection:friend_request", body, room=sid)
+                logger.info(f"Emitted friend request notification to {recipient_id}")
+            elif event_type == "friend_accepted":
+                await self.sio.emit("connection:friend_accepted", body, room=sid)
+                logger.info(f"Emitted friend acceptance notification to {recipient_id}")
+            else:
+                await self.sio.emit("connection:update", body, room=sid)
+                
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error processing connection notification: {e}")
+            await message.nack(requeue=False)
+
+    async def _handle_chat_notification(self, message, body):
+        """Handle chat-related notifications (messages, room creation)"""
+        try:
+            event_type = body.get("event_type")
+            
+            # Route based on specific chat event type
+            if event_type == "room_created":
+                # Handle room created event 
+                await self._handle_room_created_notification(body)
+            # elif event_type == "new_message":
+            #     # Handle new message notification
+            #     await self._handle_message_notification(body) 
+            else:
+                # Default case for other chat events
+                recipient_id = body.get("recipient_id")
+                if recipient_id:
+                    sid = self.get_sid_from_user_id(recipient_id)
+                    if sid:
+                        await self.sio.emit("chat:notification", body, room=sid)
+                        
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Error processing chat notification: {e}")
+            await message.nack(requeue=False)
+
+    async def _handle_room_created_notification(self, message):
         """Handle chat notifications from RabbitMQ."""
         try:
             body = json.loads(message.body.decode())
@@ -805,7 +892,6 @@ class SocketServer:
                 # Handle room created notification
                 room_id = body.get("room_id")
                 room_name = body.get("room_name")
-                room_description = body.get("room_description")
                 room_created_by = body.get("room_created_by")
                 room_participant_ids = body.get("room_participant_ids")
 
@@ -814,15 +900,13 @@ class SocketServer:
                         await self.sio.emit(
                             "chat:room_created",
                             {
-                                "notification_id": str(uuid.uuid4()),
+                                "notification_id": body.get("notification_id"),
                                 "recipient_id": participant_id,
                                 "sender_id": room_created_by,
                                 "reference_id": room_id,
+                                "room_name": room_name,
                                 "content_preview": "You've been added to a new room",
                                 "timestamp": datetime.now().isoformat(),
-                                "status": "delivered",
-                                "read": False,
-                                "notification_type": "message",
                             },
                             room=self.get_sid_from_user_id(participant_id),
                         )
@@ -848,17 +932,16 @@ class SocketServer:
         except Exception as e:
             logger.error(f"Error handling chat notification: {e}")
             await message.nack(requeue=False)
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+    
+    async def _on_join_room(self, sid: str, data: Dict[str, Any]) -> None:
+        """Handle join room request."""
+        room = data.get("room")
+        if not room:
+            logger.error(f"Join room request missing 'room': {data}")
+            await self.sio.emit(
+                "join_room:error", {"error": "Room not specified"}, room=sid
+            )
+            return
+
+        await self.join_room(sid, room)
+        await self.sio.emit("join_room:success", {"room": room}, room=sid)
