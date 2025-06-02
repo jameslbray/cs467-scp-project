@@ -894,15 +894,16 @@ class SocketServer:
                 return
                 
             # Emit appropriate event based on connection type
-            if event_type == "friend_request":
-                await self.sio.emit("connection:friend_request", body, room=sid)
-                logger.info(f"Emitted friend request notification to {recipient_id}")
-            elif event_type == "friend_accepted":
-                await self.sio.emit("connection:friend_accepted", body, room=sid)
-                logger.info(f"Emitted friend acceptance notification to {recipient_id}")
-            else:
-                await self.sio.emit("connection:update", body, room=sid)
-                
+            # if event_type == "friend_request":
+            #     await self.sio.emit("connections:friend_request", body, room=sid)
+            #     logger.info(f"Emitted friend request notification to {recipient_id}")
+            # elif event_type == "friend_accepted":
+            #     await self.sio.emit("connections:friend_accepted", body, room=sid)
+            #     logger.info(f"Emitted friend acceptance notification to {recipient_id}")
+            # else:
+            #     await self.sio.emit("connections:update", body, room=sid)
+            await self.sio.emit("notification:new", body, room=sid)    
+            
             await message.ack()
         except Exception as e:
             logger.error(f"Error processing connection notification: {e}")
@@ -926,7 +927,7 @@ class SocketServer:
                 if recipient_id:
                     sid = self.get_sid_from_user_id(recipient_id)
                     if sid:
-                        await self.sio.emit("chat:notification", body, room=sid)
+                        await self.sio.emit("notification:new", body, room=sid)
                         
             await message.ack()
         except Exception as e:
@@ -956,7 +957,7 @@ class SocketServer:
                 for participant_id in room_participant_ids:
                     if participant_id != room_created_by:
                         await self.sio.emit(
-                            "chat:room_created",
+                            "notification:new",
                             {
                                 "notification_id": body.get("notification_id"),
                                 "recipient_id": participant_id,
