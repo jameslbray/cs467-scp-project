@@ -1,21 +1,14 @@
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
+import { useFriends } from '../contexts/friends/FriendsContext';
 import { userApi } from '../services/api';
+import { FriendConnection } from '../types/friendsTypes';
 
 interface User {
 	id: string;
 	username: string;
 	profilePicture?: string;
-}
-
-interface Connection {
-	id?: string;
-	user_id: string;
-	friend_id: string;
-	status: 'pending' | 'accepted' | 'rejected' | 'blocked';
-	created_at?: string;
-	updated_at?: string;
 }
 
 interface SearchUsersProps {
@@ -31,11 +24,11 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	const [isOpen, setIsOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [searchResults, setSearchResults] = useState<User[]>([]);
-	const [pendingRequests, setPendingRequests] = useState<Connection[]>([]);
-	const [userConnections, setUserConnections] = useState<Connection[]>([]);
+	const [userConnections, setUserConnections] = useState<FriendConnection[]>([]);
 	const [activeTab, setActiveTab] = useState<'search' | 'requests'>('search');
 	const dropdownRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const { friends, pendingRequests } = useFriends();
 
 	// Close dropdown when clicking outside
 	useEffect(() => {
@@ -50,21 +43,25 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 		};
 	}, []);
 
-	// Get pending friend requests and user connections when component mounts
+	// Get user connections when component mounts
 	useEffect(() => {
 		if (user) {
-			fetchUserConnections();
-			fetchPendingRequests();
+			// Set userConnections from context
+			setUserConnections(
+				Object.values(friends).filter(
+					(conn: FriendConnection) => conn.user_id === user.id || conn.friend_id === user.id
+				)
+			);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [user]);
+	}, [user, friends]);
 
 	useEffect(() => {
 		const fetchUsernames = async () => {
-			if (pendingRequests.length === 0) return;
+			const pendingArray = Object.values(pendingRequests);
+			if (pendingArray.length === 0) return;
 			// Collect all user IDs that need username lookup
 			const userIds = new Set<string>();
-			pendingRequests.forEach((req) => {
+			pendingArray.forEach((req: FriendConnection) => {
 				userIds.add(req.user_id);
 				userIds.add(req.friend_id);
 			});
@@ -93,51 +90,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 			inputRef.current.focus();
 		}
 	}, [isOpen]);
-
-	// Fetch user connections
-	const fetchUserConnections = async () => {
-		if (!user?.id || !token) return;
-		try {
-			const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
-			});
-			if (response.ok) {
-				const connections = await response.json();
-				// Store ALL connections where this user is involved (not just accepted)
-				setUserConnections(
-					connections.filter(
-						(conn: Connection) => conn.user_id === user.id || conn.friend_id === user.id
-					)
-				);
-			}
-		} catch (error) {
-			console.error('Failed to fetch user connections:', error);
-		}
-	};
-
-	// Fetch pending requests
-	const fetchPendingRequests = async () => {
-		if (!user?.id || !token) return;
-		try {
-			const response = await fetch(`${CONNECT_API_URL}/api/connect/${user.id}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
-			});
-			if (response.ok) {
-				const connections = await response.json();
-				// Only incoming requests: friend_id === user.id && status === 'pending'
-				const incoming = connections.filter(
-					(conn: Connection) => conn.friend_id === user.id && conn.status === 'pending'
-				);
-				setPendingRequests(incoming);
-			}
-		} catch (error) {
-			console.error('Failed to fetch pending requests:', error);
-		}
-	};
 
 	// Search for users
 	const searchUsers = async () => {
@@ -195,8 +147,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				}),
 			});
 			if (response.ok) {
-				fetchUserConnections();
-				fetchPendingRequests();
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
@@ -205,7 +155,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	};
 
 	// Accept a friend request
-	const acceptRequest = async (connection: Connection) => {
+	const acceptRequest = async (connection: FriendConnection) => {
 		if (!user?.id || !token) return;
 		try {
 			const response = await fetch(`${CONNECT_API_URL}/api/connect`, {
@@ -221,8 +171,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				}),
 			});
 			if (response.ok) {
-				fetchPendingRequests();
-				fetchUserConnections();
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
@@ -231,7 +179,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	};
 
 	// Reject a friend request
-	const rejectRequest = async (connection: Connection) => {
+	const rejectRequest = async (connection: FriendConnection) => {
 		if (!user?.id || !token) return;
 		try {
 			const response = await fetch(`${CONNECT_API_URL}/api/connect`, {
@@ -247,7 +195,6 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				}),
 			});
 			if (response.ok) {
-				fetchPendingRequests();
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
@@ -257,16 +204,16 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 
 	const getConnectionStatus = (userId: string): string | null => {
 		// Find all connections between the current user and userId
-		const connections = [...userConnections, ...pendingRequests].filter(
+		const connections = [...userConnections, ...Object.values(pendingRequests)].filter(
 			(conn) =>
 				(conn.user_id === user?.id && conn.friend_id === userId) ||
 				(conn.user_id === userId && conn.friend_id === user?.id)
 		);
 		if (connections.length === 0) return null;
-		// Sort by created_at descending and pick the latest
+		// Sort by last_status_change descending and pick the latest
 		const latest = connections.slice().sort((a, b) => {
-			const aTime = new Date(a.created_at ?? 0).getTime();
-			const bTime = new Date(b.created_at ?? 0).getTime();
+			const aTime = new Date(a.last_status_change ?? 0).getTime();
+			const bTime = new Date(b.last_status_change ?? 0).getTime();
 			return bTime - aTime;
 		})[0];
 		if (!latest) return null;
@@ -275,7 +222,7 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 
 	// Render connection button based on status
 	const renderConnectionButton = (userId: string) => {
-		const connections = [...userConnections, ...pendingRequests].filter(
+		const connections = [...userConnections, ...Object.values(pendingRequests)].filter(
 			(conn) =>
 				(conn.user_id === user?.id && conn.friend_id === userId) ||
 				(conn.user_id === userId && conn.friend_id === user?.id)
@@ -291,8 +238,8 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 			);
 		}
 		const latest = connections.slice().sort((a, b) => {
-			const aTime = new Date(a.created_at ?? 0).getTime();
-			const bTime = new Date(b.created_at ?? 0).getTime();
+			const aTime = new Date(a.last_status_change ?? 0).getTime();
+			const bTime = new Date(b.last_status_change ?? 0).getTime();
 			return bTime - aTime;
 		})[0];
 		if (!latest) {
@@ -340,9 +287,9 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 			>
 				<MagnifyingGlassIcon className='h-5 w-5 mr-1' />
 				<span>Find Friends</span>
-				{pendingRequests.length > 0 && (
+				{Object.values(pendingRequests).length > 0 && (
 					<span className='ml-2 bg-red-500 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs'>
-						{pendingRequests.length}
+						{Object.values(pendingRequests).length}
 					</span>
 				)}
 			</button>
@@ -369,7 +316,9 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 							}`}
 							onClick={() => setActiveTab('requests')}
 						>
-							Requests {pendingRequests.length > 0 && `(${pendingRequests.length})`}
+							Requests{' '}
+							{Object.values(pendingRequests).length > 0 &&
+								`(${Object.values(pendingRequests).length})`}
 						</button>
 					</div>
 
@@ -446,8 +395,8 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 					{/* Requests Tab */}
 					{activeTab === 'requests' && (
 						<div className='max-h-60 overflow-y-auto'>
-							{pendingRequests.length > 0 ? (
-								pendingRequests.map((request) => {
+							{Object.values(pendingRequests).length > 0 ? (
+								Object.values(pendingRequests).map((request) => {
 									// Use usernames instead of IDs if available
 									const senderUsername =
 										searchResults.find((u) => u.id === request.user_id)?.username ||

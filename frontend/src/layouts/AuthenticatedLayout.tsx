@@ -1,5 +1,4 @@
 import type React from 'react';
-import { useState } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import DarkModeToggle from '../components/DarkModeToggle';
 import FriendsList from '../components/FriendsList';
@@ -7,29 +6,11 @@ import NotificationBell from '../components/NotificationsList';
 import SearchUsers from '../components/SearchUsers';
 import UserProfileMenu from '../components/UserProfileMenu';
 import { useAuth } from '../contexts/auth/authContext';
-import { useSocketContext } from '../contexts/socket/socketContext';
-import { useSocketEvent } from '../contexts/socket/useSocket';
-import { ServerEvents } from '../types/serverEvents';
-// import type { UserStatusType } from '../types/userStatusType';
-import type { FriendConnection } from '../types/friendsTypes';
+import { FriendsProvider, useFriends } from '../contexts/friends/FriendsContext';
 
-const AuthenticatedLayout: React.FC = () => {
+const AuthenticatedLayoutInner: React.FC = () => {
 	const { isAuthenticated, isLoading } = useAuth();
-	useSocketContext();
-	const [friends, setFriends] = useState<Record<string, FriendConnection>>({});
-
-	// Listen for initial friend statuses
-	useSocketEvent<{ statuses: Record<string, FriendConnection> }>(
-		ServerEvents.FRIEND_STATUSES,
-		(data) => {
-			setFriends(data.statuses);
-		}
-	);
-
-	// Listen for individual friend status changes
-	useSocketEvent<FriendConnection>(ServerEvents.FRIEND_STATUS_CHANGED, (data) => {
-		setFriends((prev) => ({ ...prev, [data.user_id]: data }));
-	});
+	const { friends } = useFriends();
 
 	if (isLoading) {
 		return (
@@ -68,5 +49,11 @@ const AuthenticatedLayout: React.FC = () => {
 		</div>
 	);
 };
+
+const AuthenticatedLayout: React.FC = () => (
+	<FriendsProvider>
+		<AuthenticatedLayoutInner />
+	</FriendsProvider>
+);
 
 export default AuthenticatedLayout;

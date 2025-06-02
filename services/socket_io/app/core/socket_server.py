@@ -1,12 +1,12 @@
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import socketio
 
 from services.rabbitmq.core.client import RabbitMQClient
-from services.rabbitmq.core.config import Settings as RabbitMQSettings
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 from .config import get_socket_io_config
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class SocketServer:
     """Socket.IO server implementation."""
 
-    def __init__(self, rabbitmq_settings: RabbitMQSettings):
+    def __init__(self):
         """Initialize the Socket.IO server."""
         self.sio = socketio.AsyncServer(
             logger=True,
@@ -31,8 +31,7 @@ class SocketServer:
         self.sid_to_username: Dict[str, str] = {}  # sid -> username mapping
         self._initialized = False
 
-        # Initialize RabbitMQ client with provided settings
-        self.rabbitmq = RabbitMQClient(rabbitmq_settings)
+        self.rabbitmq = RabbitMQClient()
 
         # Initialize circuit breakers
         self.rabbitmq_cb = CircuitBreaker(
@@ -52,9 +51,9 @@ class SocketServer:
         self.sio.on("notifications:fetch", self._on_notifications_fetch)
         # self.sio.on("notifications:fetch_all", self._on_notifications_fetch)
 
-        self.sio.on(
-            "connections:get_friends", self.handle_get_friends
-        )
+        self.sio.on("connections:get_friends", self.handle_get_friends)
+        # Add handler for GET_FRIENDS for frontend compatibility
+        self.sio.on("GET_FRIENDS", self.handle_get_friends)
 
         # Connections to General room, not specific to a user
         self.sio.on("get_connections", self._on_get_connections)
@@ -140,10 +139,8 @@ class SocketServer:
             "socket_notifications", self._handle_notification
         )
 
-        # Start consuming connection events
-        await self.rabbitmq.consume(
-            "connections", self._handle_connections
-        )
+        # Removed - socket_io should not consume from connections queue
+        # The connections service handles all connection events
 
         # Start consuming presence updates
         await self.rabbitmq.consume("presence", self._handle_presence_update)
@@ -354,7 +351,7 @@ class SocketServer:
             )
 
     async def _on_get_connections(self, sid: str) -> None:
-        """ Handle request for active connections list."""
+        """Handle request for active connections list."""
         connections = []
         for conn_sid, user_id in self.sid_to_user.items():
             rooms = list(self.sio.rooms(conn_sid))
@@ -402,6 +399,23 @@ class SocketServer:
         """Get socket ID from user ID."""
         return self.user_to_sid.get(user_id)
 
+    def _cancel_pending_futures_for_sid(self, sid: str) -> None:
+        """Cancel any pending RabbitMQ futures for a disconnected socket."""
+        # Find and cancel futures that start with this sid
+        cancelled_count = 0
+        for correlation_id in list(self.rabbitmq.futures.keys()):
+            if correlation_id.startswith(f"{sid}_"):
+                future = self.rabbitmq.futures.pop(correlation_id, None)
+                if future and not future.done():
+                    future.cancel()
+                    cancelled_count += 1
+                    logger.info(f"Cancelled pending future: {correlation_id}")
+
+        if cancelled_count > 0:
+            logger.info(
+                f"Cancelled {cancelled_count} pending futures for disconnected socket {sid}"
+            )
+
     async def emit_to_user(
         self, user_id: str, event: str, data: Dict[str, Any]
     ) -> bool:
@@ -435,6 +449,9 @@ class SocketServer:
     async def _on_disconnect(self, sid: str) -> None:
         """Handle socket disconnection."""
         logger.info(f"Client disconnected: {sid}")
+
+        # Cancel any pending RabbitMQ futures for this connection
+        self._cancel_pending_futures_for_sid(sid)
 
         # Unregister user if associated with this sid
         user_id = self.unregister_user(sid)
@@ -566,7 +583,11 @@ class SocketServer:
 
         try:
             # Use publish_and_wait for RPC-style communication
-            if data is None or "friend_ids" not in data or not data["friend_ids"]:
+            if (
+                data is None
+                or "friend_ids" not in data
+                or not data["friend_ids"]
+            ):
                 logger.error(
                     f"Invalid data for friend statuses request: {data}"
                 )
@@ -659,9 +680,7 @@ class SocketServer:
             sid = self.get_sid_from_user_id(recipient_id)
             if sid:
                 # Emit the notification to the client
-                await self.sio.emit(
-                    "notification:new", body, room=sid
-                )
+                await self.sio.emit("notification:new", body, room=sid)
                 logger.info(f"Emitted notification to user {recipient_id}")
             else:
                 logger.info(
@@ -713,23 +732,41 @@ class SocketServer:
                 "notifications:fetch:error", {"error": str(e)}, room=sid
             )
 
-    async def handle_get_friends(self, sid: str, data: Optional[Dict[str, Any]] = None):
+    async def handle_get_friends(
+        self, sid: str, data: Optional[Dict[str, Any]] = None
+    ):
         """Handle request for friends list."""
+        # First check if the socket is still connected
+        if sid not in self.sid_to_user:
+            logger.warning(
+                f"Get friends request from disconnected socket: {sid}"
+            )
+            return
+
         user_id = self.get_user_id_from_sid(sid)
         logger.info(
             f"Received get friends request from {sid}, user_id: {user_id}"
         )
         if not user_id:
-            logger.error(f"Get friends request from unauthenticated socket: {sid}")
+            logger.error(
+                f"Get friends request from unauthenticated socket: {sid}"
+            )
             await self.sio.emit(
                 "connections:get_friends:error",
+                {"error": "Not authenticated"},
+                room=sid,
+            )
+            await self.sio.emit(
+                "GET_FRIENDS_ERROR",
                 {"error": "Not authenticated"},
                 room=sid,
             )
             return
 
         try:
-            # Use publish_and_wait to get friends list
+            # Generate a unique correlation ID for this request
+            correlation_id = f"{sid}_{str(uuid.uuid4())}"
+
             response = await self.rabbitmq.publish_and_wait(
                 exchange="connections",
                 routing_key="user.get_friends",
@@ -737,15 +774,28 @@ class SocketServer:
                     "user_id": user_id,
                     "source": "socket_io",
                     "event_type": EventType.CONNECTION_GET_FRIENDS,
-                    },
-                correlation_id=sid,
-                timeout=5.0,
+                },
+                correlation_id=correlation_id,
+                timeout=15.0,  # Increased timeout
             )
+
+            # Check if socket is still connected before sending response
+            if sid not in self.sid_to_user:
+                logger.warning(
+                    f"Socket {sid} disconnected while waiting for response"
+                )
+                return
+
             logger.info(f"Received friends list response: {response}")
 
             if response and "friends" in response:
                 await self.sio.emit(
-                    "connections:get_friends:success", response['friends'], room=sid
+                    "connections:get_friends:success",
+                    response["friends"],
+                    room=sid,
+                )
+                await self.sio.emit(
+                    "GET_FRIENDS_SUCCESS", response["friends"], room=sid
                 )
             else:
                 await self.sio.emit(
@@ -753,11 +803,23 @@ class SocketServer:
                     {"error": "Failed to fetch friends"},
                     room=sid,
                 )
+                await self.sio.emit(
+                    "GET_FRIENDS_ERROR",
+                    {"error": "Failed to fetch friends"},
+                    room=sid,
+                )
         except Exception as e:
             logger.error(f"Failed to get friends list: {e}")
-            await self.sio.emit(
-                "connections:get_friends:error", {"error": str(e)}, room=sid
-            )
+            # Only emit error if socket is still connected
+            if sid in self.sid_to_user:
+                await self.sio.emit(
+                    "connections:get_friends:error",
+                    {"error": str(e)},
+                    room=sid,
+                )
+                await self.sio.emit(
+                    "GET_FRIENDS_ERROR", {"error": str(e)}, room=sid
+                )
 
     async def _handle_connections(self, message):
         """Handle connection-related messages from RabbitMQ."""
@@ -773,13 +835,8 @@ class SocketServer:
                 return
 
             if event_type == EventType.CONNECTION_GET_FRIENDS.value:
-                # Handle get friends request
-                friends = body.get("friends", [])
-                await self.sio.emit(
-                    "connections:get_friends:success",
-                    {"friends": friends},
-                    room=sid,
-                )
+                # Do NOT emit to the client here! The response will be handled by the publish_and_wait future.
+                pass
             else:
                 logger.warning(f"Unknown connection event type: {event_type}")
 
@@ -800,7 +857,7 @@ class SocketServer:
                 logger.warning(f"No socket found for user {user_id}")
                 await message.ack()
                 return
-            
+
             if event_type == EventType.CHAT_ROOM_CREATED.value:
                 # Handle room created notification
                 room_id = body.get("room_id")
@@ -832,7 +889,7 @@ class SocketServer:
             #     message_content = body.get("message_content")
             #     message_sender = body.get("message_sender")
             #     message_timestamp = body.get("message_timestamp")
-                
+
             #     await self.sio.emit(
             #         "chat:message_received",
             #         {
@@ -840,25 +897,11 @@ class SocketServer:
             #             "message_content": message_content,
             #         },
             #     )
-                
+
             else:
                 logger.warning(f"Unknown chat event type: {event_type}")
-                
+
             await message.ack()
         except Exception as e:
             logger.error(f"Error handling chat notification: {e}")
             await message.nack(requeue=False)
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        

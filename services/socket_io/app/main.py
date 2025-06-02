@@ -25,7 +25,8 @@ settings = get_settings()
 rabbitmq_settings = RabbitMQSettings(RABBITMQ_URL=os.getenv("RABBITMQ_URL"))
 
 # Create socket server with RabbitMQ settings
-socket_server = SocketServer(rabbitmq_settings)
+socket_server = SocketServer()
+
 
 class LifespanApp:
     """
@@ -62,6 +63,7 @@ class LifespanApp:
                     break
         else:
             await self.app(scope, receive, send)
+
 
 app = LifespanApp(socket_server.app, socket_server)
 

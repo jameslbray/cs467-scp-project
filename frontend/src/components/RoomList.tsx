@@ -2,9 +2,9 @@
 import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/solid';
 import React, { useState } from 'react';
 import { useAuth } from '../contexts';
+import { useFriends } from '../contexts/friends/FriendsContext';
 import { type Room, useFetchRooms } from '../hooks/useFetchRooms';
 import { chatApi } from '../services/api';
-import { fetchAcceptedFriends } from '../services/friendsAPI';
 import type { FriendConnection } from '../types/friendsTypes';
 
 interface RoomListProps {
@@ -15,6 +15,7 @@ interface RoomListProps {
 const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 	const { rooms, loading, error } = useFetchRooms();
 	const { user, token } = useAuth();
+	const { acceptedFriends } = useFriends();
 	const [showModal, setShowModal] = useState(false);
 	const [friends, setFriends] = useState<FriendConnection[]>([]);
 	const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
@@ -25,8 +26,7 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 
 	const openModal = async () => {
 		if (!user?.id || !token) return;
-		const accepted = await fetchAcceptedFriends(user.id, token);
-		setFriends(accepted);
+		setFriends(Object.values(acceptedFriends));
 		setShowModal(true);
 	};
 

@@ -93,10 +93,7 @@ class NotificationRabbitMQClient:
                 durable=True
             )
 
-            await self.rabbitmq.declare_queue(
-                "connections_queue",
-                durable=True
-            )
+            # Removed connections_queue - connections service handles connection events
 
             # Bind queues to exchanges with routing keys
             # General notifications for all users
@@ -106,12 +103,7 @@ class NotificationRabbitMQClient:
                 "user.#"  # All broadcast messages
             )
 
-            # Connection events (friend requests, etc)
-            await self.rabbitmq.bind_queue(
-                "connections_queue",
-                "connections",
-                "user.#"  # All connection-related events
-            )
+            # Removed connections_queue binding - connections service handles connection events
 
             logger.info("Connected to RabbitMQ for notification events")
         except Exception as e:
@@ -133,8 +125,10 @@ class NotificationRabbitMQClient:
             #     "notifications",
             #     notifications_handler
             # )
+            # Removed connections_queue consumption - connections service handles connection events
+            # Only consume from notifications queue
             await self.rabbitmq.consume(
-                "connections_queue",
+                "notifications_queue",
                 connection_handler
             )
 

@@ -23,7 +23,7 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) 
 		};
 	}, []);
 
-	// Use our new custom hook
+	// Use a hook to fetch friend statuses
 	const { friendStatuses, fetchAllFriendStatuses, onlineFriendsCount } = useFriendStatuses(
 		friends,
 		user?.id,

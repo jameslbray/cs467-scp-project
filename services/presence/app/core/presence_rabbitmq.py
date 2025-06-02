@@ -232,8 +232,9 @@ class PresenceRabbitMQClient:
             })
             
             if reply_to is not None:
+                # For RPC responses, publish directly to the reply_to queue via default exchange
                 await self.rabbitmq.publish_message(
-                    exchange="presence",
+                    exchange="",  # Default exchange for direct queue routing
                     routing_key=reply_to,
                     message=message,
                     correlation_id=correlation_id,
