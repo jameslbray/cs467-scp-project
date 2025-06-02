@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
+import { userApi } from '../services/api';
 import { useFriendStatuses } from '../hooks/useFriendStatuses';
 import { FriendConnection } from '../types/friendsTypes';
-import { filterOnlineFriends, getFriendDisplayName, getFriendId } from '../utils/friendsUtils';
+import { filterOnlineFriends, getFriendId } from '../utils/friendsUtils';
+import type { User } from '../types/userType';
 
 interface FriendsListProps {
 	friends: Record<string, FriendConnection>;
@@ -15,6 +17,51 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) 
 	const [loading, setLoading] = useState(false);
 	const dropdownRef = useRef<HTMLDivElement>(null);
 	const mounted = useRef<boolean>(true);
+	const [userMap, setUserMap] = useState<Record<string, User>>({});
+
+	// Function to fetch and map user data
+	const fetchUserData = async (userIds: string[]) => {
+		if (!userIds.length) return;
+
+		try {
+			const users = await userApi.getUsersByIds(userIds);
+
+			const newUserMap: Record<string, User> = {};
+			users.forEach((user: User) => {
+				newUserMap[user.id] = user;
+			});
+
+			setUserMap(prev => ({ ...prev, ...newUserMap }));
+		} catch (error) {
+			console.error('Failed to fetch user details:', error);
+		}
+	};
+	// Helper function to get display name from user ID
+	const getUserDisplayName = (userId: string) => {
+		if (userMap[userId]) {
+			return userMap[userId].username ||
+				userMap[userId].display_name ||
+				userId.substring(0, 8) + '...';
+		}
+		return userId.substring(0, 8) + '...';
+	};
+
+	// Fetch user data when friends list changes
+	useEffect(() => {
+		if (friends && Object.keys(friends).length > 0 && user?.id) {
+			// Convert from Record to array of friend IDs
+			const friendIds = Object.values(friends).map(friend =>
+				getFriendId(friend, user.id)
+			);
+
+			// Filter out IDs we already have
+			const idsToFetch = friendIds.filter(id => !userMap[id]);
+
+			if (idsToFetch.length > 0) {
+				fetchUserData(idsToFetch);
+			}
+		}
+	}, [friends, user?.id]);
 
 	useEffect(() => {
 		mounted.current = true;
@@ -79,21 +126,19 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) 
 					{/* Tabs */}
 					<div className='flex border-b border-gray-200 dark:border-gray-700'>
 						<button
-							className={`px-4 py-2 text-sm font-medium flex-1 ${
-								activeTab === 'online'
-									? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
-									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-							}`}
+							className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === 'online'
+								? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
+								: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+								}`}
 							onClick={() => setActiveTab('online')}
 						>
 							Online ({onlineFriendsCount})
 						</button>
 						<button
-							className={`px-4 py-2 text-sm font-medium flex-1 ${
-								activeTab === 'all'
-									? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
-									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-							}`}
+							className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === 'all'
+								? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
+								: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+								}`}
 							onClick={() => setActiveTab('all')}
 						>
 							All Friends
@@ -148,22 +193,24 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) 
 		return connectionList.map((connection) => {
 			const friendId = getFriendId(connection, user.id);
 			const status = friendStatuses[friendId] || 'offline';
-			const displayName = getFriendDisplayName(connection, friendId);
+
+			// Use our user data enrichment function instead of getFriendDisplayName
+			const displayName = getUserDisplayName(friendId);
+
 			return (
 				<div
 					key={connection.id}
 					className='px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center'
 				>
 					<div
-						className={`h-2 w-2 rounded-full mr-2 ${
-							status === 'online'
-								? 'bg-green-500'
-								: status === 'away'
+						className={`h-2 w-2 rounded-full mr-2 ${status === 'online'
+							? 'bg-green-500'
+							: status === 'away'
 								? 'bg-yellow-500'
 								: status === 'busy'
-								? 'bg-red-500'
-								: 'bg-gray-500'
-						}`}
+									? 'bg-red-500'
+									: 'bg-gray-500'
+							}`}
 					/>
 					<span className='truncate'>{displayName}</span>
 					<span className='ml-auto text-xs text-gray-500 dark:text-gray-400'>{status}</span>
