@@ -40,11 +40,20 @@ const FriendsList: React.FC = () => {
 	// Listen for the response with updated friends
 	useSocketEvent("connections:get_friends:success", (data) => {
 		if (data && Array.isArray(data)) {
-			// Convert array to record format
+			// Create a map using the friendId (not user_id) as key
 			const friendsRecord: Record<string, FriendConnection> = {};
+
 			data.forEach((friend: FriendConnection) => {
-				friendsRecord[friend.user_id] = friend;
+				if (!user?.id) return;
+
+				// Get the actual friend's ID (not the current user's ID)
+				const friendId = getFriendId(friend, user.id);
+
+				if (!friendsRecord[friendId]) {
+					friendsRecord[friendId] = friend;
+				}
 			});
+
 			setFriends(friendsRecord);
 		}
 	});
@@ -242,13 +251,11 @@ const FriendsList: React.FC = () => {
 		return connectionList.map((connection) => {
 			const friendId = getFriendId(connection, user.id);
 			const status = friendStatuses[friendId] || 'offline';
-
-			// Use our user data enrichment function instead of getFriendDisplayName
 			const displayName = getUserDisplayName(friendId);
 
 			return (
 				<div
-					key={connection.id}
+					key={friendId}
 					className='px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center'
 				>
 					<div
