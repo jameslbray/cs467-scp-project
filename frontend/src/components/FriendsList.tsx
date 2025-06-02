@@ -5,12 +5,14 @@ import { useFriendStatuses } from '../hooks/useFriendStatuses';
 import { FriendConnection } from '../types/friendsTypes';
 import { filterOnlineFriends, getFriendId } from '../utils/friendsUtils';
 import type { User } from '../types/userType';
+import { useSocketEvent } from '../contexts/socket/useSocket';
+import { useSocketContext } from '../contexts/socket/socketContext';
 
-interface FriendsListProps {
-	friends: Record<string, FriendConnection>;
-}
+// interface FriendsListProps {
+// 	friends: Record<string, FriendConnection>;
+// }
 
-const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) => {
+const FriendsList: React.FC = () => {
 	const { user, token } = useAuth();
 	const [isOpen, setIsOpen] = useState(false);
 	const [activeTab, setActiveTab] = useState<'online' | 'all'>('online');
@@ -18,6 +20,47 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) 
 	const dropdownRef = useRef<HTMLDivElement>(null);
 	const mounted = useRef<boolean>(true);
 	const [userMap, setUserMap] = useState<Record<string, User>>({});
+	const [friends, setFriends] = useState<Record<string, FriendConnection>>({});
+	const { socket } = useSocketContext();
+
+	// Listen for friend acceptance events
+	useSocketEvent("connection:friend_accepted", (_data) => {
+		// Refresh the friends list
+		fetchFriendsList();
+	});
+
+	// Function to fetch friends
+	const fetchFriendsList = async () => {
+		if (!socket || !user?.id) return;
+
+		// Request updated friends list
+		socket.emit('connections:get_friends', { user_id: user.id });
+	};
+
+	// Listen for the response with updated friends
+	useSocketEvent("connections:get_friends:success", (data) => {
+		if (data && Array.isArray(data)) {
+			// Convert array to record format
+			const friendsRecord: Record<string, FriendConnection> = {};
+			data.forEach((friend: FriendConnection) => {
+				friendsRecord[friend.user_id] = friend;
+			});
+			setFriends(friendsRecord);
+		}
+	});
+
+	// Listen for any errors when fetching friends
+	useSocketEvent("connections:get_friends:error", (error) => {
+		console.error('Error fetching friends:', error);
+
+		// Retry after a short delay
+		setTimeout(() => {
+			if (socket && user?.id) {
+				console.log("Retrying friends list fetch...");
+				socket.emit('connections:get_friends', { user_id: user.id });
+			}
+		}, 1000);
+	});
 
 	// Function to fetch and map user data
 	const fetchUserData = async (userIds: string[]) => {
@@ -97,6 +140,12 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends }: FriendsListProps) 
 			fetchAllFriendStatuses();
 		}
 	}, [isOpen, user?.id, friends, fetchAllFriendStatuses]);
+
+	useEffect(() => {
+		if (socket && user?.id) {
+			fetchFriendsList();
+		}
+	}, [socket, user?.id]);
 
 	const isLoadingAnything = loading;
 

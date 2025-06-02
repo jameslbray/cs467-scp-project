@@ -762,7 +762,7 @@ class SocketServer:
                 message={
                     "user_id": user_id,
                     "source": "socket_io",
-                    "event_type": EventType.CONNECTION_GET_FRIENDS,
+                    "event_type": EventType.CONNECTION_GET_FRIENDS.value,
                     },
                 correlation_id=sid,
                 timeout=5.0,
