@@ -79,13 +79,11 @@ const UserStatus: React.FC<UserStatusProps> = ({ friends }) => {
 
 			// Update the local state or perform any necessary actions
 			console.log('Friend status changed:', data);
-			// You can update a state here if needed, e.g.:
 			// setFriends((prev) => ({ ...prev, [data.user_id]: data }));
 		};
 
 		const handleFriendStatusesSuccess = (data: UserStatusType[]) => {
 			console.log('Friend statuses received:', data);
-			// You can update a state here if needed, e.g.:
 			// setFriends(data);
 			// Or perform any other actions with the received data
 		};

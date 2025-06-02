@@ -142,10 +142,9 @@ class ConnectionsRabbitMQClient:
             
             if reply_to is not None:
                 await self.rabbitmq.publish_message(
-                    exchange="connections",
-                    routing_key=routing_key,
+                    exchange="",
+                    routing_key=reply_to,
                     message=message,
-                    reply_to=reply_to
                 )
             else:
                 await self.rabbitmq.publish_message(
@@ -190,7 +189,7 @@ class ConnectionsRabbitMQClient:
         self,
         message: str,
         routing_key: str,
-        correlation_id: Optional[str] = None
+        correlation_id: str
     ) -> bool:
         """Publish a friend list event."""
         logger.info("Publishing friend list")
@@ -200,25 +199,13 @@ class ConnectionsRabbitMQClient:
             if not self._initialized:
                 await self.initialize()
             
-            if routing_key is None:
-                routing_key = "user.get_friends"
-            # if reply_to is None:
-            #     reply_to = "connection_notifications"
-            
-            if correlation_id is not None:
-                await self.rabbitmq.publish_message(
-                    exchange="",
-                    routing_key=routing_key,
-                    message=message,
-                    correlation_id=correlation_id
-                )
-            else:
-                await self.rabbitmq.publish_message(
-                    exchange="",
-                    routing_key=routing_key,
-                    message=message
-                )
-            
+            await self.rabbitmq.publish_message(
+                exchange="",
+                routing_key=routing_key,
+                message=message,
+                correlation_id=correlation_id
+            )
+
             return True
         except Exception as e:
             logger.error(f"Failed to publish friend list: {e}")

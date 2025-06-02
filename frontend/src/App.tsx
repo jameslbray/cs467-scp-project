@@ -13,26 +13,25 @@ import RegisterPage from './pages/RegisterPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 
 
-
 const App: React.FC = () => {
 	return (
 		<ErrorBoundary>
 			<ThemeProvider>
 				<AuthProvider>
 					<SocketProvider>
-						<Router>
-							<Routes>
-								<Route path='/' element={<LandingPage />} />
-								<Route path='/login' element={<LoginPage />} />
-								<Route path='/register' element={<RegisterPage />} />
-								<Route path='/forgot-password' element={<ForgotPasswordPage />} />
-								<Route path='/reset-password' element={<ResetPasswordPage />} />
-								{/* Protected routes */}
-								<Route element={<AuthenticatedLayout />}>
-									<Route path='/chat' element={<ChatPage />} />
-								</Route>
-							</Routes>
-						</Router>
+							<Router>
+								<Routes>
+									<Route path='/' element={<LandingPage />} />
+									<Route path='/login' element={<LoginPage />} />
+									<Route path='/register' element={<RegisterPage />} />
+									<Route path='/forgot-password' element={<ForgotPasswordPage />} />
+									<Route path='/reset-password' element={<ResetPasswordPage />} />
+									{/* Protected routes */}
+									<Route element={<AuthenticatedLayout />}>
+										<Route path='/chat' element={<ChatPage />} />
+									</Route>
+								</Routes>
+							</Router>
 					</SocketProvider>
 				</AuthProvider>
 			</ThemeProvider>

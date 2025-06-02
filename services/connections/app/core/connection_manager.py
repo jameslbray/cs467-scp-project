@@ -443,9 +443,9 @@ class ConnectionManager:
                 )
             else:  # For friend_accepted and other types
                 await self.rabbitmq.publish_friend_accepted(
-                    exchange="connections",
+                    exchange="",
                     message=message,
-                    routing_key=routing_key,
+                    routing_key=reply_to or "connection_notifications",
                 )
 
             logger.info(
@@ -474,7 +474,7 @@ class ConnectionManager:
                 return
             event_type = body["event_type"]
 
-            if event_type == "connection:friend_request":
+            if event_type == "connections:friend_request":
                 recipient_id = body.get("recipient_id")
                 sender_id = body.get("sender_id")
                 reference_id = body.get("reference_id")
@@ -510,7 +510,7 @@ class ConnectionManager:
                     notification_type="friend_request",
                     content_preview=content_preview,
                 )
-            elif event_type == "connection:friend_accepted":
+            elif event_type == "connections:friend_accepted":
                 recipient_id = body.get("recipient_id")
                 sender_id = body.get("sender_id")
                 reference_id = body.get("reference_id")
@@ -569,6 +569,17 @@ class ConnectionManager:
                     conn for conn in connections if conn.status == ConnectionStatus.ACCEPTED
                 ]
                 
+                def json_serializable(conn: Connection) -> dict:
+                    """Convert Connection to a JSON-serializable dict."""
+                    return {
+                        "id": str(conn.id),
+                        "user_id": str(conn.user_id),
+                        "friend_id": str(conn.friend_id),
+                        "status": conn.status,
+                        "created_at": conn.created_at.isoformat() if conn.created_at else None,
+                        "updated_at": conn.updated_at.isoformat() if conn.updated_at else None,
+                    }
+                
                 # Publish the connections back to the requester
                 response_message = json.dumps(
                     {
@@ -577,9 +588,12 @@ class ConnectionManager:
                         "user_id": user_id,
                         "friends": connections,
                     },
-                    default=pydantic_encoder,
+                    default=json_serializable
                 )
 
+                logger.info(
+                    f"Publishing friends list for user {user_id}: {connections}"
+                )
                 await self.rabbitmq.publish_friends_list(
                     routing_key=message.reply_to,
                     message=response_message,

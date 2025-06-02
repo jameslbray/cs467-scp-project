@@ -246,7 +246,65 @@ class SocketServer:
         await self.emit_to_room(
             room, EventType.CHAT_MESSAGE.value, dict(chat_message)
         )
-
+        
+        # Find room participants and send notifications
+        try:
+            room_data = await self.rabbitmq.publish_and_wait(
+                exchange="chat",
+                routing_key="get_room_data",
+                message={"room_id": room},
+                timeout=5.0,
+            )
+            logger.info(f"Received room data for {room}: {room_data}")
+            
+            # If we have room data with participants, send notifications
+            if room_data and "participant_ids" in room_data:
+                room_name = room_data.get("name", "Chat")
+                sender_username = self.sid_to_username.get(sid, "Someone")
+                
+                # Create notification for each participant except sender
+                for participant_id in room_data["participant_ids"]:
+                    if participant_id != user_id:  # Don't notify the sender
+                        # Check if this participant is active in this room
+                        participant_sid = self.get_sid_from_user_id(participant_id)
+                        
+                        logger.info(f"sid: {sid}, participant_id: {participant_id}, participant_sid: {participant_sid}")
+                        if participant_sid:
+                            # Create a notification event
+                            notification = {
+                                "type": "chat_message",
+                                "recipient_id": participant_id,
+                                "sender_id": user_id,
+                                "sender_username": sender_username,
+                                "reference_id": chat_message["id"],
+                                "room_id": room,
+                                "room_name": room_name,
+                                "content_preview": (
+                                    "New message: " +
+                                    chat_message["content"][:30] +
+                                    ("..." if len(chat_message["content"]) > 50 else "")
+                                ),
+                                "timestamp": datetime.now().isoformat(),
+                                "read": False
+                            }
+                            
+                            logger.info(f"Sending notification to {participant_id} in room {room}: {notification}")
+                            # Emit notification directly via socket
+                            await self.sio.emit("notification:new", notification, room=participant_sid)
+                            
+                            # Also save to notifications DB
+                            try:
+                                await self.rabbitmq.publish_message(
+                                    exchange="notifications",
+                                    routing_key=f"user.{participant_id}",
+                                    message=json.dumps(notification)
+                                )
+                                logger.info(f"Notification published to DB for {participant_id}")
+                            except Exception as e:
+                                logger.error(f"Failed to publish notification to DB: {e}")
+        except Exception as e:
+            logger.error(f"Failed to get room data or send notifications: {e}")
+        
         try:
             await with_retry(
                 lambda: self.rabbitmq.publish_message(
@@ -704,7 +762,7 @@ class SocketServer:
                 message={
                     "user_id": user_id,
                     "source": "socket_io",
-                    "event_type": EventType.CONNECTION_GET_FRIENDS,
+                    "event_type": EventType.CONNECTION_GET_FRIENDS.value,
                     },
                 correlation_id=sid,
                 timeout=5.0,
@@ -836,15 +894,16 @@ class SocketServer:
                 return
                 
             # Emit appropriate event based on connection type
-            if event_type == "friend_request":
-                await self.sio.emit("connection:friend_request", body, room=sid)
-                logger.info(f"Emitted friend request notification to {recipient_id}")
-            elif event_type == "friend_accepted":
-                await self.sio.emit("connection:friend_accepted", body, room=sid)
-                logger.info(f"Emitted friend acceptance notification to {recipient_id}")
-            else:
-                await self.sio.emit("connection:update", body, room=sid)
-                
+            # if event_type == "friend_request":
+            #     await self.sio.emit("connections:friend_request", body, room=sid)
+            #     logger.info(f"Emitted friend request notification to {recipient_id}")
+            # elif event_type == "friend_accepted":
+            #     await self.sio.emit("connections:friend_accepted", body, room=sid)
+            #     logger.info(f"Emitted friend acceptance notification to {recipient_id}")
+            # else:
+            #     await self.sio.emit("connections:update", body, room=sid)
+            await self.sio.emit("notification:new", body, room=sid)    
+            
             await message.ack()
         except Exception as e:
             logger.error(f"Error processing connection notification: {e}")
@@ -868,7 +927,7 @@ class SocketServer:
                 if recipient_id:
                     sid = self.get_sid_from_user_id(recipient_id)
                     if sid:
-                        await self.sio.emit("chat:notification", body, room=sid)
+                        await self.sio.emit("notification:new", body, room=sid)
                         
             await message.ack()
         except Exception as e:
@@ -898,7 +957,7 @@ class SocketServer:
                 for participant_id in room_participant_ids:
                     if participant_id != room_created_by:
                         await self.sio.emit(
-                            "chat:room_created",
+                            "notification:new",
                             {
                                 "notification_id": body.get("notification_id"),
                                 "recipient_id": participant_id,
