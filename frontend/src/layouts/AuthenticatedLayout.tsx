@@ -12,6 +12,22 @@ import { useSocketEvent } from '../contexts/socket/useSocket';
 import { ServerEvents } from '../types/serverEvents';
 // import type { UserStatusType } from '../types/userStatusType';
 import type { FriendConnection } from '../types/friendsTypes';
+import { userApi } from '../services/api';
+
+// Create a context to share user data with child components
+interface UserDataContextType {
+  userMap: Record<string, any>; // Replace 'any' with your User type
+  refreshUserData: (userIds: string[]) => Promise<void>;
+}
+
+export const UserDataContext = createContext<UserDataContextType>({
+  userMap: {},
+  refreshUserData: async () => {}
+});
+
+export const useUserData = () => useContext(UserDataContext);
+
+
 
 const AuthenticatedLayout: React.FC = () => {
 	const { isAuthenticated, isLoading } = useAuth();

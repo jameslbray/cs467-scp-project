@@ -25,6 +25,7 @@ const ChatList: React.FC<ChatListProps> = ({ roomName, roomId }: ChatListProps) 
 	const [userMap, setUserMap] = useState<Record<string, EnrichedUser>>({});
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 
+
 	// Initialize messages from backend fetch
 	useEffect(() => {
 		console.log('Initial messages fetched:', initialMessages);
