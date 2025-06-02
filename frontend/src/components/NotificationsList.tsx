@@ -274,7 +274,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
                         {/* Title/preview content */}
                         <div>
                           <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                            {(notification.notification_type || notification.notification_type) === 'chat_message' && notification.room_name ?
+                            {notification.notification_type === 'chat_message' && notification.room_name ?
                               `New message in ${notification.room_name}` :
                               notification.content_preview}
                           </p>
