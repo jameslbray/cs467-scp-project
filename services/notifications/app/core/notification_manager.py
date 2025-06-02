@@ -63,7 +63,8 @@ class NotificationManager:
             # Register message handlers
             await self.rabbitmq_client.register_consumers(
                 # self._process_notification,
-                self._process_connection
+                self._process_connection,
+                self._process_chat_notification,
             )
             logger.info("RabbitMQ client initialized and message handlers registered")
 
@@ -256,26 +257,30 @@ class NotificationManager:
 
             # Log with the actual ObjectId from MongoDB
             logger.info(f"Notification inserted with ID: {result.inserted_id}")
-
+            
+            # Add the ObjectId to the notification for consistency
+            from_db = NotificationDB.from_mongo_doc(mongo_dict)
+            from_db.id = result.inserted_id
+            
             # Publish to RabbitMQ
-            await self.publish_notification_event(
-                recipient_id=notification.recipient_id,
-                sender_id=notification.sender_id,
-                reference_id=notification.reference_id,
-                notification_type=notification.notification_type,
-                content_preview=notification.content_preview,
+            await self.rabbitmq_client.publish_notification(
+                from_db.to_dict()
             )
 
             logger.info(f"Published notification to RabbitMQ: {notification}")
 
             # Return all notifications for the recipient
-            return await self.get_user_notifications(notification.recipient_id)
+            return
 
         except Exception as e:
             logger.error(f"Failed to create notification: {e}")
             return
 
-    async def mark_notification_as_read(self, notification_id: str, user_id: str) -> bool:
+    async def mark_notification_as_read(
+        self,
+        notification_id: str,
+        user_id: str
+    ) -> bool:
         """Mark a notification as read.
 
         Args:
@@ -402,23 +407,6 @@ class NotificationManager:
         except Exception as e:
             logger.error(f"Failed to delete read notifications: {e}")
             return 0
-
-    async def publish_notification_event(
-        self,
-        recipient_id: str,
-        sender_id: str,
-        reference_id: str,
-        notification_type: str,
-        content_preview: str,
-    ) -> bool:
-        """Publish a notification event to RabbitMQ."""
-        return await self.rabbitmq_client.publish_notification(
-            recipient_id,
-            sender_id,
-            reference_id,
-            notification_type,
-            content_preview,
-        )
 
     async def publish_friend_request_notification(
         self,
@@ -658,7 +646,7 @@ class NotificationManager:
                 logger.warning(f"Message failed after {retry_count} retries, not requeuing")
                 await message.nack(requeue=False)
 
-    async def _process_message_notification(self, message) -> None:
+    async def _process_chat_notification(self, message) -> None:
         """Process a message notification from RabbitMQ."""
         try:
             # Parse the message body
@@ -666,14 +654,14 @@ class NotificationManager:
             logger.info(f"Received message notification: {body}")
 
             # Extract notification fields
-            recipient_id = body.get("recipient_id")
+            recipient_ids = body.get("recipient_ids")
             sender_id = body.get("sender_id")
-            message_id = body.get("message_id", "")
-            content_preview = body.get("content_preview", "You have a new message")
+            room_id = body.get("room_id", "")
+            content_preview = body.get("content_preview", "You've been added to a new chat")
             timestamp = body.get("timestamp", datetime.now().isoformat())
 
             # Validate required fields
-            if not recipient_id or not sender_id:
+            if not recipient_ids or not sender_id:
                 logger.error(f"Missing required fields in message notification: {body}")
                 await message.nack(requeue=False)  # Don't requeue malformed messages
                 return
@@ -682,20 +670,25 @@ class NotificationManager:
             if len(content_preview) > 100:
                 content_preview = content_preview[:97] + "..."
 
-            # Create notification for message recipient
-            notification_request = NotificationRequest(
-                recipient_id=recipient_id,
-                sender_id=sender_id,
-                reference_id=message_id,
-                content_preview=content_preview,
-                notification_type=NotificationType.NEW_MESSAGE,
-                timestamp=timestamp,
-                status=DeliveryType.UNDELIVERED,
-                error=None,
-            )
-
-            await self.create_notification(notification_request)
-            logger.info(f"Created message notification for recipient {recipient_id} from {sender_id}")
+            # Create notification for each message recipient
+            for recipient_id in recipient_ids:
+                if recipient_id == sender_id:
+                    continue  # Skip notifications to self
+                notification_request = NotificationRequest(
+                    recipient_id=recipient_id,
+                    sender_id=sender_id,
+                    reference_id=room_id,
+                    content_preview=content_preview,
+                    notification_type=NotificationType.NEW_MESSAGE,
+                    timestamp=timestamp,
+                    status=DeliveryType.UNDELIVERED,
+                    error=None,
+                )
+                await self.create_notification(notification_request)
+                logger.info(
+                        f"Created message notification for recipient "
+                        f"{recipient_id} from {sender_id}"
+                    )
             await message.ack()
 
         except json.JSONDecodeError as e:

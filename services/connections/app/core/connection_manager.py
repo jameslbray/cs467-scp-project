@@ -444,9 +444,9 @@ class ConnectionManager:
                 )
             else:  # For friend_accepted and other types
                 await self.rabbitmq.publish_friend_accepted(
-                    exchange="connections",
+                    exchange="",
                     message=message,
-                    routing_key=routing_key,
+                    routing_key=reply_to or "connection_notifications",
                 )
 
             logger.info(
@@ -482,7 +482,7 @@ class ConnectionManager:
             event_type = body["event_type"]
             logger.info(f"[CONSUMER] Event type: {event_type}")
 
-            if event_type == "connection:friend_request":
+            if event_type == "connections:friend_request":
                 recipient_id = body.get("recipient_id")
                 sender_id = body.get("sender_id")
                 reference_id = body.get("reference_id")

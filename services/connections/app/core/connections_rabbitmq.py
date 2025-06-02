@@ -131,8 +131,8 @@ class ConnectionsRabbitMQClient:
 
             if reply_to is not None:
                 await self.rabbitmq.publish_message(
-                    exchange="connections",
-                    routing_key=routing_key,
+                    exchange="",
+                    routing_key=reply_to,
                     message=message,
                     reply_to=reply_to,
                 )

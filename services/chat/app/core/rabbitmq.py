@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime
+import uuid
 
 from services.chat.app.db.chat_repository import ChatRepository
 from services.chat.app.db.mongo import get_db
@@ -101,9 +102,9 @@ class ChatRabbitMQClient:
                     routing_key == self.room_get_id_routing_key
                     or body.get("action") == "get_room_id_by_name"
                 ):
-                    room_name = body.get("name")
+                    name = body.get("name")
                     repo = ChatRepository()
-                    room_id = await repo.get_room_id_by_name(room_name)
+                    room_id = await repo.get_room_id_by_name(name)
                     response = (
                         {"room_id": room_id}
                         if room_id
@@ -136,17 +137,48 @@ class ChatRabbitMQClient:
                     )
                     await message.ack()
                     return
+                
+                # Handle room RPC requests: get_room_data
+                if routing_key == "get_room_data":
+                    room_id = body.get("room_id")
+                    repo = ChatRepository()
+                    room_data = await repo.get_room_by_id(room_id)
+                    if room_data:
+                        response = room_data.model_dump(by_alias=True)
+                    else:
+                        response = {"error": "Room not found"}
+                    
+                    # Custom JSON serializer for datetime objects
+                    def json_serializer(obj):
+                        if isinstance(obj, datetime):
+                            return obj.isoformat()
+                        if isinstance(obj, uuid.UUID):
+                            return str(obj)
+                        raise TypeError(f"Type {type(obj)} not serializable")
+                        
+                    await self.client.publish_message(
+                        exchange="",
+                        routing_key=message.reply_to,
+                        message=json.dumps(response, default=json_serializer),
+                        correlation_id=message.correlation_id,
+                    )
+                    await message.ack()
+                    return
 
                 # Handle chat messages
                 if all(k in body for k in ("room_id", "sender_id", "content")):
                     db = get_db()
+                    if db is None:
+                        logger.error("Database connection is not initialized.")
+                        await message.nack(requeue=False)
+                        return
                     timestamp = body.get("timestamp")
                     if timestamp:
                         timestamp = datetime.fromtimestamp(timestamp)
                     else:
                         timestamp = datetime.now()
                     msg = Message(
-                        id=body.get("id") or "",
+                        _id=body.get("id") or str(uuid.uuid4()),
                         room_id=body["room_id"],
                         sender_id=body["sender_id"],
                         content=body["content"],

@@ -26,3 +26,4 @@ const FriendStatusList: React.FC<FriendStatusListProps> = ({ statuses }) => {
 };
 
 export default FriendStatusList;
+
