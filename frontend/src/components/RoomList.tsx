@@ -3,9 +3,10 @@ import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/solid';
 import React, { useState } from 'react';
 import { useAuth } from '../contexts';
 import { type Room, useFetchRooms } from '../hooks/useFetchRooms';
-import { chatApi } from '../services/api';
+import { chatApi, userApi } from '../services/api';
 import { fetchAcceptedFriends } from '../services/friendsAPI';
 import type { FriendConnection } from '../types/friendsTypes';
+import type { User } from '../types/userType';
 
 interface RoomListProps {
 	onSelectRoom: (room: Room) => void;
@@ -22,11 +23,35 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 	const [creating, setCreating] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
 	const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+	const [userMap, setUserMap] = useState<Record<string, User>>({});
 
 	const openModal = async () => {
 		if (!user?.id || !token) return;
 		const accepted = await fetchAcceptedFriends(user.id, token);
-		setFriends(accepted);
+
+		// Filter out duplicate friend connections by creating a friendId map
+		const friendIdMap: Record<string, FriendConnection> = {};
+
+		accepted.forEach(connection => {
+			const friendId = connection.user_id === user.id ? connection.friend_id : connection.user_id;
+			// Only keep the most recent connection for each unique friend ID
+			if (!friendIdMap[friendId]) {
+				friendIdMap[friendId] = connection;
+			}
+		});
+
+		// Convert back to array with only unique friend connections
+		const uniqueFriends = Object.values(friendIdMap);
+		setFriends(uniqueFriends);
+
+		// Now extract unique friend IDs
+		const friendIds = Object.keys(friendIdMap);
+
+		// Fetch user data for all unique friends
+		if (friendIds.length > 0) {
+			fetchUserData(friendIds);
+		}
+
 		setShowModal(true);
 	};
 
@@ -69,10 +94,42 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 		}
 	};
 
+	// Fetch user data by IDs
+	const fetchUserData = async (userIds: string[]) => {
+		if (!userIds.length) return;
+
+		try {
+			const users = await userApi.getUsersByIds(userIds);
+
+			const newUserMap: Record<string, User> = {};
+			users.forEach((user: User) => {
+				newUserMap[user.id] = user;
+			});
+
+			setUserMap(prev => ({ ...prev, ...newUserMap }));
+		} catch (error) {
+			console.error('Failed to fetch user details:', error);
+		}
+	};
+
 	const handleSelectRoom = (room: Room) => {
 		setActiveRoomId(room._id);
 		onSelectRoom(room);
 	};
+
+
+	// Helper function to get display name
+	const getUserDisplayName = (userId: string) => {
+		// If we have the user in our map, return their username or display name
+		if (userMap[userId]) {
+			return userMap[userId].username ||
+				userMap[userId].display_name ||
+				userId.substring(0, 8) + '...';
+		}
+		// Fallback to truncated ID
+		return userId.substring(0, 8) + '...';
+	};
+
 
 	if (loading) return <div>Loading rooms...</div>;
 	if (error) return <div>Error: {error}</div>;
@@ -93,10 +150,9 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 							type='button'
 							onClick={() => handleSelectRoom(room)}
 							className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-colors text-left
-								${
-									activeRoomId === room._id
-										? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold shadow'
-										: 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-100'
+								${activeRoomId === room._id
+									? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold shadow'
+									: 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-100'
 								}`}
 							aria-current={activeRoomId === room._id ? 'true' : undefined}
 						>
@@ -128,7 +184,6 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 									<ul className='max-h-32 overflow-y-auto'>
 										{friends.map((f) => {
 											const friendId = f.user_id === user?.id ? f.friend_id : f.user_id;
-											const friendName = f.userUsername || f.friendUsername || friendId;
 											return (
 												<li key={friendId}>
 													<label className='flex items-center'>
@@ -138,7 +193,7 @@ const RoomList: React.FC<RoomListProps> = ({ onSelectRoom, newChatButton }) => {
 															onChange={() => handleFriendToggle(friendId)}
 															className='mr-2 rounded-lg'
 														/>
-														<span>{friendName}</span>
+														<span>{getUserDisplayName(friendId)}</span>
 													</label>
 												</li>
 											);
