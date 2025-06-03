@@ -5,12 +5,14 @@ This module serves as the single source of truth for queue declarations.
 
 from dataclasses import dataclass
 from typing import Dict, Optional
+
 from .client import RabbitMQClient
 
 
 @dataclass
 class QueueConfig:
     """Configuration for a RabbitMQ queue"""
+
     name: str
     durable: bool = True
     auto_delete: bool = False
@@ -29,37 +31,41 @@ class QueueRegistry:
             name="presence",
             durable=True,
             exchange="presence",
-            routing_key="updates"
+            routing_key="updates",
         ),
-
         # Chat Service Queues
         "chat_messages": QueueConfig(
             name="chat_messages",
             durable=True,
             exchange="chat",
-            routing_key="messages"
+            routing_key="messages",
         ),
-
         # Notification Service Queues
         "notifications": QueueConfig(
             name="notifications",
             durable=True,
             exchange="notifications",
-            routing_key="all"
+            routing_key="all",
         ),
-
         # User Service Queues
         "user_events": QueueConfig(
             name="user_events",
             durable=True,
             exchange="users",
-            routing_key="events"
+            routing_key="events",
         ),
         "connections": QueueConfig(
-        name="connections",
-        durable=True,
-        exchange="connections",
-        routing_key="events"
+            name="connections",
+            durable=True,
+            exchange="connections",
+            routing_key="events",
+        ),
+        # Notification Service Chat Listener
+        "chat_notifications": QueueConfig(
+            name="chat_notifications",
+            durable=True,
+            exchange="chat",
+            routing_key="messages",
         ),
     }
 
@@ -77,7 +83,8 @@ class QueueRegistry:
 
         # First declare all exchanges
         exchanges = {
-            queue.exchange for queue in cls.QUEUES.values()
+            queue.exchange
+            for queue in cls.QUEUES.values()
             if queue.exchange is not None
         }
 
@@ -90,7 +97,7 @@ class QueueRegistry:
                 queue_config.name,
                 durable=queue_config.durable,
                 auto_delete=queue_config.auto_delete,
-                arguments=queue_config.arguments or {}
+                arguments=queue_config.arguments or {},
             )
 
             # If exchange and routing key are specified, create binding
@@ -98,7 +105,7 @@ class QueueRegistry:
                 await client.bind_queue(
                     queue_config.name,
                     queue_config.exchange,
-                    queue_config.routing_key
+                    queue_config.routing_key,
                 )
 
     @classmethod

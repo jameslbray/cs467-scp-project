@@ -1,16 +1,21 @@
 """
 RabbitMQ client for notification service.
 """
-import logging
+
 import json
-from typing import Callable
-from datetime import datetime
+import logging
 import uuid
+from datetime import datetime
+from typing import Callable
 
 from services.rabbitmq.core.client import RabbitMQClient as BaseRabbitMQClient
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 logger = logging.getLogger(__name__)
+
+CHAT_NOTIFICATIONS_QUEUE = "chat_notifications"
+NOTIFICATIONS_QUEUE = "notifications"
+CONNECTIONS_QUEUE = "connections"
 
 
 class NotificationRabbitMQClient:
@@ -22,9 +27,7 @@ class NotificationRabbitMQClient:
 
         # Initialize circuit breaker
         self.circuit_breaker = CircuitBreaker(
-            "rabbitmq",
-            failure_threshold=3,
-            reset_timeout=30.0
+            "rabbitmq", failure_threshold=3, reset_timeout=30.0
         )
         self._initialized = False
 
@@ -82,58 +85,61 @@ class NotificationRabbitMQClient:
             if not connected:
                 raise Exception("Failed to connect to RabbitMQ")
 
-            # Declare exchanges
-            await self.rabbitmq.declare_exchange("connections", "topic")
-            await self.rabbitmq.declare_exchange("chat", "topic")
+            # Bind chat_notifications queue to chat exchange with 'messages' routing key
+            await self.rabbitmq.declare_queue(CHAT_NOTIFICATIONS_QUEUE)
 
-            # Removed connections_queue - connections service handles connection events
-
-            # Bind queues to exchanges with routing keys
-            # General notifications for all users
             await self.rabbitmq.bind_queue(
-                "notifications_queue",
-                "notifications",
-                "user.#"  # All broadcast messages
+                CHAT_NOTIFICATIONS_QUEUE, "chat", "messages"
             )
 
-            # Removed connections_queue binding - connections service handles connection events
-
-            logger.info("Connected to RabbitMQ for notification events")
+            logger.info("Connected to RabbitMQ for chat notification events")
         except Exception as e:
             logger.error(f"Failed to connect to RabbitMQ: {e}")
             raise
 
-    async def register_consumers(
-        self,
-        # notifications_handler: Callable,
-        connection_handler: Callable,
-        chat_handler: Callable
-    ) -> None:
-        """Register consumer handlers for different queues."""
+    async def register_chat_consumer(self, chat_handler: Callable) -> None:
+        """Register consumer handler for chat messages queue."""
         try:
             if not self._initialized:
                 await self.initialize()
-
-            # Start consuming messages with provided handlers
-            # await self.rabbitmq.consume(
-            #     "notifications",
-            #     notifications_handler
-            # )
-            # Removed connections_queue consumption - connections service handles connection events
-            # Only consume from notifications queue
-            await self.rabbitmq.consume(
-                "notifications_queue",
-                connection_handler
-            )
-
-            await self.rabbitmq.consume(
-                "chat_queue",
-                chat_handler
-            )
-
-            logger.info("Consumer handlers registered successfully")
+            await self.rabbitmq.consume(CHAT_NOTIFICATIONS_QUEUE, chat_handler)
+            logger.info("Chat consumer handler registered successfully")
         except Exception as e:
-            logger.error(f"Failed to register consumer handlers: {e}")
+            logger.error(f"Failed to register chat consumer handler: {e}")
+            raise
+
+    async def register_notification_consumer(
+        self, notification_handler: Callable
+    ) -> None:
+        """Register consumer handler for general notifications queue."""
+        try:
+            if not self._initialized:
+                await self.initialize()
+            await self.rabbitmq.consume(
+                NOTIFICATIONS_QUEUE, notification_handler
+            )
+            logger.info(
+                "Notification consumer handler registered successfully"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to register notification consumer handler: {e}"
+            )
+            raise
+
+    async def register_connection_consumer(
+        self, connection_handler: Callable
+    ) -> None:
+        """Register consumer handler for connection notifications queue."""
+        try:
+            if not self._initialized:
+                await self.initialize()
+            await self.rabbitmq.consume(CONNECTIONS_QUEUE, connection_handler)
+            logger.info("Connection consumer handler registered successfully")
+        except Exception as e:
+            logger.error(
+                f"Failed to register connection consumer handler: {e}"
+            )
             raise
 
     async def publish_notification(self, notification: dict) -> bool:
@@ -154,7 +160,7 @@ class NotificationRabbitMQClient:
             await self.rabbitmq.publish_message(
                 exchange="notifications",
                 routing_key=f"user.{recipient_id}",
-                message=message
+                message=message,
             )
             logger.info(f"Published notification for recipient {recipient_id}")
 
@@ -176,25 +182,29 @@ class NotificationRabbitMQClient:
                 await self.initialize()
 
             # Create the notification payload
-            message = json.dumps({
-                "source": "notifications",
-                "event_type": "friend_request",
-                "recipient_id": recipient_id,
-                "sender_id": sender_id,
-                "reference_id": str(connection_id),
-                "content_preview": f"{sender_name} sent you a friend request",
-                "timestamp": datetime.now().isoformat(),
-                "read": False,
-                "notification_type": "friend_request"
-            })
+            message = json.dumps(
+                {
+                    "source": "notifications",
+                    "event_type": "friend_request",
+                    "recipient_id": recipient_id,
+                    "sender_id": sender_id,
+                    "reference_id": str(connection_id),
+                    "content_preview": f"{sender_name} sent you a friend request",
+                    "timestamp": datetime.now().isoformat(),
+                    "read": False,
+                    "notification_type": "friend_request",
+                }
+            )
 
             await self.rabbitmq.publish_message(
                 exchange="notifications",
                 routing_key=f"user.{recipient_id}",
-                message=message
+                message=message,
             )
 
-            logger.info(f"Published friend request notification for recipient {recipient_id}")
+            logger.info(
+                f"Published friend request notification for recipient {recipient_id}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to publish friend request notification: {e}")

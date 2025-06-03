@@ -1,6 +1,46 @@
 import { userApi } from '../services/api';
 import { FriendConnection } from '../types/friendsTypes';
 
+const CONNECT_API_URL = 'http://localhost:8005';
+
+export const fetchUserConnections = async (
+	userId: string,
+	token: string
+): Promise<FriendConnection[]> => {
+	try {
+		const response = await fetch(`${CONNECT_API_URL}/api/connect/${userId}`, {
+			headers: {
+				Authorization: `Bearer ${token}`,
+			},
+		});
+
+		if (!response.ok) {
+			throw new Error('Failed to fetch connections');
+		}
+
+		return await response.json();
+	} catch (error) {
+		console.error('Failed to fetch user connections:', error);
+		return [];
+	}
+};
+
+export const fetchAcceptedFriends = async (
+	userId: string,
+	token: string
+): Promise<FriendConnection[]> => {
+	try {
+		const connections = await fetchUserConnections(userId, token);
+		// Filter only accepted connections
+		const acceptedConnections = connections.filter((conn) => conn.status === 'accepted');
+		// Only one direction will exist after acceptance
+		return acceptedConnections;
+	} catch (error) {
+		console.error('Failed to fetch accepted friends:', error);
+		return [];
+	}
+};
+
 export const enrichConnectionsWithUsernames = async (
 	connections: Record<string, FriendConnection>,
 	currentUserId: string

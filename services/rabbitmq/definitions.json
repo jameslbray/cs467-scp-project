@@ -106,6 +106,13 @@
       "durable": true,
       "auto_delete": false,
       "arguments": {}
+    },
+    {
+      "name": "chat_notifications",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
     }
   ],
   "bindings": [
@@ -120,7 +127,7 @@
     {
       "source": "chat",
       "vhost": "/",
-      "destination": "chat_messages",
+      "destination": "chat_notifications",
       "destination_type": "queue",
       "routing_key": "messages",
       "arguments": {}

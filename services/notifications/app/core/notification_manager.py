@@ -2,25 +2,26 @@
 Notification manager for handling user notification state.
 """
 
-import logging
 import json
-from uuid import UUID
-from uuid import UUID
-from typing import Dict, Any, Optional, List, Union
+import logging
 from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorClient
+from typing import Any, List, Optional
+from uuid import UUID
+
 from bson.objectid import ObjectId
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from services.shared.utils.retry import CircuitBreaker, with_retry
-from .notification_rabbitmq import NotificationRabbitMQClient
+
 from ..db.models import (
+    DeliveryType,
     NotificationDB,
-    NotificationDB,
-    NotificationType,
-    NotificationResponse,
     NotificationRequest,
-    DeliveryType
+    NotificationResponse,
+    NotificationType,
 )
+from .notification_rabbitmq import NotificationRabbitMQClient
+
 # configure logging
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,7 @@ class NotificationManager:
 
         # Initialize circuit breaker
         self.db_cb = CircuitBreaker(
-            "mongodb",
-            failure_threshold=3,
-            reset_timeout=30.0
+            "mongodb", failure_threshold=3, reset_timeout=30.0
         )
 
     async def initialize(self) -> None:
@@ -60,13 +59,19 @@ class NotificationManager:
             return
 
         try:
-            # Register message handlers
-            await self.rabbitmq_client.register_consumers(
-                # self._process_notification,
-                self._process_connection,
-                self._process_chat_notification,
+            # Register message handlers for all notification types
+            await self.rabbitmq_client.register_chat_consumer(
+                self._process_chat_notification
             )
-            logger.info("RabbitMQ client initialized and message handlers registered")
+            await self.rabbitmq_client.register_notification_consumer(
+                self._process_notification
+            )
+            await self.rabbitmq_client.register_connection_consumer(
+                self._process_connection
+            )
+            logger.info(
+                "RabbitMQ client initialized and message handlers registered"
+            )
 
             # Initialize database connection with circuit breaker
             if "mongodb" in self.config:
@@ -75,7 +80,7 @@ class NotificationManager:
                     max_attempts=5,
                     initial_delay=5.0,
                     max_delay=60.0,
-                    circuit_breaker=self.db_cb
+                    circuit_breaker=self.db_cb,
                 )
 
             self._initialized = True
@@ -126,9 +131,9 @@ class NotificationManager:
             collections = await db.list_collection_names()
 
             # Create notifications collection if it doesn't exist
-            if 'notifications' not in collections:
+            if "notifications" not in collections:
                 logger.info("Creating notifications collection")
-                await db.create_collection('notifications')
+                await db.create_collection("notifications")
 
             else:
                 logger.info("Notifications collection already exists")
@@ -138,7 +143,9 @@ class NotificationManager:
 
             if count == 0:
                 # Only create test notification if collection is empty
-                logger.info("No notifications found, creating test notification")
+                logger.info(
+                    "No notifications found, creating test notification"
+                )
                 test_notification = NotificationRequest(
                     recipient_id="550e8400-e29b-41d4-a716-446655440000",
                     sender_id="6ba7b810-9dad-11d1-80b4-00c04fd430c8",
@@ -150,17 +157,24 @@ class NotificationManager:
                 )
                 # Convert to database model and save to MongoDB
                 db_notification = test_notification.to_db_model()
-                result = await db.notifications.insert_one(db_notification.to_mongo_dict())
+                result = await db.notifications.insert_one(
+                    db_notification.to_mongo_dict()
+                )
 
                 # Verify the document was inserted
-                doc = await db.notifications.find_one({"recipient_id": "550e8400-e29b-41d4-a716-446655440000"})
+                doc = await db.notifications.find_one(
+                    {"recipient_id": "550e8400-e29b-41d4-a716-446655440000"}
+                )
                 if doc:
-                    logger.info(f"Test notification inserted with ID: {result.inserted_id}")
+                    logger.info(
+                        f"Test notification inserted with ID: {result.inserted_id}"
+                    )
                 else:
                     logger.warning("Failed to insert test notification")
             else:
-                logger.info(f"Skipping test notification creation, database already contains {count} notifications")
-
+                logger.info(
+                    f"Skipping test notification creation, database already contains {count} notifications"
+                )
 
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
@@ -168,13 +182,15 @@ class NotificationManager:
 
     async def check_connection_health(self):
         try:
-            await self.mongo_client.admin.command('ping')
+            await self.mongo_client.admin.command("ping")
             return True
         except Exception:
             logger.error("MongoDB connection failed")
             return False
 
-    async def get_user_notifications(self, user_id: str) -> List[NotificationResponse]:
+    async def get_user_notifications(
+        self, user_id: str
+    ) -> List[NotificationResponse]:
         """Get user's notifications."""
         # Default values
         empty_notifications: List[NotificationResponse] = []
@@ -186,7 +202,9 @@ class NotificationManager:
 
         return empty_notifications
 
-    async def _get_user_notifications(self, user_id: str) -> list[NotificationResponse] | None:
+    async def _get_user_notifications(
+        self, user_id: str
+    ) -> list[NotificationResponse] | None:
         """Get user notifications from database."""
         if not self.mongo_client:
             logger.warning("MongoDB not available")
@@ -196,7 +214,9 @@ class NotificationManager:
             if isinstance(user_id, UUID):
                 user_id = str(user_id)
 
-            logger.debug(f"Searching for notifications with recipient_id: {user_id}")
+            logger.debug(
+                f"Searching for notifications with recipient_id: {user_id}"
+            )
 
             # Get the database
             db_name = self.config["mongodb"].get("database", "notifications")
@@ -208,8 +228,12 @@ class NotificationManager:
             # Query for user notifications
             query = {"recipient_id": user_id}
             cursor = db.notifications.find(query)
-            documents = await cursor.to_list(length=None)  # Fetch all documents into a list
-            logger.debug(f"Found {len(documents)} notifications for user {user_id}")
+            documents = await cursor.to_list(
+                length=None
+            )  # Fetch all documents into a list
+            logger.debug(
+                f"Found {len(documents)} notifications for user {user_id}"
+            )
 
             # Process each document into response objects
             notifications = []
@@ -223,11 +247,13 @@ class NotificationManager:
                     notifications.append(api_notification)
                 except Exception as doc_error:
                     # Log error but continue processing other documents
-                    logger.error(f"Error processing notification document: {doc_error}")
+                    logger.error(
+                        f"Error processing notification document: {doc_error}"
+                    )
 
             return notifications
 
-        except ValueError as e:
+        except ValueError:
             logger.error(f"Invalid UUID format for user_id: {user_id}")
             return None
         except Exception as e:
@@ -235,8 +261,7 @@ class NotificationManager:
             return None
 
     async def create_notification(
-        self,
-        notification: NotificationRequest
+        self, notification: NotificationRequest
     ) -> None:
         """Create a new notification."""
         if not self.mongo_client:
@@ -257,15 +282,13 @@ class NotificationManager:
 
             # Log with the actual ObjectId from MongoDB
             logger.info(f"Notification inserted with ID: {result.inserted_id}")
-            
+
             # Add the ObjectId to the notification for consistency
             from_db = NotificationDB.from_mongo_doc(mongo_dict)
             from_db.id = result.inserted_id
-            
+
             # Publish to RabbitMQ
-            await self.rabbitmq_client.publish_notification(
-                from_db.to_dict()
-            )
+            await self.rabbitmq_client.publish_notification(from_db.to_dict())
 
             logger.info(f"Published notification to RabbitMQ: {notification}")
 
@@ -277,9 +300,7 @@ class NotificationManager:
             return
 
     async def mark_notification_as_read(
-        self,
-        notification_id: str,
-        user_id: str
+        self, notification_id: str, user_id: str
     ) -> bool:
         """Mark a notification as read.
 
@@ -302,13 +323,15 @@ class NotificationManager:
             try:
                 object_id = ObjectId(notification_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId format: {notification_id}, error: {e}")
+                logger.error(
+                    f"Invalid ObjectId format: {notification_id}, error: {e}"
+                )
                 return False
 
             # Create query with both notification_id and user_id for security
             query = {
                 "_id": object_id,  # Use ObjectId, not string
-                "recipient_id": user_id
+                "recipient_id": user_id,
             }
 
             # Update document to mark as read
@@ -323,15 +346,21 @@ class NotificationManager:
 
             # Check if update was successful
             if result.modified_count == 1:
-                logger.info(f"Notification {notification_id} marked as read for user {user_id}")
+                logger.info(
+                    f"Notification {notification_id} marked as read for user {user_id}"
+                )
                 return True
             else:
                 # Check if document exists but wasn't modified (already read)
                 doc = await db.notifications.find_one({"_id": object_id})
                 if doc:
-                    logger.info(f"Notification {notification_id} exists but is already read")
+                    logger.info(
+                        f"Notification {notification_id} exists but is already read"
+                    )
                     return True
-                logger.warning(f"Notification {notification_id} not found for user {user_id}")
+                logger.warning(
+                    f"Notification {notification_id} not found for user {user_id}"
+                )
                 return False
 
         except Exception as e:
@@ -339,54 +368,56 @@ class NotificationManager:
             return False
 
     async def mark_all_notifications_as_read(self, user_id: str) -> bool:
-            """Mark all of a user's notification as read.
+        """Mark all of a user's notification as read.
 
-            Args:
-                user_id: The user ID who owns the notification
+        Args:
+            user_id: The user ID who owns the notification
 
-            Returns:
-                bool: True if update was successful, False otherwise
-            """
-            if not self.mongo_client:
-                logger.warning("MongoDB not available")
-                return False
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        if not self.mongo_client:
+            logger.warning("MongoDB not available")
+            return False
 
-            try:
-                # Get database
-                db_name = self.config["mongodb"].get("database", "notifications")
-                db = self.mongo_client[db_name]
+        try:
+            # Get database
+            db_name = self.config["mongodb"].get("database", "notifications")
+            db = self.mongo_client[db_name]
 
-                # Create query with both notification_id and user_id for security
-                query = {
-                    "recipient_id": user_id
+            # Create query with both notification_id and user_id for security
+            query = {"recipient_id": user_id}
+
+            # Update document to mark as read
+            update = {
+                "$set": {
+                    "read": True,
                 }
+            }
 
-                # Update document to mark as read
-                update = {
-                    "$set": {
-                        "read": True,
-                    }
-                }
+            # Update the document directly
+            result = await db.notifications.update_many(query, update)
 
-                # Update the document directly
-                result = await db.notifications.update_many(query, update)
-
-                # Check if update was successful
-                if result.modified_count > 0:
-                    logger.info(f"All notifications marked as read for user {user_id}")
+            # Check if update was successful
+            if result.modified_count > 0:
+                logger.info(
+                    f"All notifications marked as read for user {user_id}"
+                )
+                return True
+            else:
+                # Check if document exists but wasn't modified (already read)
+                doc = await db.notifications.find_one(
+                    {"recipient_id": user_id}
+                )
+                if doc:
+                    logger.info("Notifications exists but are already read")
                     return True
-                else:
-                    # Check if document exists but wasn't modified (already read)
-                    doc = await db.notifications.find_one({"recipient_id": user_id})
-                    if doc:
-                        logger.info(f"Notifications exists but are already read")
-                        return True
-                    logger.warning(f"Notification not found for user {user_id}")
-                    return False
-
-            except Exception as e:
-                logger.error(f"Failed to mark notification as read: {e}")
+                logger.warning(f"Notification not found for user {user_id}")
                 return False
+
+        except Exception as e:
+            logger.error(f"Failed to mark notification as read: {e}")
+            return False
 
     async def delete_read_notifications(self, user_id: str) -> int:
         """Delete all read notifications for a user.
@@ -398,11 +429,12 @@ class NotificationManager:
             return 0
 
         try:
-            db = self.mongo_client[self.config["mongodb"].get("database", "notifications")]
-            result = await db.notifications.delete_many({
-                "recipient_id": user_id,
-                "read": True
-            })
+            db = self.mongo_client[
+                self.config["mongodb"].get("database", "notifications")
+            ]
+            result = await db.notifications.delete_many(
+                {"recipient_id": user_id, "read": True}
+            )
             return result.deleted_count
         except Exception as e:
             logger.error(f"Failed to delete read notifications: {e}")
@@ -417,10 +449,7 @@ class NotificationManager:
     ) -> bool:
         """Publish a friend request notification event to RabbitMQ."""
         return await self.rabbitmq_client.publish_friend_request(
-            recipient_id,
-            sender_id,
-            connection_id,
-            sender_name
+            recipient_id, sender_id, connection_id, sender_name
         )
 
     async def create_friend_request_notification(
@@ -443,7 +472,9 @@ class NotificationManager:
             )
 
             await self.create_notification(notification_request)
-            logger.info(f"Created friend request notification for recipient {recipient_id}")
+            logger.info(
+                f"Created friend request notification for recipient {recipient_id}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to create friend request notification: {e}")
@@ -459,21 +490,27 @@ class NotificationManager:
                 await message.ack()
                 logger.info("Ignoring notification from own service")
                 return
-            
+
             logger.info(f"Received general notification: {body}")
 
             # Extract notification fields
             recipient_id = body.get("recipient_id")
             sender_id = body.get("sender_id")
             reference_id = body.get("reference_id", "")
-            content_preview = body.get("content_preview", "New message received")
+            content_preview = body.get(
+                "content_preview", "New message received"
+            )
             notification_type = body.get("notification_type", "system")
             timestamp = body.get("timestamp", datetime.now().isoformat())
 
             # Validate required fields
             if not recipient_id:
-                logger.error(f"Missing required recipient_ids in notification: {body}")
-                await message.nack(requeue=False)  # Don't requeue malformed messages
+                logger.error(
+                    f"Missing required recipient_ids in notification: {body}"
+                )
+                await message.nack(
+                    requeue=False
+                )  # Don't requeue malformed messages
                 return
 
             # Create notification for all specified recipients
@@ -490,7 +527,9 @@ class NotificationManager:
             await self.create_notification(notification_request)
         except Exception as inner_e:
             # Log error but continue with other recipients
-            logger.error(f"Failed to create notification for recipient {recipient_id}: {inner_e}")
+            logger.error(
+                f"Failed to create notification for recipient {recipient_id}: {inner_e}"
+            )
 
             logger.info(f"Created {recipient_id} notification")
             await message.ack()
@@ -503,12 +542,14 @@ class NotificationManager:
             logger.error(f"Error processing general notification: {e}")
             # Implement retry logic with headers
             headers = message.headers or {}
-            retry_count = headers.get('x-retry-count', 0)
+            retry_count = headers.get("x-retry-count", 0)
             if retry_count < 3:  # Maximum 3 retries
-                headers['x-retry-count'] = retry_count + 1
+                headers["x-retry-count"] = retry_count + 1
                 await message.nack(requeue=True, headers=headers)
             else:
-                logger.warning(f"General notification failed after {retry_count} retries, not requeuing")
+                logger.warning(
+                    f"General notification failed after {retry_count} retries, not requeuing"
+                )
                 await message.nack(requeue=False)
 
     async def _process_user_notification(self, message) -> None:
@@ -528,8 +569,12 @@ class NotificationManager:
 
             # Validate required fields
             if not recipient_id:
-                logger.error(f"Missing required recipient_id in user notification: {body}")
-                await message.nack(requeue=False)  # Don't requeue malformed messages
+                logger.error(
+                    f"Missing required recipient_id in user notification: {body}"
+                )
+                await message.nack(
+                    requeue=False
+                )  # Don't requeue malformed messages
                 return
 
             # Create notification for the user
@@ -545,7 +590,9 @@ class NotificationManager:
             )
 
             await self.create_notification(notification_request)
-            logger.info(f"Created user notification for recipient {recipient_id}")
+            logger.info(
+                f"Created user notification for recipient {recipient_id}"
+            )
             await message.ack()
 
         except json.JSONDecodeError as e:
@@ -556,12 +603,14 @@ class NotificationManager:
             logger.error(f"Error processing user notification: {e}")
             # Implement retry logic with headers
             headers = message.headers or {}
-            retry_count = headers.get('x-retry-count', 0)
+            retry_count = headers.get("x-retry-count", 0)
             if retry_count < 3:  # Maximum 3 retries
-                headers['x-retry-count'] = retry_count + 1
+                headers["x-retry-count"] = retry_count + 1
                 await message.nack(requeue=True, headers=headers)
             else:
-                logger.warning(f"User notification failed after {retry_count} retries, not requeuing")
+                logger.warning(
+                    f"User notification failed after {retry_count} retries, not requeuing"
+                )
                 await message.nack(requeue=False)
 
     async def _process_connection(self, message) -> None:
@@ -579,8 +628,12 @@ class NotificationManager:
 
             # Validate required fields
             if not recipient_id or not sender_id:
-                logger.error(f"Missing required fields in connection notification: {body}")
-                await message.nack(requeue=False)  # Don't requeue malformed messages
+                logger.error(
+                    f"Missing required fields in connection notification: {body}"
+                )
+                await message.nack(
+                    requeue=False
+                )  # Don't requeue malformed messages
                 return
 
             # Handle different connection event types
@@ -592,14 +645,18 @@ class NotificationManager:
                     recipient_id=recipient_id,
                     sender_id=sender_id,
                     reference_id=reference_id,
-                    content_preview=body.get("content_preview", "You received a new friend request"),
+                    content_preview=body.get(
+                        "content_preview", "You received a new friend request"
+                    ),
                     notification_type=NotificationType.FRIEND_REQUEST,
                     timestamp=timestamp,
                     status=DeliveryType.UNDELIVERED,
                     error=None,
                 )
                 await self.create_notification(notification_request)
-                logger.info(f"Created friend request notification for {recipient_id} from {sender_id}")
+                logger.info(
+                    f"Created friend request notification for {recipient_id} from {sender_id}"
+                )
 
             elif event_type == "friend_accepted":
                 # Create a notification for an accepted friend request
@@ -607,18 +664,24 @@ class NotificationManager:
                     recipient_id=recipient_id,
                     sender_id=sender_id,
                     reference_id=reference_id,
-                    content_preview=body.get("content_preview", "Your friend request was accepted"),
+                    content_preview=body.get(
+                        "content_preview", "Your friend request was accepted"
+                    ),
                     notification_type=NotificationType.FRIEND_ACCEPTED,
                     timestamp=timestamp,
                     status=DeliveryType.UNDELIVERED,
                     error=None,
                 )
                 await self.create_notification(notification_request)
-                logger.info(f"Created friend acceptance notification for {recipient_id} from {sender_id}")
+                logger.info(
+                    f"Created friend acceptance notification for {recipient_id} from {sender_id}"
+                )
 
             elif event_type == "friend_removed":
                 # Handle friend removal, typically no notification needed
-                logger.debug(f"Received friend removal event - no notification created")
+                logger.debug(
+                    "Received friend removal event - no notification created"
+                )
 
             else:
                 # Log unknown event types but acknowledge the message
@@ -636,14 +699,16 @@ class NotificationManager:
             # Requeue the message for retry unless it's been retried too many times
             # You might want to check message headers for retry count
             headers = message.headers or {}
-            retry_count = headers.get('x-retry-count', 0)
+            retry_count = headers.get("x-retry-count", 0)
             if retry_count < 3:  # Maximum 3 retries
                 # Add retry count to headers
-                headers['x-retry-count'] = retry_count + 1
+                headers["x-retry-count"] = retry_count + 1
                 await message.nack(requeue=True, headers=headers)
             else:
                 # Too many retries, don't requeue
-                logger.warning(f"Message failed after {retry_count} retries, not requeuing")
+                logger.warning(
+                    f"Message failed after {retry_count} retries, not requeuing"
+                )
                 await message.nack(requeue=False)
 
     async def _process_chat_notification(self, message) -> None:
@@ -657,13 +722,19 @@ class NotificationManager:
             recipient_ids = body.get("recipient_ids")
             sender_id = body.get("sender_id")
             room_id = body.get("room_id", "")
-            content_preview = body.get("content_preview", "You've been added to a new chat")
+            content_preview = body.get(
+                "content_preview", "You've been added to a new chat"
+            )
             timestamp = body.get("timestamp", datetime.now().isoformat())
 
             # Validate required fields
             if not recipient_ids or not sender_id:
-                logger.error(f"Missing required fields in message notification: {body}")
-                await message.nack(requeue=False)  # Don't requeue malformed messages
+                logger.error(
+                    f"Missing required fields in message notification: {body}"
+                )
+                await message.nack(
+                    requeue=False
+                )  # Don't requeue malformed messages
                 return
 
             # Truncate content preview if too long
@@ -686,9 +757,9 @@ class NotificationManager:
                 )
                 await self.create_notification(notification_request)
                 logger.info(
-                        f"Created message notification for recipient "
-                        f"{recipient_id} from {sender_id}"
-                    )
+                    f"Created message notification for recipient "
+                    f"{recipient_id} from {sender_id}"
+                )
             await message.ack()
 
         except json.JSONDecodeError as e:
@@ -699,10 +770,12 @@ class NotificationManager:
             logger.error(f"Error processing message notification: {e}")
             # Implement retry logic with headers
             headers = message.headers or {}
-            retry_count = headers.get('x-retry-count', 0)
+            retry_count = headers.get("x-retry-count", 0)
             if retry_count < 3:  # Maximum 3 retries
-                headers['x-retry-count'] = retry_count + 1
+                headers["x-retry-count"] = retry_count + 1
                 await message.nack(requeue=True, headers=headers)
             else:
-                logger.warning(f"Message notification failed after {retry_count} retries, not requeuing")
+                logger.warning(
+                    f"Message notification failed after {retry_count} retries, not requeuing"
+                )
                 await message.nack(requeue=False)

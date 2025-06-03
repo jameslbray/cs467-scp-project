@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ChatList from '../components/ChatList';
 import LoadingSpinner from '../components/LoadingSpinner';
 import RoomList from '../components/RoomList';

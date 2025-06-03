@@ -17,6 +17,7 @@ class ChatRabbitMQClient:
         self.exchange_name = "chat"
         self.message_queue = "chat_messages"
         self.notification_queue = "chat_notifications"
+        
         self.user_events_exchange = "user"
         self.user_events_queue = "user"
         self.user_add_to_room_routing_key = "user.add_to_room"
@@ -137,7 +138,7 @@ class ChatRabbitMQClient:
                     )
                     await message.ack()
                     return
-                
+
                 # Handle room RPC requests: get_room_data
                 if routing_key == "get_room_data":
                     room_id = body.get("room_id")
@@ -147,7 +148,7 @@ class ChatRabbitMQClient:
                         response = room_data.model_dump(by_alias=True)
                     else:
                         response = {"error": "Room not found"}
-                    
+
                     # Custom JSON serializer for datetime objects
                     def json_serializer(obj):
                         if isinstance(obj, datetime):
@@ -155,7 +156,7 @@ class ChatRabbitMQClient:
                         if isinstance(obj, uuid.UUID):
                             return str(obj)
                         raise TypeError(f"Type {type(obj)} not serializable")
-                        
+
                     await self.client.publish_message(
                         exchange="",
                         routing_key=message.reply_to,
