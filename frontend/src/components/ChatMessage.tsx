@@ -15,8 +15,11 @@ interface ChatMessageProps {
 	};
 }
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isCurrentUser = false, author }) => {
-	const timeAgo = !Number.isNaN(new Date(message.created_at).getTime())
-		? formatDistanceToNow(new Date(message.created_at), {
+	const messageDate = message.local_time
+		? new Date(message.local_time)
+		: new Date(message.created_at);
+	const timeAgo = !Number.isNaN(messageDate.getTime())
+		? formatDistanceToNow(messageDate, {
 				addSuffix: true,
 		  })
 		: 'Invalid date';

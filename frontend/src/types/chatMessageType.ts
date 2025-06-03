@@ -12,4 +12,6 @@ export interface ChatMessageType {
 		username: string;
 		profilePicture?: string;
 	};
+	local_time?: string; // ISO string in sender's local time
+	timezone_offset?: number; // Minutes offset from UTC (e.g., -420 for PDT)
 }
