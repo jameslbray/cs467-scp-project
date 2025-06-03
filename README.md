@@ -81,6 +81,8 @@ All backend services are implemented with FastAPI and communicate via HTTP, WebS
    cp .env.example .env
    ```
 
+   - Fill in the values for the environment variables with your own values.
+
 3. **Install Node Modules:**
 
    ```bash
