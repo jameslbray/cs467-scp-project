@@ -1,10 +1,9 @@
 """
 RabbitMQ client for connection service.
 """
-import json
+
 import logging
 from typing import Any, Callable, Dict, Optional
-from datetime import datetime
 
 from services.rabbitmq.core.client import RabbitMQClient as BaseRabbitMQClient
 from services.shared.utils.retry import CircuitBreaker, with_retry
@@ -19,12 +18,10 @@ class ConnectionsRabbitMQClient:
         """Initialize the RabbitMQ client."""
         self.config = config or {}
         self.rabbitmq = BaseRabbitMQClient()
-        
+
         # Initialize circuit breaker
         self.circuit_breaker = CircuitBreaker(
-            "rabbitmq",
-            failure_threshold=3,
-            reset_timeout=30.0
+            "rabbitmq", failure_threshold=3, reset_timeout=30.0
         )
         self._initialized = False
 
@@ -41,9 +38,9 @@ class ConnectionsRabbitMQClient:
                 max_attempts=5,
                 initial_delay=5.0,
                 max_delay=60.0,
-                circuit_breaker=self.circuit_breaker
+                circuit_breaker=self.circuit_breaker,
             )
-            
+
             self._initialized = True
             logger.info("Connection RabbitMQ client initialized successfully")
             return True
@@ -75,50 +72,42 @@ class ConnectionsRabbitMQClient:
             await self.rabbitmq.declare_exchange("notifications", "topic")
 
             # Declare queue for connection events
-            await self.rabbitmq.declare_queue(
-                "connections",
-                durable=True
-            )
-            
+            await self.rabbitmq.declare_queue("connections", durable=True)
+
             # Declare queue for connection notifications
-            await self.rabbitmq.declare_queue(
-                "notifications",
-                durable=True
-            )
+            await self.rabbitmq.declare_queue("notifications", durable=True)
 
             # Bind queues to exchanges with appropriate routing keys
             await self.rabbitmq.bind_queue(
                 "connections",
                 "connections",
-                "user.#"  # All connection update events
+                "user.#",  # All connection update events
             )
-            
+
             await self.rabbitmq.bind_queue(
                 "notifications",
                 "notifications",
-                "user.#"  # All connection notifications
+                "user.#",  # All connection notifications
             )
-            
+
             logger.info("Connected to RabbitMQ for connection events")
         except Exception as e:
             logger.error(f"Failed to connect to RabbitMQ: {e}")
             raise
 
     async def register_consumers(
-        self, 
-        connection_update_handler: Callable
+        self, connection_update_handler: Callable
     ) -> None:
         """Register consumer handlers for different queues."""
         try:
             if not self._initialized:
                 await self.initialize()
-                
+
             # Start consuming messages with provided handlers
             await self.rabbitmq.consume(
-                "connections",
-                connection_update_handler
+                "connections", connection_update_handler
             )
-            
+
             logger.info("Consumer handlers registered successfully")
         except Exception as e:
             logger.error(f"Failed to register consumer handlers: {e}")
@@ -134,30 +123,31 @@ class ConnectionsRabbitMQClient:
         try:
             if not self._initialized:
                 await self.initialize()
-            
+
             if routing_key is None:
                 routing_key = "user.friend_request"
             # if reply_to is None:
             #     reply_to = "connection_notifications"
-            
+
             if reply_to is not None:
                 await self.rabbitmq.publish_message(
                     exchange="",
                     routing_key=reply_to,
                     message=message,
+                    reply_to=reply_to,
                 )
             else:
                 await self.rabbitmq.publish_message(
                     exchange="connections",
                     routing_key=routing_key,
-                    message=message
+                    message=message,
                 )
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to publish friend request notification: {e}")
             return False
-            
+
     async def publish_friend_accepted(
         self,
         exchange: str,
@@ -170,15 +160,15 @@ class ConnectionsRabbitMQClient:
                 await self.initialize()
 
             await self.rabbitmq.publish_message(
-                exchange=exchange,
-                routing_key=routing_key,
-                message=message
+                exchange=exchange, routing_key=routing_key, message=message
             )
-            
-            logger.info(f"Published friend acceptance notification")
+
+            logger.info("Published friend acceptance notification")
             return True
         except Exception as e:
-            logger.error(f"Failed to publish friend acceptance notification: {e}")
+            logger.error(
+                f"Failed to publish friend acceptance notification: {e}"
+            )
             return False
 
     async def is_connected(self) -> bool:
@@ -186,26 +176,24 @@ class ConnectionsRabbitMQClient:
         return self._initialized and self.rabbitmq.is_connected()
 
     async def publish_friends_list(
-        self,
-        message: str,
-        routing_key: str,
-        correlation_id: str
+        self, message: str, reply_to: str, correlation_id: Optional[str] = None
     ) -> bool:
-        """Publish a friend list event."""
-        logger.info("Publishing friend list")
-        logger.info(f"Message content: {message}")
-        logger.info(f"Reply to: {routing_key}, Correlation ID: {correlation_id}")
+        logger.info(
+            f"[CONNECTIONS] publish_friends_list: reply_to={reply_to}, correlation_id={correlation_id}, message={message}"
+        )
         try:
             if not self._initialized:
                 await self.initialize()
-            
-            await self.rabbitmq.publish_message(
-                exchange="",
-                routing_key=routing_key,
-                message=message,
-                correlation_id=correlation_id
-            )
 
+            await self.rabbitmq.publish_message(
+                exchange="",  # Default exchange for direct-to-queue
+                routing_key=reply_to,  # Send to the callback queue
+                message=message,
+                correlation_id=correlation_id,
+            )
+            logger.info(
+                f"[CONNECTIONS] Response published to reply_to={reply_to} with correlation_id={correlation_id}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to publish friend list: {e}")

@@ -1,5 +1,6 @@
 services:
   db_init:
+    container_name: db_init
     build:
       context: .
       dockerfile: services/db_init/Dockerfile
@@ -26,6 +27,7 @@ services:
 
   postgres_db:
     image: postgres:17-alpine
+    container_name: postgres_db
     restart: unless-stopped
     env_file:
       - .env
@@ -57,6 +59,7 @@ services:
   mongo_db:
     image: mongo:latest
     restart: unless-stopped
+    container_name: mongo_db
     ports:
       - '27017:27017'
     environment:
@@ -74,6 +77,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq
     ports:
       - '5672:5672'
       - '15672:15672'
@@ -96,6 +100,7 @@ services:
       retries: 3
 
   socket_io:
+    container_name: socket_io
     build:
       context: .
       dockerfile: services/socket_io/Dockerfile
@@ -111,6 +116,7 @@ services:
         condition: service_healthy
 
   users:
+    container_name: users
     build:
       context: .
       dockerfile: services/users/Dockerfile
@@ -136,6 +142,7 @@ services:
     stdin_open: true
 
   notifications:
+    container_name: notifications
     build:
       context: .
       dockerfile: services/notifications/Dockerfile
@@ -162,6 +169,7 @@ services:
         condition: service_healthy
 
   presence:
+    container_name: presence
     build:
       context: .
       dockerfile: services/presence/Dockerfile
@@ -186,6 +194,7 @@ services:
         condition: service_completed_successfully
 
   chat:
+    container_name: chat
     build:
       context: .
       dockerfile: services/chat/Dockerfile
@@ -209,6 +218,7 @@ services:
         condition: service_healthy
 
   frontend:
+    container_name: frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -227,6 +237,7 @@ services:
     build:
       context: .
       dockerfile: services/connections/Dockerfile
+    container_name: connections
     ports:
       - '${CONNECTIONS_PORT}:8005'
     env_file:
@@ -248,6 +259,19 @@ services:
         condition: service_completed_successfully
       postgres_db:
         condition: service_healthy
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - '8081:8080'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_NO_ANALYTICS: true
+      DOZZLE_LEVEL: info
+      DOZZLE_TAILSIZE: 300
 
 volumes:
   postgres_data:

@@ -12,7 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.routers import router
 from .core.config import get_settings
 from .core.connection_manager import ConnectionManager
-from .core.connections_rabbitmq import ConnectionsRabbitMQClient as RabbitMQClient
+from .core.connections_rabbitmq import (
+    ConnectionsRabbitMQClient as RabbitMQClient,
+)
 
 settings = get_settings()
 
@@ -48,10 +50,8 @@ connection_manager = ConnectionManager(
             "database": settings.POSTGRES_DB,
         },
     },
-    rabbitmq_client=rabbitmq_client
+    rabbitmq_client=rabbitmq_client,
 )
-
-# Define the lifespan handler
 
 
 @asynccontextmanager

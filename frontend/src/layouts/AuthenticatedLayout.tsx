@@ -70,4 +70,5 @@ const AuthenticatedLayout: React.FC = () => {
 	);
 };
 
+
 export default AuthenticatedLayout;

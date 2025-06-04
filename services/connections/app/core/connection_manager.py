@@ -9,6 +9,7 @@ from typing import Any, List, Optional
 
 import asyncpg  # type: ignore
 from pydantic.json import pydantic_encoder
+
 from services.shared.utils.retry import CircuitBreaker, with_retry
 
 # from ..db.models import Connection
@@ -431,6 +432,7 @@ class ConnectionManager:
                     "notification_type": notification_type,
                     "content_preview": content_preview,
                     "timestamp": datetime.now().isoformat(),
+                    "read": False,
                 }
             )
 
@@ -439,13 +441,13 @@ class ConnectionManager:
                 await self.rabbitmq.publish_friend_request(  # Use specific method for requests
                     message=message,
                     routing_key=routing_key,
-                    reply_to=reply_to or "connection_notifications",
+                    reply_to=reply_to or "notifications",
                 )
             else:  # For friend_accepted and other types
                 await self.rabbitmq.publish_friend_accepted(
                     exchange="",
                     message=message,
-                    routing_key=reply_to or "connection_notifications",
+                    routing_key=reply_to or "notifications",
                 )
 
             logger.info(
@@ -457,22 +459,29 @@ class ConnectionManager:
             return False
 
     async def _process_connection_message(self, message) -> None:
-        """Process a connection update message from RabbitMQ."""
+        logger.info(f"[CONSUMER] Received message: {message!r}")
         try:
+            logger.info(f"[CONSUMER] Message body: {message.body!r}")
+            logger.info(
+                f"[CONSUMER] Message properties: correlation_id={message.correlation_id}, reply_to={message.reply_to}"
+            )
             body = json.loads(message.body.decode())
 
             if "source" in body and body["source"] == "connections":
-                logger.warning("Invalid message source, ignoring")
+                logger.warning("[CONSUMER] Invalid message source, ignoring")
                 await message.ack()
+                logger.info("[CONSUMER] Message acked (invalid source)")
                 return
 
-            logger.info(f"Processing connection message: {body}")
+            logger.info(f"[CONSUMER] Processing connection message: {body}")
 
             if "event_type" not in body:
-                logger.error("Missing event_type in message")
+                logger.error("[CONSUMER] Missing event_type in message")
                 await message.nack(requeue=False)
+                logger.info("[CONSUMER] Message nacked (missing event_type)")
                 return
             event_type = body["event_type"]
+            logger.info(f"[CONSUMER] Event type: {event_type}")
 
             if event_type == "connections:friend_request":
                 recipient_id = body.get("recipient_id")
@@ -510,7 +519,10 @@ class ConnectionManager:
                     notification_type="friend_request",
                     content_preview=content_preview,
                 )
-            elif event_type == "connections:friend_accepted":
+                logger.info(
+                    "[CONSUMER] Finished processing friend_request event"
+                )
+            elif event_type == "connection:friend_accepted":
                 recipient_id = body.get("recipient_id")
                 sender_id = body.get("sender_id")
                 reference_id = body.get("reference_id")
@@ -547,39 +559,44 @@ class ConnectionManager:
                     notification_type="friend_accepted",
                     content_preview=content_preview,
                 )
+                logger.info(
+                    "[CONSUMER] Finished processing friend_accepted event"
+                )
             elif event_type == "connections:get_friends":
                 user_id = body.get("user_id")
+                logger.info(f"[CONSUMER] get_friends for user_id: {user_id}")
 
                 if not user_id:
-                    logger.error("Missing user_id for get_friends event")
+                    logger.error(
+                        "[CONSUMER] Missing user_id for get_friends event"
+                    )
                     await message.nack(requeue=False)
+                    logger.info("[CONSUMER] Message nacked (missing user_id)")
                     return
 
                 # Fetch user's connections
                 connections = await self.get_user_connections(user_id)
+                logger.info(f"[CONSUMER] Connections fetched: {connections}")
                 if connections is None:
                     logger.error(
-                        f"Failed to fetch connections for user {user_id}"
+                        f"[CONSUMER] Failed to fetch connections for user {user_id}"
                     )
                     await message.nack(requeue=False)
+                    logger.info(
+                        "[CONSUMER] Message nacked (failed to fetch connections)"
+                    )
                     return
 
                 # Filter connections to only include accepted friends
                 connections = [
-                    conn for conn in connections if conn.status == ConnectionStatus.ACCEPTED
+                    conn
+                    for conn in connections
+                    if conn.status == ConnectionStatus.ACCEPTED
                 ]
-                
-                def json_serializable(conn: Connection) -> dict:
-                    """Convert Connection to a JSON-serializable dict."""
-                    return {
-                        "id": str(conn.id),
-                        "user_id": str(conn.user_id),
-                        "friend_id": str(conn.friend_id),
-                        "status": conn.status,
-                        "created_at": conn.created_at.isoformat() if conn.created_at else None,
-                        "updated_at": conn.updated_at.isoformat() if conn.updated_at else None,
-                    }
-                
+                logger.info(
+                    f"[CONSUMER] Filtered accepted connections: {connections}"
+                )
+
                 # Publish the connections back to the requester
                 response_message = json.dumps(
                     {
@@ -588,24 +605,29 @@ class ConnectionManager:
                         "user_id": user_id,
                         "friends": connections,
                     },
-                    default=json_serializable
+                    default=pydantic_encoder,
+                )
+                logger.info(f"[CONSUMER] Response message: {response_message}")
+                logger.info(
+                    f"[CONSUMER] Publishing to reply_to={message.reply_to}, correlation_id={message.correlation_id}"
                 )
 
-                logger.info(
-                    f"Publishing friends list for user {user_id}: {connections}"
-                )
                 await self.rabbitmq.publish_friends_list(
-                    routing_key=message.reply_to,
+                    reply_to=message.reply_to,
                     message=response_message,
                     correlation_id=message.correlation_id,
                 )
+                logger.info("[CONSUMER] Finished processing get_friends event")
             else:
-                logger.error(f"Unknown event type: {event_type}")
+                logger.error(f"[CONSUMER] Unknown event type: {event_type}")
                 await message.nack(requeue=False)
+                logger.info("[CONSUMER] Message nacked (unknown event type)")
                 return
 
             await message.ack()
+            logger.info("[CONSUMER] Message acked (success)")
 
         except Exception as e:
-            logger.error(f"Error processing connection update: {e}")
+            logger.error(f"[CONSUMER] Error processing connection update: {e}")
             await message.nack(requeue=False)
+            logger.info("[CONSUMER] Message nacked (exception)")

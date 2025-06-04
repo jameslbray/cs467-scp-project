@@ -7,7 +7,7 @@ import { userApi } from '../services/api';
 import type { User } from '../types';
 import type { ChatMessageType } from '../types/chatMessageType';
 import ChatMessage from './ChatMessage';
-import ChatInput from './LexicalChatInput'
+import ChatInput from './LexicalChatInput';
 
 interface ChatListProps {
 	roomName: string;
@@ -24,7 +24,6 @@ const ChatList: React.FC<ChatListProps> = ({ roomName, roomId }: ChatListProps) 
 	const [messages, setMessages] = useState<ChatMessageType[]>([]);
 	const [userMap, setUserMap] = useState<Record<string, EnrichedUser>>({});
 	const messagesEndRef = useRef<HTMLDivElement>(null);
-
 
 	// Initialize messages from backend fetch
 	useEffect(() => {
@@ -84,10 +83,12 @@ const ChatList: React.FC<ChatListProps> = ({ roomName, roomId }: ChatListProps) 
 	}, [socket, roomId]);
 
 	return (
-		<div className='flex flex-col h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-visible'>
+		<div className='flex flex-col h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden'>
 			{/* Chat Header */}
 			<div className='p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm'>
-				<h2 className='text-lg font-semibold text-gray-800 dark:text-gray-100'>{roomName ? roomName : "General"} Chat</h2>
+				<h2 className='text-lg font-semibold text-gray-800 dark:text-gray-100'>
+					{roomName ? roomName : 'General'} Chat
+				</h2>
 				{/* Connection status indicator */}
 				<div className='flex items-center'>
 					<div
@@ -100,7 +101,7 @@ const ChatList: React.FC<ChatListProps> = ({ roomName, roomId }: ChatListProps) 
 			</div>
 
 			{/* Messages Container */}
-			<div className='flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900'>
+			<div className='flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 rounded-none'>
 				{loading ? (
 					<div className='flex items-center justify-center h-full'>
 						<p className='text-gray-500 dark:text-gray-400'>Loading messages...</p>
@@ -119,17 +120,17 @@ const ChatList: React.FC<ChatListProps> = ({ roomName, roomId }: ChatListProps) 
 							const user = userMap[message.sender_id];
 							const author = user
 								? {
-									id: user.userId,
-									username: user.username || 'Unknown User',
-									...(user.display_name ? { display_name: user.display_name } : {}),
-									...(user.profile_picture_url
-										? { profile_picture_url: user.profile_picture_url }
-										: {}),
-								}
+										id: user.userId,
+										username: user.username || 'Unknown User',
+										...(user.display_name ? { display_name: user.display_name } : {}),
+										...(user.profile_picture_url
+											? { profile_picture_url: user.profile_picture_url }
+											: {}),
+								  }
 								: {
-									id: message.sender_id,
-									username: 'Unknown User',
-								};
+										id: message.sender_id,
+										username: 'Unknown User',
+								  };
 							return (
 								<ChatMessage
 									key={message.id}
@@ -145,8 +146,12 @@ const ChatList: React.FC<ChatListProps> = ({ roomName, roomId }: ChatListProps) 
 			</div>
 
 			{/* Message Input */}
-			<div className='p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700'>
-				<ChatInput roomId={roomId} senderId={currentUserId} />
+			<div className='p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 rounded-b-lg'>
+				<ChatInput
+					roomId={roomId}
+					senderId={currentUserId}
+					onSend={(msg) => setMessages((prev) => [...prev, msg])}
+				/>
 			</div>
 		</div>
 	);

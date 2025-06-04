@@ -81,7 +81,9 @@ function LexicalEditorInner({
 
 	function handleSend() {
 		if (!message.trim()) return;
-		const now = new Date().toISOString();
+		const nowUTC = new Date().toISOString();
+		const nowLocal = new Date();
+		const timezoneOffsetMinutes = nowLocal.getTimezoneOffset(); // in minutes
 		let markdown = '';
 		editor.update(() => {
 			markdown = $convertToMarkdownString(TRANSFORMERS);
@@ -94,8 +96,10 @@ function LexicalEditorInner({
 			sender_id: senderId,
 			room_id: roomId,
 			content: contentWithEmojis,
-			created_at: now,
-			updated_at: now,
+			created_at: nowUTC,
+			updated_at: nowUTC,
+			local_time: nowLocal.toISOString(),
+			timezone_offset: timezoneOffsetMinutes,
 			is_edited: false,
 			has_emoji: /\p{Emoji}/u.test(contentWithEmojis),
 		};
@@ -255,7 +259,7 @@ export default function ChatInput({ roomId, senderId, onSend }: ChatInputProps) 
 						<LexicalEditorInner
 							roomId={roomId}
 							senderId={senderId}
-							onSend={onSend ?? (() => { })}
+							onSend={onSend ?? (() => {})}
 							contentEditableRef={contentEditableRef}
 							socket={socket}
 						/>

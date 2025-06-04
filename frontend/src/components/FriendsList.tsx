@@ -1,12 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
-import { userApi } from '../services/api';
-import { useFriendStatuses } from '../hooks/useFriendStatuses';
-import { FriendConnection } from '../types/friendsTypes';
-import { filterOnlineFriends, getFriendId } from '../utils/friendsUtils';
-import type { User } from '../types/userType';
-import { useSocketEvent } from '../contexts/socket/useSocket';
 import { useSocketContext } from '../contexts/socket/socketContext';
+import { useSocketEvent } from '../contexts/socket/useSocket';
+import { useFriendStatuses } from '../hooks/useFriendStatuses';
+import { userApi } from '../services/api';
+import { FriendConnection } from '../types/friendsTypes';
+import type { User } from '../types/userType';
+import { filterOnlineFriends, getFriendId } from '../utils/friendsUtils';
 
 // interface FriendsListProps {
 // 	friends: Record<string, FriendConnection>;
@@ -24,21 +24,32 @@ const FriendsList: React.FC = () => {
 	const { socket } = useSocketContext();
 
 	// Listen for friend acceptance events
-	useSocketEvent("connection:friend_accepted", (_data) => {
+	useSocketEvent('connection:friend_accepted', () => {
 		// Refresh the friends list
 		fetchFriendsList();
 	});
 
+	// Listen for notification events
+	useSocketEvent('notification:new', (notification: { notification_type: string }) => {
+		// If it's a friend-related notification, refresh friends list
+		if (
+			notification.notification_type === 'friend_request' ||
+			notification.notification_type === 'friend_accepted'
+		) {
+			fetchFriendsList();
+		}
+	});
+
 	// Function to fetch friends
-	const fetchFriendsList = async () => {
+	const fetchFriendsList = useCallback(async () => {
 		if (!socket || !user?.id) return;
 
 		// Request updated friends list
 		socket.emit('connections:get_friends', { user_id: user.id });
-	};
+	}, [socket, user?.id]);
 
 	// Listen for the response with updated friends
-	useSocketEvent("connections:get_friends:success", (data) => {
+	useSocketEvent('connections:get_friends:success', (data) => {
 		if (data && Array.isArray(data)) {
 			// Create a map using the friendId (not user_id) as key
 			const friendsRecord: Record<string, FriendConnection> = {};
@@ -59,13 +70,13 @@ const FriendsList: React.FC = () => {
 	});
 
 	// Listen for any errors when fetching friends
-	useSocketEvent("connections:get_friends:error", (error) => {
+	useSocketEvent('connections:get_friends:error', (error) => {
 		console.error('Error fetching friends:', error);
 
 		// Retry after a short delay
 		setTimeout(() => {
 			if (socket && user?.id) {
-				console.log("Retrying friends list fetch...");
+				console.log('Retrying friends list fetch...');
 				socket.emit('connections:get_friends', { user_id: user.id });
 			}
 		}, 1000);
@@ -83,7 +94,7 @@ const FriendsList: React.FC = () => {
 				newUserMap[user.id] = user;
 			});
 
-			setUserMap(prev => ({ ...prev, ...newUserMap }));
+			setUserMap((prev) => ({ ...prev, ...newUserMap }));
 		} catch (error) {
 			console.error('Failed to fetch user details:', error);
 		}
@@ -91,9 +102,9 @@ const FriendsList: React.FC = () => {
 	// Helper function to get display name from user ID
 	const getUserDisplayName = (userId: string) => {
 		if (userMap[userId]) {
-			return userMap[userId].username ||
-				userMap[userId].display_name ||
-				userId.substring(0, 8) + '...';
+			return (
+				userMap[userId].username || userMap[userId].display_name || userId.substring(0, 8) + '...'
+			);
 		}
 		return userId.substring(0, 8) + '...';
 	};
@@ -102,18 +113,16 @@ const FriendsList: React.FC = () => {
 	useEffect(() => {
 		if (friends && Object.keys(friends).length > 0 && user?.id) {
 			// Convert from Record to array of friend IDs
-			const friendIds = Object.values(friends).map(friend =>
-				getFriendId(friend, user.id)
-			);
+			const friendIds = Object.values(friends).map((friend) => getFriendId(friend, user.id));
 
 			// Filter out IDs we already have
-			const idsToFetch = friendIds.filter(id => !userMap[id]);
+			const idsToFetch = friendIds.filter((id) => !userMap[id]);
 
 			if (idsToFetch.length > 0) {
 				fetchUserData(idsToFetch);
 			}
 		}
-	}, [friends, user?.id]);
+	}, [friends, userMap, user?.id]);
 
 	useEffect(() => {
 		mounted.current = true;
@@ -122,7 +131,7 @@ const FriendsList: React.FC = () => {
 		};
 	}, []);
 
-	// Use our new custom hook
+	// Use a hook to fetch friend statuses
 	const { friendStatuses, fetchAllFriendStatuses, onlineFriendsCount } = useFriendStatuses(
 		friends,
 		user?.id,
@@ -154,7 +163,7 @@ const FriendsList: React.FC = () => {
 		if (socket && user?.id) {
 			fetchFriendsList();
 		}
-	}, [socket, user?.id]);
+	}, [socket, user?.id, fetchFriendsList]);
 
 	const isLoadingAnything = loading;
 
@@ -184,19 +193,21 @@ const FriendsList: React.FC = () => {
 					{/* Tabs */}
 					<div className='flex border-b border-gray-200 dark:border-gray-700'>
 						<button
-							className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === 'online'
-								? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
-								: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-								}`}
+							className={`px-4 py-2 text-sm font-medium flex-1 ${
+								activeTab === 'online'
+									? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
+									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+							}`}
 							onClick={() => setActiveTab('online')}
 						>
 							Online ({onlineFriendsCount})
 						</button>
 						<button
-							className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === 'all'
-								? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
-								: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-								}`}
+							className={`px-4 py-2 text-sm font-medium flex-1 ${
+								activeTab === 'all'
+									? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500'
+									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+							}`}
 							onClick={() => setActiveTab('all')}
 						>
 							All Friends
@@ -259,14 +270,15 @@ const FriendsList: React.FC = () => {
 					className='px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center'
 				>
 					<div
-						className={`h-2 w-2 rounded-full mr-2 ${status === 'online'
-							? 'bg-green-500'
-							: status === 'away'
+						className={`h-2 w-2 rounded-full mr-2 ${
+							status === 'online'
+								? 'bg-green-500'
+								: status === 'away'
 								? 'bg-yellow-500'
 								: status === 'busy'
-									? 'bg-red-500'
-									: 'bg-gray-500'
-							}`}
+								? 'bg-red-500'
+								: 'bg-gray-500'
+						}`}
 					/>
 					<span className='truncate'>{displayName}</span>
 					<span className='ml-auto text-xs text-gray-500 dark:text-gray-400'>{status}</span>
