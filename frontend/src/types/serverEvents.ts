@@ -9,4 +9,6 @@ export enum ServerEvents {
   NOTIFICATIONS_UPDATE = "notifications:update",
   GET_FRIENDS = 'connections:get_friends',
   GET_FRIENDS_SUCCESS = 'connections:get_friends:success',
+  GET_FRIENDS_ERROR = 'connections:get_friends:error',
+  FRIEND_ACCEPTED = 'connection:friend_accepted',
 } 

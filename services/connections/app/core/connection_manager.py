@@ -432,6 +432,7 @@ class ConnectionManager:
                     "notification_type": notification_type,
                     "content_preview": content_preview,
                     "timestamp": datetime.now().isoformat(),
+                    "read": False,
                 }
             )
 
@@ -440,13 +441,13 @@ class ConnectionManager:
                 await self.rabbitmq.publish_friend_request(  # Use specific method for requests
                     message=message,
                     routing_key=routing_key,
-                    reply_to=reply_to or "connection_notifications",
+                    reply_to=reply_to or "notifications",
                 )
             else:  # For friend_accepted and other types
                 await self.rabbitmq.publish_friend_accepted(
                     exchange="",
                     message=message,
-                    routing_key=reply_to or "connection_notifications",
+                    routing_key=reply_to or "notifications",
                 )
 
             logger.info(

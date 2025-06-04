@@ -74,6 +74,16 @@ export const FriendsProvider = ({ children }: { children: ReactNode }) => {
 	});
 	console.log('[FriendsProvider] Registered FRIEND_STATUS_CHANGED handler');
 
+	// Listen for notification events
+	useSocketEvent('notification:new', (notification: any) => {
+		console.log('[FriendsProvider] Received notification:', notification);
+		// If it's a friend-related notification, refresh friends list
+		if (notification.notification_type === 'friend_request' || 
+			notification.notification_type === 'friend_accepted') {
+			refreshFriends();
+		}
+	});
+
 	// Fetch and enrich friends when list changes
 	useEffect(() => {
 		console.log('[FriendsProvider] useEffect (enrich friends) friends:', friends, 'user:', user);

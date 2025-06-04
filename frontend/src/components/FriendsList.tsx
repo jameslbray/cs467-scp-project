@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
 import { useSocketContext } from '../contexts/socket/socketContext';
 import { useSocketEvent } from '../contexts/socket/useSocket';
@@ -29,13 +29,24 @@ const FriendsList: React.FC = () => {
 		fetchFriendsList();
 	});
 
+	// Listen for notification events
+	useSocketEvent('notification:new', (notification: { notification_type: string }) => {
+		// If it's a friend-related notification, refresh friends list
+		if (
+			notification.notification_type === 'friend_request' ||
+			notification.notification_type === 'friend_accepted'
+		) {
+			fetchFriendsList();
+		}
+	});
+
 	// Function to fetch friends
-	const fetchFriendsList = async () => {
+	const fetchFriendsList = useCallback(async () => {
 		if (!socket || !user?.id) return;
 
 		// Request updated friends list
 		socket.emit('connections:get_friends', { user_id: user.id });
-	};
+	}, [socket, user?.id]);
 
 	// Listen for the response with updated friends
 	useSocketEvent('connections:get_friends:success', (data) => {
@@ -111,7 +122,7 @@ const FriendsList: React.FC = () => {
 				fetchUserData(idsToFetch);
 			}
 		}
-	}, [friends, user?.id]);
+	}, [friends, userMap, user?.id]);
 
 	useEffect(() => {
 		mounted.current = true;
@@ -152,7 +163,7 @@ const FriendsList: React.FC = () => {
 		if (socket && user?.id) {
 			fetchFriendsList();
 		}
-	}, [socket, user?.id]);
+	}, [socket, user?.id, fetchFriendsList]);
 
 	const isLoadingAnything = loading;
 

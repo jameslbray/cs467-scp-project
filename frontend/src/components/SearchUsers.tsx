@@ -2,6 +2,7 @@ import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts';
 import { useFriends } from '../contexts/friends/FriendsContext';
+import { useSocketEvent } from '../contexts/socket/useSocket';
 import { userApi } from '../services/api';
 import { FriendConnection } from '../types/friendsTypes';
 
@@ -28,7 +29,20 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 	const [activeTab, setActiveTab] = useState<'search' | 'requests'>('search');
 	const dropdownRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
-	const { friends, pendingRequests } = useFriends();
+	const { friends, pendingRequests, refreshFriends } = useFriends();
+
+	// Listen for notification events
+	useSocketEvent('notification:new', (notification: { notification_type: string }) => {
+		// If it's a friend request notification, refresh friends list
+		if (
+			notification.notification_type === 'friend_request' ||
+			notification.notification_type === 'friend_accepted'
+		) {
+			refreshFriends();
+			// Also trigger parent refresh
+			if (onConnectionChange) onConnectionChange();
+		}
+	});
 
 	// Close dropdown when clicking outside
 	useEffect(() => {
@@ -147,6 +161,11 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				}),
 			});
 			if (response.ok) {
+				// Update local state immediately to show pending status
+				const newConnection = await response.json();
+				setUserConnections((prev) => [...prev, newConnection]);
+
+				// Trigger parent component refresh
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
@@ -171,6 +190,12 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				}),
 			});
 			if (response.ok) {
+				// Update local state
+				setUserConnections((prev) =>
+					prev.map((conn) => (conn.id === connection.id ? { ...conn, status: 'accepted' } : conn))
+				);
+
+				// Trigger parent component refresh
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
@@ -195,6 +220,10 @@ const SearchUsers: React.FC<SearchUsersProps> = ({ onConnectionChange }) => {
 				}),
 			});
 			if (response.ok) {
+				// Remove from local state
+				setUserConnections((prev) => prev.filter((conn) => conn.id !== connection.id));
+
+				// Trigger parent component refresh
 				if (onConnectionChange) onConnectionChange();
 			}
 		} catch (error) {
